@@ -37,7 +37,9 @@
 #include <vector>
 #include <math.h>
 #include <set>
+#include <algorithm>
 #include "wcnet_armada_hires.h"
+#include "wcnet_armada_art.h"
 #include "wcnet_game.h"
 #include "wcnet_log.h"
 #include "mem.h"
@@ -64,16 +66,18 @@ struct Build {
     Bit16u turnSeg, turnEntry;  // the library's shape turned and scaled (x, y, shapes far, index, degrees, scale, flags)
     Bit16u boomSeg, boomEntry;  // an explosion piece's draw (its frame counted on at +32 each time it is drawn)
     Bit16u listSeg, listCall;   // the display list's call of each entry's draw (a test aid's)
+    Bit16u lineSeg, lineEntry;  // the library's line (bitmap record, x0, y0, x1, y1, colour)
+    Bit16u monoSeg, monoEntry;  // its shape in one colour (bitmap record, x, y, shapes far, index, colour): the reticle
 };
 const Build kBuilds[] = {
     { "ARMADA.EXE",   0x2B4B, 0x061A, 0x621A, 0x83BA, 0x8646, 0x29CA, 0x054A, 0x07C5, 0x0D70, 0x2943, 0x0864,
-      { 0x3FD8, 0 }, { 0x0443, 0 }, 0x6493, 0x0ECC, 0x2230, 0x008A, 0x36D4, 0x003F },
+      { 0x3FD8, 0 }, { 0x0443, 0 }, 0x6493, 0x0ECC, 0x2230, 0x008A, 0x36D4, 0x003F, 0x5F32, 0x0006, 0x5F69, 0x0008 },
     { "ARMADACD.EXE", 0x2B4E, 0x061A, 0x62A6, 0x843A, 0x86C6, 0x29CD, 0x054A, 0x07C5, 0x0D70, 0x2946, 0x0864,
-      { 0x3FDB, 0 }, { 0x0443, 0 }, 0x6496, 0x0ECC, 0x2233, 0x008A, 0x36D7, 0x003F },
+      { 0x3FDB, 0 }, { 0x0443, 0 }, 0x6496, 0x0ECC, 0x2233, 0x008A, 0x36D7, 0x003F, 0x5F35, 0x0006, 0x5F6C, 0x0008 },
     { "PG.EXE",       0x205C, 0x0632, 0x4E78, 0x714E, 0x73DA, 0x1DDF, 0x0540, 0x07BB, 0x0D66, 0x1D57, 0x086A,
-      { 0x2C03, 0x3DA0 }, { 0x0CBE, 0x029D }, 0x6100, 0x0ECE, 0x17BE, 0x008F, 0x2FC7, 0x0049 },
+      { 0x2C03, 0x3DA0 }, { 0x0CBE, 0x029D }, 0x6100, 0x0ECE, 0x17BE, 0x008F, 0x2FC7, 0x0049, 0x5B9F, 0x0008, 0x5BD6, 0x000A },
     { "PGCD.EXE",     0x2060, 0x0632, 0x4F88, 0x725E, 0x74EA, 0x1DE3, 0x0540, 0x07BB, 0x0D66, 0x1D5B, 0x086A,
-      { 0x2C23, 0x3DBF }, { 0x0CBC, 0x02AB }, 0x6120, 0x0ECC, 0x17C2, 0x008F, 0x2FE7, 0x0047 },
+      { 0x2C23, 0x3DBF }, { 0x0CBC, 0x02AB }, 0x6120, 0x0ECC, 0x17C2, 0x008F, 0x2FE7, 0x0047, 0x5BBF, 0x0006, 0x5BF6, 0x0008 },
 };
 enum { kCleared = 0x11, kSetup = 0x25, kDrawn = 0x57, kCockpit = 0x81 };   // from the section's top
 
@@ -84,8 +88,8 @@ const Build *g_b;
 Bit16u g_load;
 bool g_codeOk;
 
-int g_want = -1;                // -1: the launch's setting not read yet
-bool g_never, g_flipped, g_used;
+int g_level = -1;               // 0 off, 1 the space alone, 2 all (the cockpit's lines and reticle too); -1 unread
+bool g_never, g_used;
 int g_farTimes = 16;
 
 int g_pass = -1;                // 0..3 the quarters, 4 the marker's clear, 5 the cockpit over it; -1 none
@@ -96,7 +100,10 @@ Bit8u g_viewKeep[12], g_clipKeep[8];
 Bit32u g_farKeep;
 bool g_empty[4];
 
-std::vector<Bit8u> g_fine(FW * FH), g_out(FW * FH), g_low(W * H);
+std::vector<Bit8u> g_fine(FW * FH), g_out(FW * FH), g_low(W * H);   // g_low: the last frame put on the screen
+std::vector<Bit8u> g_own(W * H);       // the game's own pass's scene, kept for under the cockpit
+std::vector<Bit8u> g_over(FW * FH), g_overSet(FW * FH);     // the cockpit's stage's fine drawing (level 1: the space's lines)
+bool g_overAny;
 double g_lastCompose = -1e9;
 bool g_override;
 unsigned g_frames;
@@ -122,18 +129,21 @@ std::vector<Bit8u> g_sideP, g_sideA[3];
 inline PhysPt ds_at(Bit16u off) { return SegPhys(ds) + off; }
 inline Bit16u rd16l(PhysPt a) { return mem_readw(a); }
 
-bool wanted() {
-    if (g_want < 0) {
+int level() {
+    if (g_level < 0) {
+        // WCARMHIRES: 1, 2 or all: all; space: the space alone; off: never (the key inert); else off
         const char *env = getenv("WCARMHIRES");
         g_never = env && !strcmp(env, "off");
-        g_want = !g_never && env && env[0] && env[0] != '0' ? 1 : 0;
+        g_level = g_never || !env || !env[0] || env[0] == '0' ? 0 : !strcmp(env, "space") ? 1 : 2;
         const char *marker = getenv("WCARMHIRESMARKER");
         if (marker && marker[0]) kMarker = (Bit8u)strtol(marker, NULL, 16);
         const char *far = getenv("WCARMHIRESFAR");
         if (far && far[0]) g_farTimes = atoi(far) < 1 ? 1 : atoi(far) > 64 ? 64 : atoi(far);
     }
-    return !g_never && (g_want != 0) != g_flipped;
+    return g_never ? 0 : g_level;
 }
+
+bool wanted() { return level() > 0; }
 
 void now_wanted() {
     if (!wanted() || g_used) return;
@@ -287,18 +297,73 @@ void marker_clear() {
     for (int y = 0; y < H; y++) lin_write(b.row[y], &line[0], W);
 }
 
+// The window's edge smoothed (level 2; Privateer's way, smooth_edge): the window (where the marker was left) blurred
+// 3x3 and sampled at each fine pixel; where that side is not the game pixel's own, the fine pixel is the scene's there,
+// or a neighbouring cockpit pixel's.  The edge's staircase becomes one-pixel steps of the 640x400 at any slope.
+void smooth_edge(const std::vector<Bit8u> &win) {
+    static int blur[W * H];
+    for (int y = 0; y < H; y++) {
+        for (int x = 0; x < W; x++) {
+            int sum = 0;
+            for (int j = -1; j <= 1; j++) {
+                const int yy = y + j < 0 ? 0 : y + j >= H ? H - 1 : y + j;
+                for (int i = -1; i <= 1; i++) {
+                    const int xx = x + i < 0 ? 0 : x + i >= W ? W - 1 : x + i;
+                    sum += win[yy * W + xx] * (i ? 1 : 2) * (j ? 1 : 2);
+                }
+            }
+            blur[y * W + x] = sum;
+        }
+    }
+    for (int Y = 0; Y < FH; Y++) {
+        int vy = 10 * Y - 5;
+        if (vy < 0) vy = 0;
+        int y0 = vy / 20, fy = vy % 20;
+        if (y0 >= H - 1) { y0 = H - 1; fy = 0; }
+        const int y1 = y0 + 1 < H ? y0 + 1 : y0;
+        for (int X = 0; X < FW; X++) {
+            int vx = 10 * X - 5;
+            if (vx < 0) vx = 0;
+            int x0 = vx / 20, fx = vx % 20;
+            if (x0 >= W - 1) { x0 = W - 1; fx = 0; }
+            const int x1 = x0 + 1 < W ? x0 + 1 : x0;
+            const int a = blur[y0 * W + x0], b2 = blur[y0 * W + x1], c = blur[y1 * W + x0], d = blur[y1 * W + x1];
+            if ((a | b2 | c | d) == 0 || (a & b2 & c & d) == 16) continue;      // (not near the edge)
+            const int v = (a * (20 - fx) + b2 * fx) * (20 - fy) + (c * (20 - fx) + d * fx) * fy;
+            const Bit8u side = v > 8 * 20 * 20 ? 1 : 0;
+            const int x = X >> 1, y = Y >> 1;
+            if (win[y * W + x] == side) continue;
+            if (side) {
+                g_out[Y * FW + X] = g_fine[Y * FW + X];
+                continue;
+            }
+            static const int kDx[8] = { -1, 1, 0, 0, -1, 1, -1, 1 }, kDy[8] = { 0, 0, -1, 1, -1, -1, 1, 1 };
+            for (int k = 0; k < 8; k++) {
+                const int nx = x + kDx[k], ny = y + kDy[k];
+                if (nx >= 0 && ny >= 0 && nx < W && ny < H && !win[ny * W + nx]) {
+                    g_out[Y * FW + X] = g_low[ny * W + nx];
+                    break;
+                }
+            }
+        }
+    }
+}
+
 // After the cockpit: the 640x400 shown, and the game's own buffer as the game made it (its scene under the cockpit)
 void compose() {
     const Bitmap b = bitmap();
     std::vector<Bit8u> line(W);
+    static std::vector<Bit8u> win(W * H);
     for (int y = 0; y < H; y++) {
         lin_read(b.row[y], &line[0], W);
         Bit8u *own = &g_low[y * W];
+        memcpy(own, &g_own[y * W], W);
         Bit8u *o0 = &g_out[2 * y * FW], *o1 = o0 + FW;
         const Bit8u *f0 = &g_fine[2 * y * FW], *f1 = f0 + FW;
         bool back = false;
         for (int x = 0; x < W; x++) {
             const Bit8u l = line[x];
+            win[y * W + x] = l == kMarker;
             if (l == kMarker) {
                 o0[2 * x] = f0[2 * x]; o0[2 * x + 1] = f0[2 * x + 1];
                 o1[2 * x] = f1[2 * x]; o1[2 * x + 1] = f1[2 * x + 1];
@@ -309,6 +374,13 @@ void compose() {
             }
         }
         if (back) lin_write(b.row[y], own, W);
+    }
+    if (level() == 2) smooth_edge(win);
+    if (g_overAny) {
+        int n = 0;
+        for (int i = 0; i < FW * FH; i++) if (g_overSet[i]) { g_out[i] = g_over[i]; n++; }
+        static int told = 0;
+        if (getenv("WCARMHIRESDEBUG") && told++ < 5) wclog(1, "Armada overlay: %d fine pixels", n);
     }
     g_lastCompose = PIC_FullIndex();
     if (getenv("WCARMHIRESCOLOURS") && (g_frames % 50) == 0) {
@@ -576,6 +648,150 @@ void list_call() {
     if (seen.insert(key).second) wclog(1, "Armada draws: a new kind, %04X:%04X (from the load segment)", key >> 16, key & 0xFFFF);
 }
 
+// ----- the cockpit's stage (level 1: the lines on the space; level 2: all its lines, the reticle, turned shapes) -----
+
+armart::Target over_target(PhysPt rec) {
+    armart::Target t;
+    t.px = &g_over[0];
+    t.set = &g_overSet[0];
+    t.w = FW;
+    t.h = FH;
+    t.x0 = (Bit16s)mem_readw(rec + 4); t.y0 = (Bit16s)mem_readw(rec + 6);
+    t.x1 = (Bit16s)mem_readw(rec + 8); t.y1 = (Bit16s)mem_readw(rec + 10);
+    return t;
+}
+
+void return_far() {
+    const PhysPt sp = SegPhys(ss) + reg_sp;
+    const Bit16u retIp = mem_readw(sp), retCs = mem_readw(sp + 2);
+    reg_sp = (Bit16u)(reg_sp + 4);
+    SegSet16(cs, retCs);
+    reg_eip = retIp;
+}
+
+Bit8u pixel_of(PhysPt rec, int x, int y) {
+    if (x < 0 || y < 0 || x >= W || y >= H) return 0;
+    const Bit16u seg = mem_readw(rec), rows = mem_readw(rec + 2);
+    Bit8u c = 0;
+    mem_readb_checked(((PhysPt)seg << 4) + mem_readw(ds_at((Bit16u)(rows + 2 * y))) + x, &c);
+    return c;
+}
+
+// The line (bitmap record, x0, y0, x1, y1, colour): one fine pixel wide, if it is drawn on the space (the target's
+// brackets: level 1 too) or at level 2 any; else the game's own
+void cockpit_line() {
+    const PhysPt a = SegPhys(ss) + reg_sp + 4;
+    const PhysPt rec = ds_at(mem_readw(a));
+    const int x0 = (Bit16s)mem_readw(a + 2), y0 = (Bit16s)mem_readw(a + 4);
+    const int x1 = (Bit16s)mem_readw(a + 6), y1 = (Bit16s)mem_readw(a + 8);
+    const Bit8u colour = mem_readb(a + 10);
+    // on the space: a third of its pixels on the marker or more (the reticle, drawn first, may cross a bracket's piece)
+    int n = 0, on = 0;
+    {
+        int X = x0, Y = y0;
+        const int dx = abs(x1 - x0), dy = -abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+        int err = dx + dy;
+        for (int k = 0; k < 1024; k++) {
+            n++;
+            if (pixel_of(rec, X, Y) == kMarker) on++;
+            if (X == x1 && Y == y1) break;
+            const int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; X += sx; }
+            if (e2 <= dx) { err += dx; Y += sy; }
+        }
+    }
+    const bool space = 3 * on >= n;
+    static int told = 0;
+    if (getenv("WCARMHIRESDEBUG") && told < 40) {
+        told++;
+        wclog(1, "Armada line: %d,%d - %d,%d colour %02X, under its middle %02X (%s), clip %d,%d-%d,%d", x0, y0, x1, y1, colour,
+              pixel_of(rec, (x0 + x1) / 2, (y0 + y1) / 2), space ? "space" : "cockpit", (Bit16s)mem_readw(rec + 4),
+              (Bit16s)mem_readw(rec + 6), (Bit16s)mem_readw(rec + 8), (Bit16s)mem_readw(rec + 10));
+    }
+    if (!space && level() < 2) return;
+    armart::line(over_target(rec), x0, y0, x1, y1, colour);
+    g_overAny = true;
+    return_far();
+}
+
+// The shape in one colour (bitmap record, x, y, shapes far, index, colour) at the view's middle: the reticle, as line
+// art (level 2); anything else (the text) the game's own
+void cockpit_mono() {
+    const PhysPt a = SegPhys(ss) + reg_sp + 4;
+    const int x = (Bit16s)mem_readw(a + 2), y = (Bit16s)mem_readw(a + 4);
+    const PhysPt view = ds_at(g_b->view);
+    if (level() < 2 || x != (Bit16s)mem_readw(view) || y != (Bit16s)mem_readw(view + 2)) return;
+    const PhysPt rec = ds_at(mem_readw(a));
+    const PhysPt file = ((PhysPt)mem_readw(a + 8) << 4) + mem_readw(a + 6);
+    Shape s;
+    if (!shape_at(file, (Bit16s)mem_readw(a + 10), s)) return;
+    const Bit8u colour = mem_readb(a + 12);
+    armart::Shape art;
+    art.w = s.w; art.h = s.h; art.left = s.left; art.top = s.top;
+    art.px = s.px;
+    for (size_t i = 0; i < art.px.size(); i++) if (art.px[i] >= 0) art.px[i] = colour;
+    armart::shape_lines(over_target(rec), art, x, y);
+    g_overAny = true;
+    return_far();
+}
+
+// A turned-and-scaled shape in the cockpit's stage (the target display's ship): drawn at the fine pixels (level 2)
+void cockpit_turn() {
+    if (level() < 2) return;
+    const PhysPt a = SegPhys(ss) + reg_sp + 4;
+    const PhysPt rec = ds_at(mem_readw(a));
+    const int x = (Bit16s)mem_readw(a + 2), y = (Bit16s)mem_readw(a + 4);
+    const PhysPt file = ((PhysPt)mem_readw(a + 8) << 4) + mem_readw(a + 6);
+    const int index = (Bit16s)mem_readw(a + 10), degrees = (Bit16s)mem_readw(a + 12), scale = (Bit16s)mem_readw(a + 14);
+    const int flags = mem_readw(a + 16);
+    Shape s;
+    if (scale <= 0 || scale > 64 * 256 || !shape_at(file, index, s)) return;
+    const armart::Target t = over_target(rec);
+    const double sc = scale / 256.0, w = degrees * 3.141592653589793 / 180.0, c = cos(w), n = sin(w);
+    const double mx = (flags & 0x10) ? -1 : 1, my = (flags & 0x20) ? -1 : 1;
+    for (int Y = 2 * t.y0; Y < 2 * (t.y1 + 1); Y++) {
+        for (int X = 2 * t.x0; X < 2 * (t.x1 + 1); X++) {
+            const double gx = (X + 0.5) / 2 - x, gy = (Y + 0.5) / 2 - y;
+            if (fabs(gx) > 2 * (s.w + s.h) * sc + 4 || fabs(gy) > 2 * (s.w + s.h) * sc + 4) continue;
+            const int iu = (int)floor((gx * c + gy * n) * mx / sc + s.left), iv = (int)floor((-gx * n + gy * c) * my / sc + s.top);
+            if (iu < 0 || iv < 0 || iu >= s.w || iv >= s.h) continue;
+            const Bit16s colour = s.px[iv * s.w + iu];
+            if (colour < 0) continue;
+            armart::plot(t, X, Y, (Bit8u)colour);
+        }
+    }
+    g_overAny = true;
+    return_far();
+}
+
+// WCARMHIRESCALLS=1 (a test aid, ARMADA.EXE): during the cockpit's stage, each library routine's call logged once a
+// caller, with its arguments (which draws the reticle, the brackets, the radar, the displays)
+const Bit16u kLibSeg[] = { 0x5F32, 0x5F91, 0x5F69, 0x5F55, 0x5F51, 0x5FB6, 0x5FB7, 0x5FCB, 0x6493, 0x5E2C, 0x5EE6,
+                           0x5D8D, 0x5DE6, 0x5D70 };
+const Bit16u kLibOff[] = { 0x0006, 0x0008, 0x0008, 0x0004, 0x000E, 0x0006, 0x000C, 0x0004, 0x0ECC, 0x000E, 0x000E,
+                           0x0006, 0x0242, 0x0000 };
+int g_calls = -1;
+bool calls_on() {
+    if (g_calls < 0) g_calls = getenv("WCARMHIRESCALLS") && g_b && !strcmp(g_b->exe, "ARMADA.EXE") ? 1 : 0;
+    return g_calls == 1;
+}
+bool lib_call(Bit16u para, Bit16u ip) {
+    for (size_t i = 0; i < sizeof(kLibSeg) / sizeof(kLibSeg[0]); i++) {
+        if (para != kLibSeg[i] || ip != kLibOff[i]) continue;
+        if (g_pass != 5) return true;
+        static std::set<Bit64u> seen;
+        const PhysPt sp = SegPhys(ss) + reg_sp;
+        const Bit16u retIp = mem_readw(sp), retCs = (Bit16u)(mem_readw(sp + 2) - g_load);
+        const Bit64u key = ((Bit64u)i << 32) | ((Bit32u)retCs << 16) | retIp;
+        if (!seen.insert(key).second) return true;
+        char a[96] = "";
+        for (int k = 0; k < 9; k++) snprintf(a + strlen(a), sizeof(a) - strlen(a), " %d", (Bit16s)mem_readw(sp + 4 + 2 * k));
+        wclog(1, "Armada calls: %04X:%04X from %04X:%04X, args%s", para, ip, retCs, retIp, a);
+        return true;
+    }
+    return false;
+}
+
 // ----- !armside ----------------------------------------------------------------------------------------------------
 
 void side_snap(std::vector<Bit8u> &v) {
@@ -633,14 +849,19 @@ void time_passes_done() {
 void at_top() {
     if (g_jumped) {             // (the browser's call for the place jumped to: the pass was set up by the jump)
         g_jumped = false;
+        if (getenv("WCARMHIRESDEBUG")) wclog(1, "Armada top: a jump's arrival (pass %d)", g_pass);
         return;
     }
+    if (getenv("WCARMHIRESDEBUG") && g_pass >= 0) wclog(1, "Armada top: a frame began with pass %d unfinished", g_pass);
     view_back();                // (a frame left in the middle: the game's view again)
     g_pass = -1;
     time_frame_top();
     if (!g_codeOk || !wanted() || vga.mode != M_VGA) return;
     const Bitmap b = bitmap();
-    if (!b.ok) return;
+    if (!b.ok) {
+        if (getenv("WCARMHIRESDEBUG")) wclog(1, "Armada top: the bitmap's clip %d,%d-%d,%d: the game's own", b.x0, b.y0, b.x1, b.y1);
+        return;
+    }
     g_pass = 0;
     g_starKeep.clear();
     g_keep.clear();
@@ -694,8 +915,12 @@ bool frame_hook(Bit16u ip) {
         } else if (g_pass == 4) {
             // the game's own pass, as it always runs: its scene kept, and the cockpit drawn over the marker
             const Bitmap b = bitmap();
-            for (int y = 0; y < H; y++) lin_read(b.row[y], &g_low[y * W], W);
+            for (int y = 0; y < H; y++) lin_read(b.row[y], &g_own[y * W], W);
             marker_clear();
+            if (g_overAny) {
+                std::fill(g_overSet.begin(), g_overSet.end(), 0);
+                g_overAny = false;
+            }
             g_pass = 5;
         }
         return true;
@@ -781,6 +1006,9 @@ void arm_hires_watch(void (*watch)(Bit16u ip)) {
     watch(g_b->turnEntry);
     watch(g_b->boomEntry);
     watch(g_b->listCall);
+    watch(g_b->lineEntry);
+    watch(g_b->monoEntry);
+    if (calls_on()) for (size_t i = 0; i < sizeof(kLibSeg) / sizeof(kLibSeg[0]); i++) watch(kLibOff[i]);
 }
 
 bool arm_hires_hook(Bit32u ip) {
@@ -803,6 +1031,15 @@ bool arm_hires_hook(Bit32u ip) {
             if (mem_readb(at) == 0x9A && mem_readd(at + 0xF) == 0x00017700) wait_idle();
             return true;
         }
+    }
+    if (g_pass == 5 && level() >= 1) {
+        if (para == g_b->lineSeg && ip == g_b->lineEntry) { cockpit_line(); return true; }
+        if (para == g_b->monoSeg && ip == g_b->monoEntry) { cockpit_mono(); return true; }
+        if (para == g_b->turnSeg && ip == g_b->turnEntry) { cockpit_turn(); return true; }
+    }
+    if (calls_on() && lib_call(para, (Bit16u)ip)) {
+        if (para == g_b->turnSeg && ip == g_b->turnEntry && g_pass >= 0 && g_pass <= 3) turn_entry();
+        return true;
     }
     if (g_pass < 0 || g_pass > 4) return false;
     if (para == g_b->turnSeg && ip == g_b->turnEntry) {
@@ -842,6 +1079,12 @@ void arm_hires_tick() {
     if (want && g_override && since > 40.0 && now - checked > 20.0) {
         checked = now;
         if (memcmp(vga.fastmem, &g_low[0], W * H) != 0) {
+            if (getenv("WCARMHIRESDEBUG")) {
+                int n = 0, first = -1;
+                for (int i = 0; i < W * H; i++) if (vga.fastmem[i] != g_low[i]) { n++; if (first < 0) first = i; }
+                wclog(1, "Armada screen: %d pixels not the frame's, the first at %d,%d (%02X, ours %02X), %.0f ms since",
+                      n, first % W, first / W, vga.fastmem[first], g_low[first], since);
+            }
             want = false;
             g_lastCompose = -1e9;   // (until the next frame composed)
         }
@@ -856,26 +1099,30 @@ bool arm_hires_script_item(const std::string &item, double t) {
         return true;
     }
     if (item.compare(0, 10, "!armhires=") == 0) {
-        arm_hires_set(item[10] == '1');
-        wclog(1, "key script %.1fs: the high-resolution picture %s", t, item[10] == '1' ? "wanted" : "not wanted");
+        arm_hires_set(item.compare(10, std::string::npos, "space") == 0 ? 1 : atoi(item.c_str() + 10) ? 2 : 0);
+        (void)t;
         return true;
     }
     return false;
 }
 
-void arm_hires_set(bool on) {
-    wanted();
-    g_want = on ? 1 : 0;
-    g_flipped = false;
+void arm_hires_set(int lvl) {
+    level();
+    g_level = lvl < 0 ? 0 : lvl > 2 ? 2 : lvl;
     now_wanted();
+    wclog(1, "Armada: the high-resolution picture %s", g_level == 2 ? "all" : g_level == 1 ? "the space alone" : "off");
 }
 
+// The ` key: all -> the space alone -> off -> all (Privateer's order)
 void arm_hires_flip() {
-    wanted();
-    g_flipped = !g_flipped;
+    if (g_never) return;
+    const int l = level();
+    g_level = l == 2 ? 1 : l == 1 ? 0 : 2;
     now_wanted();
-    wclog(1, "Armada: the high-resolution picture %s", wanted() ? "on" : "off");
+    wclog(1, "Armada: the high-resolution picture %s", g_level == 2 ? "all" : g_level == 1 ? "the space alone" : "off");
 }
+
+int arm_hires_level() { return g_override ? level() : 0; }
 
 bool arm_hires_on() { return g_override; }
 

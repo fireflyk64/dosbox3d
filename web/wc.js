@@ -1017,7 +1017,7 @@ function renderMission() {
   $("privHiresLabel").hidden = $("privHiresCockpitLabel").hidden = !isPriv();
   $("privMouseLabel").hidden = !isPriv() && !isArmada();
   $("privMouseLabel").title = isArmada() ? ARM_MOUSE_TITLE : PRIV_MOUSE_TITLE;
-  $("armHiresLabel").hidden = !isArmada();
+  $("armHiresLabel").hidden = $("armHiresCockpitLabel").hidden = !isArmada();
   $("privFFLabel").hidden = !isPriv() || one;
   $("privFF").disabled = !isHost();       // (the host's counts, as Collide's)
   // (Terminal Velocity: the craft each pilot flies as in the others' games, the host's choice)
@@ -2307,14 +2307,22 @@ const ARM_MOUSE_TITLE = "Armada's mouse steering (hold the right button and drag
 // Armada at 640 x 400 (the user, 2026-11-22: "lets figure out how to double the screen x and y for armada"; "It should
 // be toggleable from the browser too"): off unless ticked, WCARMHIRES at the launch and wc_web_arm_hires while flying;
 // the ` key flips it in the emulator (src/cpu/wcnet_armada_hires.cpp)
-const ARM_HIRES_KEY = "wc:armHires";
+const ARM_HIRES_KEY = "wc:armHires", ARM_HIRES_COCKPIT_KEY = "wc:armHiresCockpit";
 try { $("armHires").checked = localStorage.getItem(ARM_HIRES_KEY) === "1"; } catch (e) { /* off */ }
-$("armHires").addEventListener("change", () => {
-  const on = $("armHires").checked;
-  try { localStorage.setItem(ARM_HIRES_KEY, on ? "1" : "0"); } catch (e) { /* not kept */ }
-  const M = running && window.DOSBox;
-  if (M && M._wc_web_arm_hires && isArmada()) M._wc_web_arm_hires(on ? 1 : 0);
-});
+// (the user, 2026-11-22: "the same three options as in priv. One with higher res everything. One with just high rez
+// laser and fighters but cockpit low Rez and one all low Rez"; ticked by default as Privateer's)
+try { $("armHiresCockpit").checked = localStorage.getItem(ARM_HIRES_COCKPIT_KEY) !== "0"; } catch (e) { $("armHiresCockpit").checked = true; }
+const armHiresLevel = () => (!$("armHires").checked ? 0 : $("armHiresCockpit").checked ? 2 : 1);
+const armHiresBoxes = () => { $("armHiresCockpit").disabled = !$("armHires").checked; };
+armHiresBoxes();
+for (const [id, key] of [["armHires", ARM_HIRES_KEY], ["armHiresCockpit", ARM_HIRES_COCKPIT_KEY]]) {
+  $(id).addEventListener("change", () => {
+    try { localStorage.setItem(key, $(id).checked ? "1" : "0"); } catch (e) { /* not kept */ }
+    armHiresBoxes();
+    const M = running && window.DOSBox;
+    if (M && M._wc_web_arm_hires && isArmada()) M._wc_web_arm_hires(armHiresLevel());
+  });
+}
 // (Privateer's friendly fire between pilots, the host's counts: src/cpu/wcnet_priv_session.cpp, ff_from_env)
 const PRIV_FF_KEY = "wc:privFF";
 try { const v = localStorage.getItem(PRIV_FF_KEY); if (["targeted", "always", "never"].includes(v)) $("privFF").value = v; } catch (e) { /* the first */ }
@@ -2552,7 +2560,7 @@ async function start(fromGesture) {
     if (isPriv()) env.WCPRIVPOINTER = privPointer;
     if (isPriv()) env.WCPRIVMOUSEINVERT = $("privMouseInvert").checked ? "1" : "0";
     if (isPriv() && privHiresLevel()) env.WCPRIVHIRES = privHiresLevel() === 2 ? "1" : "space";
-    if (isArmada() && $("armHires").checked) env.WCARMHIRES = "1";
+    if (isArmada() && armHiresLevel()) env.WCARMHIRES = armHiresLevel() === 2 ? "1" : "space";
     if (isPriv() && PRIV_CLASSIC) env.WCPRIVCLASSIC = "1";
     if (isPriv() && together) env.WCPRIVFF = $("privFF").value;
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;
