@@ -307,7 +307,9 @@ function setSource(s, want) {
     || (s ? "The multiplayer hooks do not know this program: it runs single-player." : "Load the game files (step 1): the help is the game's own.");
   describeSaves();
   // (the Players box: as many seats as the game's rooms take)
+  $("seats").min = String(minSeats());
   $("seats").max = String(maxSeats());
+  if (Number($("seats").value) < minSeats()) $("seats").value = String(minSeats());
   if (Number($("seats").value) > maxSeats()) $("seats").value = String(maxSeats());
   // (Wing Commander II's people use a first name; the first game has none: the box is there for every game, optional,
   // the user's call, 2026-11-15)
@@ -673,9 +675,11 @@ async function initSources() {
 // local storage, keyed by game: it is put back into the game directory at
 // every start and refreshed whenever the running game changes the file.
 const gameInfo = () => (source && gameById(source.game.id)) || null;
+const isArmada = () => source?.game.id === "armada" || source?.game.id === "armadapg";
 // A room's seats at most: 3, or as many as the game's registry entry allows (`maxSeats`: Privateer's rooms of up to 8,
 // each pilot flying its own career: docs/privateer.md).
 const maxSeats = () => (gameInfo() && gameInfo().maxSeats) || 3;
+const minSeats = () => (gameInfo() && gameInfo().minSeats) || 1;
 // (the terrain branch's playtest copy at /terrain/ keeps its own: its RetroVega's saved game is another version's,
 // and the site's storage is shared with /dosbox)
 const SAVE_PREFIX = /^\/terrain\//.test(location.pathname) ? "wcsave-terrain:" : "wcsave:";
@@ -1136,7 +1140,7 @@ function soloGame(code) {
 const ROOM_HINT = $("lobbyHint").textContent;
 const SOLO_HINT = "A room of one, on this page alone: nobody else comes in. Leave it and join a room with Players at 2 or 3 to fly with company.";
 // The seats of a room this page makes: 1, 2 (the default) or 3; a game's registry may allow more (maxSeats).
-const seatCount = () => Math.min(maxSeats(), Math.max(1, Math.round(Number($("seats").value)) || 2));
+const seatCount = () => Math.min(maxSeats(), Math.max(minSeats(), Math.round(Number($("seats").value)) || 2));
 // A phone or a tablet makes a room of one to begin with (the user, 2026-11-03,
 // after a host on a phone was dropped at random: "default the number of
 // people per room in mobile to 1..that way mobile players can try the game
@@ -1441,10 +1445,11 @@ function updateActions() {
   const series = source ? seriesName(source.game.id) : "";
   $("findRoom").textContent = series ? `Join open ${series}` : "Join open game";
   $("findRoom").title = `Joins a room with a free seat that a pilot in the lobby sits in, of ${series ? "the " + series + " games" : "the game picked"} only (the game picked first): the Game menu then says which. The button at the top of the page takes a room of any game. It never makes a room: Host does`;
-  const ready = !!source && !!lobby.game && !running && !wrong;
+  const needsPeers = minSeats() > 1;
+  const ready = !!source && !!lobby.game && !running && !wrong && !(needsPeers && soloRoom());
   $("fly").disabled = !ready || guestWaits();
   // (in a room alone as its host, or in none yet, the lobby's alone: the user's "in a empty lobby")
-  $("flySolo").hidden = !source || running || !!wrong || (lobby.game ? !aloneInRoom() : linkWaits() || $("join").disabled)
+  $("flySolo").hidden = !source || needsPeers || running || !!wrong || (lobby.game ? !aloneInRoom() : linkWaits() || $("join").disabled)
     || (advertised.has(normalizeCode(lobby.game ? lobby.game.code : $("room").value.trim()))   // (offered in the lobby by hand: not alone;
         && !hostOffered.has(normalizeCode(lobby.game ? lobby.game.code : $("room").value.trim())));  // by Host itself: nobody may come)
   $("advertise").hidden = !lobby.game || !lobbyReady() || !lobby.game.players.some((p) => !p.occupied);   // (in flight too)
@@ -1453,7 +1458,7 @@ function updateActions() {
     else if (!source && !lobby.game) status(linkWaits() ? `Load your game files (step 1) and you are in room ${$("room").value.trim()}; "Join" takes a seat in it without them.` : "Pick a game (the Game menu), then host a room or join one.");
     else if (!source) status(`Join succeeded; now load ${codeGame(lobby.game.code) ? codeGame(lobby.game.code).title : "the game files"} above.`);
     else if (!lobby.game) status(`${source.game.title} is picked: host a room, join an open game, or join a friend's by its code.`);
-    else if (soloRoom()) { $("fly").textContent = "Fly"; status(`Room ${lobby.game.code} is yours alone: press Fly.`); }
+    else if (soloRoom()) { $("fly").textContent = "Fly"; status(needsPeers ? `Leave this room and host a room for at least ${minSeats()} players.` : `Room ${lobby.game.code} is yours alone: press Fly.`); }
     else if (isHost()) { $("fly").textContent = "Fly (starts everyone)"; status(`You host room ${lobby.game.code}.`); }
     else { $("fly").textContent = "Fly"; status(lobby.flying.has(0) ? "The host is already flying: press Fly to join the mission."
                                                 : "Fly opens once the host flies. To fly alone, leave the room and make your own with Players at 1."); }
@@ -1476,14 +1481,14 @@ function renderTopAction() {
   b.textContent = { screen: "Full screen", files: "Load game files", room: "Join open game", fly: "Fly" }[step];
   // (a phone: Fly Solo beside it until there is a room; the next button to press pulses, none once the game runs)
   const solo = $("topSolo");
-  solo.hidden = !PHONE || running || !source || !!lobby.game;
+  solo.hidden = !PHONE || running || !source || minSeats() > 1 || !!lobby.game;
   solo.disabled = seeking || $("join").disabled;
   const next = running ? null : !lobby.game ? (solo.hidden ? null : solo) : $("fly").disabled ? null : $("fly");
   solo.classList.toggle("next-step", next === solo);
   $("fly").classList.toggle("next-step", next === $("fly"));
   b.classList.toggle("next-step", next === $("fly") && step === "fly");
   b.title = { screen: "The game full screen; holding Esc leaves it",
-              files: "Your own Wing Commander or Wing Commander II: a .zip of the game folder, or the GOG installer",
+              files: "Load a .zip of your game folder or a supported GOG installer",
               room: FIND_TITLE,
               fly: $("status").textContent }[step];
 }
@@ -2167,7 +2172,7 @@ buildMissionMenu();
 // -- flying --------------------------------------------------------------------
 
 $("fly").addEventListener("click", () => {
-  if (!source || !lobby.game || running || guestWaits()) return;
+  if (!source || !lobby.game || running || $("fly").disabled) return;
   if (isHost()) for (const [seat, rel] of lobby.builds) if (rel !== "same") chatLine(`${esc(lobby.names.get(seat) || `Player ${seat + 1}`)} won't fly along (${rel === "site" ? "another page" : rel === "newer" ? "this page is out of date" : "their page is out of date"}).`, "sys");
   if (isHost()) sendLobby({ t: "start", game: source.game.id, mission: missionKey(lobby.mission), rocks: lobby.rocks, wingBumps: lobby.wingBumps, latency: lobby.latency, fps: lobby.fps, capHull: lobby.capHull });
   void start(true);
@@ -2175,7 +2180,7 @@ $("fly").addEventListener("click", () => {
 // Fly Alone: the empty room left for a room of one of the same code (soloGame: no lobby server, nobody can
 // come in, no advertisement), the mission and the settings picked kept, and the flight started as Fly would
 async function flyAlone() {
-  if (!source || running || (lobby.game && !aloneInRoom())) return;
+  if (!source || minSeats() > 1 || running || (lobby.game && !aloneInRoom())) return;
   const code = lobby.game ? lobby.game.code : normalizeCode($("room").value.trim()), seats = $("seats").value;
   const keep = lobby.game ? { mission: lobby.mission, rocks: lobby.rocks, wingBumps: lobby.wingBumps, latency: lobby.latency, fps: lobby.fps, capHull: lobby.capHull } : {};
   const made = !!code && code === autoCode;
@@ -2318,6 +2323,56 @@ function capsLockAsEscape(e) {
 }
 window.addEventListener("keydown", capsLockAsEscape, true);
 window.addEventListener("keyup", capsLockAsEscape, true);
+
+// Armada uses the mouse in menus. A right-button drag gives it directional flight input through the keyboard.
+let armadaDrag = null;
+const armadaMouseKeys = new Set();
+function armadaMouseInput() {
+  const send = window.DOSBox?._wc_web_key;
+  if (!send) return;
+  const keys = [];
+  if (armadaDrag) {
+    if (armadaDrag.x < -12) keys.push("kp4");
+    if (armadaDrag.x > 12) keys.push("kp6");
+    if (armadaDrag.y < -12) keys.push("kp8");
+    if (armadaDrag.y > 12) keys.push("kp2");
+    if (armadaDrag.fire) keys.push("space");
+  }
+  for (const key of armadaMouseKeys) if (!keys.includes(key)) send(KEY[key], 0);
+  for (const key of keys) if (!armadaMouseKeys.has(key)) send(KEY[key], 1);
+  armadaMouseKeys.clear();
+  for (const key of keys) armadaMouseKeys.add(key);
+}
+function endArmadaDrag() {
+  if (!armadaDrag) return;
+  armadaDrag = null;
+  armadaMouseInput();
+}
+canvas.addEventListener("mousedown", (e) => {
+  if (running && isArmada() && e.button === 2) armadaDrag = { x: 0, y: 0, fire: false };
+  if (armadaDrag && e.button === 0) {
+    armadaDrag.fire = true;
+    armadaMouseInput();
+  }
+});
+window.addEventListener("mousemove", (e) => {
+  if (!armadaDrag) return;
+  if (!(e.buttons & 2)) { endArmadaDrag(); return; }
+  armadaDrag.x = Math.max(-64, Math.min(64, armadaDrag.x + e.movementX));
+  armadaDrag.y = Math.max(-64, Math.min(64, armadaDrag.y + e.movementY));
+  armadaDrag.fire = !!(e.buttons & 1);
+  armadaMouseInput();
+});
+window.addEventListener("mouseup", (e) => {
+  if (e.button === 2) endArmadaDrag();
+  if (armadaDrag && e.button === 0) {
+    armadaDrag.fire = false;
+    armadaMouseInput();
+  }
+});
+window.addEventListener("blur", endArmadaDrag);
+canvas.addEventListener("blur", endArmadaDrag);
+
 // RetroVega's taunt hotkey, Alt+T, is a browser's own menu key outside full
 // screen (Firefox's Tools): with the game in focus the browser is told to leave
 // it alone, and the game still gets the key.  (Alt+B, the bookmarks, is left
@@ -2545,8 +2600,12 @@ async function start(fromGesture) {
     // raises; the type stays "none", or DOSBox's own mapper would hold the
     // stick at rest every frame (the page puts it on the port, gamepad.js).
     // Any other launch's configuration is what it always was.
-    const conf = ((gameInfo() && gameInfo().dosbox) || "") + (joystickPort ? "[joystick]\njoysticktype=none\ntimed=false\n" : "");
+    const game = gameInfo();
+    const ipx = together && game && game.ipx;
+    const conf = (game && game.dosbox || "") + (ipx ? "[ipx]\nipx=true\n" : "")
+      + (joystickPort ? "[joystick]\njoysticktype=none\ntimed=false\n" : "");
     if (conf) { Module.FS.writeFile("/game.conf", conf); args.unshift("-conf", "/game.conf"); }
+    if (ipx && game.netCommand) args.push("-c", game.netCommand);
     Module.callMain([...args, "-c", cmd]);
     if (gameInfo() && gameInfo().id === "rv") {
       rvSets.loadManifest().catch((e) => log(`rv/ships.json: ${e.message}`));
@@ -2788,7 +2847,11 @@ const controls = initControls({
   // blue dot ... way too slow to steer"; its roll keys are the keypad's 7 and 9)
   directStick: () => isTie() || isPriv(),
   rollKeys: () => (isTie() ? { left: "kp0", right: "kpperiod" } : isPriv() ? { left: "kp7", right: "kp9" } : null),
-  actionKeys: (id) => (isTie() && tiePad()[id] ? tiePad()[id].keys : isRap() ? rapKeys(id) : null),
+  actionKeys: (id) => {
+    if (isArmada() && id === "faster") return ["kpplus"];
+    if (isArmada() && id === "slower") return ["kpminus"];
+    return isTie() && tiePad()[id] ? tiePad()[id].keys : isRap() ? rapKeys(id) : null;
+  },
   actionLabel: (id) => (isTie() && tiePad()[id] ? tiePad()[id].label : isRap() && RAP_PAD[id] ? RAP_PAD[id].label : null),
   // (Raptor: the stick in a wave and the D-pad everywhere are its arrow keys, the stick past 30% of its travel)
   stickKeys: () => (isRap() ? { left: "left", right: "right", up: "up", down: "down", at: 0.3 } : null),
@@ -2799,7 +2862,7 @@ const controls = initControls({
   builtIn: () => !!(gameInfo() && gameInfo().joystick),
   builtInHint: () => (isPriv()
     ? "Built in: Privateer flies this pad as the joystick on its game port, its own way (the options' JOYSTICK is picked for you as the flight starts): button 1 fires the guns, both buttons a missile; hold button 2 and move the stick to roll and change speed. At a base the stick moves the pointer and button 1 clicks. The other buttons still press their keys."
-    : null),
+    : isArmada() ? "Built in: calibrate JOY 1 in Armada’s Options before entering net play. The game reads the stick and trigger through its joystick port." : null),
   noneChoices: () => (isPriv()
     ? [{ value: "none", label: "Kbd + mouse (shown)", picked: privPointer === "ring" }, { value: "none-game", label: "Keyboard + mouse", picked: privPointer === "game" }]
     : null),

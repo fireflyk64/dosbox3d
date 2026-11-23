@@ -657,6 +657,12 @@ function rapPrepare(FS, root) {
   return `Raptor's settings: ${said} on the Sound Blaster (the SETUP.INI that came with the game had another card)`;
 }
 
+const armadaMachine = {
+  multiplayer: true, ipx: true, cycles: 25000, noFlight: true, noRoomOptions: true, joystick: true,
+  dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[cpu]\ncore=normal\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n",
+  keys: "<b>Armada flight:</b> steer with the arrow keys or hold the right mouse button and drag. Fire guns with <kbd>Space</kbd> or the left button while steering with the mouse. <kbd>Enter</kbd> fires a missile, <kbd>Tab</kbd> is the afterburner, and the keypad’s <kbd>+</kbd> and <kbd>−</kbd> change speed. For a joystick or gamepad, pick its <b>Built in</b> entry under Controller before Fly and calibrate <b>JOY 1</b> in the game’s Options before joining Net Play.",
+};
+
 export const GAMES = [
   { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
     build: { para: 0x1231, off: 0x0187, text: "Loading WING COMMANDER" },
@@ -761,6 +767,16 @@ export const GAMES = [
     // the flight's controls as the emulator gives them (src/cpu/wcnet_tie_controls.cpp; the "Flight" choice beside Controller)
     keys: "<b>TIE Fighter in flight:</b> the arrow keys steer (a tap turns a little, held they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once; <kbd>Up</kbd> dives as a stick pushed forward), the keypad's <kbd>Ins</kbd> and <kbd>Del</kbd> roll. The mouse, as the <b>Flight</b> choice beside Controller has it: <i>point to aim</i> (a ring shows the pointer; the middle is still, the further the pointer the faster the turn, as in Wing Commander and RetroVega; the craft turns and climbs without banking, and the right button held with the mouse moved across rolls), <i>point to aim, banking</i> (the same with the game's own bank into each turn), <i>drag to steer</i> (the game's own, 1994), or nothing (the keyboard alone, or a joystick: a controller picked above, which also rolls and fires); <kbd>F12</kbd> in flight switches between the first four. <kbd>Space</kbd> or the left button fires (Space is still the game's when it asks for it: <kbd>Shift</kbd>+<kbd>S</kbd> then <kbd>Space</kbd> calls reinforcements); <kbd>0</kbd> opens the comms prompt in flight, <kbd>Enter</kbd> sends; <kbd>W</kbd> (held a moment) changes weapon, <kbd>Backspace</kbd> full throttle, <kbd>\\</kbd> none, <kbd>[</kbd> and <kbd>]</kbd> a third and two thirds; <kbd>T</kbd> and <kbd>R</kbd> target; <kbd>Esc</kbd> the game's options.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
+  // Armada uses NetBIOS over IPX. GOG includes Novell's DOS driver beside both programs.
+  { ...armadaMachine, id: "armada", tag: "ARM", title: "Wing Commander: Armada", short: "Armada",
+    detect: ["ARMADA.EXE"], build: { text: "Loading Wing Commander Armada...." }, run: "armada", maxSeats: 2,
+    netCommand: "netbios.exe", gather: [{ name: /^NETBIOS\.EXE$/i }],
+    help: "Each player loads their GOG Armada installer or a zip of the installed DOS folder with NETBIOS.EXE. Host a room for two and share its code or link. After Fly starts both games, skip the intro with Esc and choose Multi Player, then Net Play. Accept the default group with Y and enter a different callsign on each machine. In Armada’s lobby the host clicks Create and picks A for strategy or B for Battle. The guest clicks Join, then the host clicks Play. For Battle, each pilot picks a ship and clicks Select, then Commit.",
+  },
+  { ...armadaMachine, id: "armadapg", tag: "PG", partOf: "armada", title: "Armada: Proving Grounds", short: "Proving Grounds",
+    detect: ["PG.EXE"], build: { text: "Loading Wing Commander Armada::Proving Grounds" }, run: "pg", minSeats: 2, maxSeats: 6,
+    help: "Load the Armada files and select Proving Grounds in the Game menu. Host a room for two to six and share its code or link. Press Fly, then choose IPX Net Play and enter different callsigns. Choose P when creating a Proving Grounds arena. During ship selection, T changes teams.",
+  },
   // Wing Commander: Privateer (Origin, 1993: the CD-ROM edition as GOG sells it, Righteous Fire with it).  PRIV.EXE is
   // Origin's loader, PRCD.EXE the game (a real-mode program like the Wing Commanders, its world in EMS); the disc
   // (GAME.GOG: PRIV.TRE and RF.TRE, all of the game's data) must be in drive D.  The machine is the one GOG's own
