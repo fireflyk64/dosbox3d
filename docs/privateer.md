@@ -41,7 +41,7 @@ The programs: `PRIV.EXE` (8 KB) is Origin's loader: it installs JEMM, Origin's o
 none (DOSBox has: it uses DOSBox's), and runs `PRCD.EXE` through DOS.  `PRCD.EXE` (937,760 bytes) is the game: a
 real-mode Borland C++ 1991 overlay program, as the Wing Commanders are (454 segments, 183 overlays, DGROUP at
 paragraph 0x6E4D of the image), so `scripts/wcexe.py -e <game>/PRCD.EXE ...` disassembles it (`segs`, `dis`,
-`refs`, `xref`, `str`).  It runs in chained mode 13h (320x200, double-scanned to 400 lines, pixels 1.2 times as tall
+`refs`, `xref`, `str`).  It runs paged, in chained mode 13h (320x200, double-scanned to 400 lines, pixels 1.2 times as tall
 as they are wide on the 4:3 monitors of its day; measured 2026-11-22, this said Mode X before; the key script's
 `!frame=` is what the window showed).  Saved games are files named by the player: `<name>.SAV` (Privateer) and `<name>.PRS` (Righteous Fire).
 
@@ -965,3 +965,98 @@ Frame rate costs no near heap (the user: "it's just sleeping less-that should no
 fight at 13.9, 17.6, 22.3 and 28.6 frames a second averaged 14,077-14,586 bytes free with no trend; what a frame
 allocates it frees.  load.sh both ways: no errors, the guests' lows 6,730-8,374 before and 8,210-8,694 after, the
 host's 6,530 and 5,454.
+
+## 20. The high-resolution picture (2026-11-22, off by default)
+
+The user: "our audience wants an uprezzed version of privateer, selectable from the play menu (will be on by default
+when it's ready but now a checkbox that's off by default) ... for things like 2d art this means drawing 2x2 pixels
+instead of 1x1, but for the in-flight screen it gives an opportunity to draw larger versions of the sprites"; "the
+ratio should be identical to what the original players of privateer saw"; "lets keep them blocky but use the highest
+res art available in the game"; "backtick would be very useful"; "lasers at very high resolution ... Target brackets
+and hud lines should also be uprezzed to only draw single pixel wide"; "the actual resolution of the cockpits can
+remain low", their edge smooth.
+
+**How the game draws a flight.**  Every pixel of the scene and the instruments goes into one buffer in memory through
+the graphics library's routines; seg205:0002 then copies a list of spans (x, y, count; FFFF ends), the cockpit's
+window and screens, to the screen; the cockpit was drawn to the screen once.  The game runs paged: linear A0000 is
+memory of its own (that buffer is there, BBBE:0004), and the screen is linear 100000 (FFFF:0010), physical A0000.
+
+| entry | what | arguments after the bitmap record |
+|---|---|---|
+| seg180:0008 | fill | x0, y0, x1, y1, colour |
+| seg181:000A | clear to the clip | colour |
+| seg182:0008 | copy (the source's record first) | the destination's record |
+| seg183:0004 | ellipse | x, y, rx, ry, colour |
+| seg184:0002 | line | x0, y0, x1, y1, colour |
+| seg185:000A | pixel | x, y, colour |
+| seg186:0000 | rectangle | x0, y0, x1, y1, colour |
+| seg187:0004 | shape in one colour | x, y, shapes far, index, colour |
+| seg188:0008 | shape | x, y, shapes far, index |
+| seg189:0008 | shape scaled, translucent | x, y, shapes far, index, sx, sy, tables far, first colour, count |
+| seg193:0006 | shape scaled | x, y, shapes far, index, sx, sy (8.8, negative mirrors) |
+| seg202:0ECE | shape turned and scaled | x, y, shapes far, index, degrees, scale 8.8, flags (10h mirror x, 20h y) |
+| seg116:000E | polygon through a table | corners, corners far (22 bytes each), table far |
+
+A bitmap record is segment, row table, clip x0 y0 x1 y1.  A shape is mirrored first, then turned clockwise, in the
+game's own pixels (no correction for their shape).
+
+**The picture** (src/cpu/wcnet_priv_hires.cpp).  Each of those calls on the flight's buffer is drawn again at its
+entry, from its arguments, at 640 x 480: the ships from their whole art sampled at the fine pixels (blocky close up),
+the lasers' triangles from the corners the game computes to 1/256 of a pixel and then rounds (seg091:05D7, 0621),
+lines, rectangles and the crosshair a fine pixel wide, the rest in blocks (a game pixel is 2 wide and 2 or 3 tall).
+At the span copy that picture is frozen; at the VGA's frame it shows wherever the screen still holds what was copied,
+with the spans' edge smoothed; everything else is the game's own pixel.  The game's memory is never written.  The
+hooks run inside the CPU's core (wc_net_hook_exit in the browser): they read only by checked reads and never wait.
+
+`WCPRIVHIRES=1` at the launch, `wc_web_priv_hires` while flying (the page's "High resolution (2x)"), the ` key flips.
+
+Still to do before it is the default: the landing and takeoff scenes' bases from the flight's larger art
+(LTOBASES.PAK's small copies have it 1.6-2.5 times as large in APPEARNC for six of ten), the radar's rings as lines,
+the other cockpits and views gone through by eye.
+
+## 21. Fights at the full frame rate: native twins, the wait idled (2026-11-22)
+
+The user: "we need the full framerate--this may require some routines that are hooked by dosbox just similarly to
+retrovega has it"; "lets use that oxford savegame as a good stress test for a fight--I'm worried that's where we get
+serious lag and need to optimize drawing routines".
+
+**The Oxford stress** (the user's save, a Centurion at Oxford; scratch rigs: launch, Oxford's own traffic, 0-8 more
+pirates, guns held, a missile every 3 s): at the page's 30,000 cycles a fight of five more fell to 19-21 frames a
+second.  The profile of it (the emulated cycles by routine, 18 s): drawing a sixth; over half the collision tests' and
+the AI's vector maths -- seg039:00D4 a pair's set-up, seg115:02DD a length (seg115:0133 / 0217 to bring a vector into
+range, seg095:0247 its root, seg128:02F6 a 20-step bit-by-bit square root: 13% alone), seg095:02DC an absolute value,
+seg128:0296 / 0390 / 0450, seg115:0962.  And in quiet space two thirds of the emulated CPU spun in the frame wait
+(seg075:062B).
+
+**The twins** (src/cpu/wcnet_priv_native.cpp): twelve routines -- those ten and the two plain copies, seg181:000A (a
+bitmap's clip filled) and seg205:0002 (the spans to the screen).  At a routine's entry the twin works out everything
+it would leave: what it writes, all its registers (the high halves too), and its own stack below the stack pointer --
+its pushes, locals, return addresses and its callees' frames, because the game reads such stack later (poisoning that
+stack after each call in a scratch build made a run diverge within 20 s; poisoning the flags did not: no caller reads
+them, and they are not made).  It writes all that and returns as the routine's retf.  A routine whose code is not the
+file's (DOS's relocations taken off), memory not mapped, operands overlapping, the game's own error, a loop that would
+not end, more than the twin's caps: the game's own code runs.  WCPRIVTWINS=0 the game's code, =check the game's code
+with the twin's answer compared at each return.  The wait: while its clock has not moved on, the slice's remaining
+cycles are skipped, as a hlt's are (WCPRIVIDLE=0: the spin).
+
+**How they were checked.**  Each twin against the executable's own bytes run by unicorn on random inputs and random
+stack (scratch twindiff.py, in design/privateer-hires/research): every register, every byte written, the 128 bytes of
+stack below the entry -- millions of calls, none differing; two bugs planted on purpose were each caught at once.  In
+the game, the check: 15 million calls in Oxford fights compared, none differing.
+
+**Measured**, natively at 30,000 cycles:
+
+| | the game's code | the twins |
+|---|---|---|
+| Oxford, 5 pirates more, solo | 26.5 (19 the worst second) | 28.6 (28) |
+| Oxford, 8 more, solo | 25.7 (18) | 28.6 (27) |
+| Oxford, 7 more, a room of two (the host) | 26.9 (13) | 28.6 (28) |
+| eight pilots, load.sh | 25.6-27.9 | 27.8-28.6, no errors |
+
+**The near heap at the full rate.**  The user doubted that frames could cost memory ("it's just sleeping less").  An
+ordinary fight's use does not change with the rate (section 19).  But with seven pirates more than the game itself
+puts there, solo, the game's own code at the full rate -- given 60,000 cycles, no twins -- ran out (error 1303 at 51 s;
+the same fight at 26 frames a second did not): the AI's shots are per frame, and a heap of 17 KB holds only so many
+bolts.  In a room the bolt collector (section 18) holds it: the room of two above, its host's heap never under 3,100.
+Solo is the game as it is (section on rooms of one): nothing more is done there, and the game alone never fields that
+many.

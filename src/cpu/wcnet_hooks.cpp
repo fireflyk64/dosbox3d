@@ -33,6 +33,7 @@
 #include "wcnet_priv.h"
 #include "wcnet_tv.h"
 #include "wcnet_rap.h"
+#include "wcnet_priv_hires.h"
 #include "wcnet_tiedemo.h"
 #include "wcnet_ipx.h"
 #include "paging.h"
@@ -412,6 +413,7 @@ static KBD_KEYS script_key(const std::string &name) {
         { "right", KBD_right }, { "comma", KBD_comma }, { "period", KBD_period }, { "equals", KBD_equals },
         { "minus", KBD_minus }, { "backslash", KBD_backslash }, { "kp0", KBD_kp0 }, { "kpperiod", KBD_kpperiod },
         { "kpmultiply", KBD_kpmultiply }, { "bracketleft", KBD_leftbracket }, { "bracketright", KBD_rightbracket },
+        { "grave", KBD_grave },         // (Privateer's high-resolution picture flipped)
         { "alt", KBD_leftalt },         // (+alt, a letter, -alt: RetroVega's Alt+C cloak)
         { "ctrl", KBD_leftctrl }, { "shift", KBD_rightshift },     // (Raptor's fire and mega bomb)
     };
@@ -2200,6 +2202,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_stick(double x, double y) {
 }
 // Privateer's pointer (the page's "Kbd + mouse (shown)" or "Keyboard + mouse"): 1 a ring in flight and a white one on
 // the options screen, 0 the game's own (none, black); a negative value only asks.
+extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_hires(int on) {
+    if (on >= 0) {
+        wc::priv_hires_set(on != 0);    // (the page's "High resolution", while flying; WCPRIVHIRES at the launch)
+    }
+    return wc::priv_hires_on() ? 1 : 0;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_pointer(int shown) {
     if (shown >= 0) {
         wc::priv_pointer_set(shown != 0);
@@ -2499,6 +2508,10 @@ bool wc_net_pointer_pixels(int *x0, int *y0, Bit16u rows[16]) {
 
 bool wc_net_key_filter(int kbdKey, bool pressed) {
     using namespace wc;
+    if (kbdKey == KBD_grave && priv_found()) {
+        if (pressed) priv_hires_flip();     // (Privateer: ` flips the high-resolution picture; the game has no use for it)
+        return true;
+    }
     if (priv_controls_key(kbdKey, pressed)) {
         return true;    // (Privateer's flight: the arrows ramped, wcnet_priv_controls.cpp)
     }
@@ -2656,6 +2669,11 @@ Bitu wc_net_hook_exit(Bit32u ip) {
     // (Terminal Velocity's native drawing and frame cap: made here in the core, as natively -- they wait on nothing
     // -- not from the main loop: some thousands a frame)
     if (ip >= 0x10000 && wc_net_countdown >= 0 && (wc::tv_fast_hook(ip) || wc::rap_fast_hook(ip))) {
+        return 0;
+    }
+    // (Privateer's drawing calls for its 640 x 480 picture, its native twins and its idled wait: some thousands a
+    // frame, all made here in the core)
+    if (ip < 0x10000 && wc_net_countdown >= 0 && wc_net_watch[ip] && wc::priv_core_hook(ip)) {
         return 0;
     }
     PhysPt at = SegPhys(cs) + ip;

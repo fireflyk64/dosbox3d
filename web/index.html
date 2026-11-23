@@ -245,6 +245,11 @@
      expects when it places a finger) */
   #screen:fullscreen { width: 100vw; height: 100vh; background: black; }
   #screen:fullscreen #canvas { width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain; outline: none; }
+  /* (a game stretched to its monitor's shape, the registry's `stretch`: the canvas is that shape itself, as large as
+     the screen allows, and the picture fills it; contain would keep the emulator's 640 x 400) */
+  html.stretch #screen:fullscreen #canvas { position: absolute; inset: 0; margin: auto; object-fit: fill;
+    width: min(100vw, calc(100vh * var(--screen-w, 640) / var(--screen-h, 400)));
+    height: min(100vh, calc(100vw * var(--screen-h, 400) / var(--screen-w, 640))); }
   #log { flex: 1 1 300px; min-height: 160px; max-height: 402px; overflow: auto; padding: 6px 8px; background: #010403; border: 1px solid var(--line2);
     color: #6fd398; font: 11px/1.35 var(--mono); white-space: pre-wrap; word-break: break-all; }
   #perf { min-height: 16px; margin-top: 5px; color: var(--muted); font-size: 11px; }
@@ -411,6 +416,7 @@
           <label id="difficultyLabel" hidden title="How hard the game is: easy, medium or hard. The game's own bunk menu sets the same. In a room the host's counts, also while flying, from the next flight">Difficulty
             <select id="difficulty"><option value="easy">easy</option><option value="medium">medium</option><option value="hard">hard</option></select></label>
           <label class="check" id="fullStartLabel" title="Fly opens the game full screen. Each pilot's own choice, kept while this tab is open; the Full screen button beside Fly does it any time, and holding Esc leaves it"><input type="checkbox" id="fullStart" checked> Full screen</label>
+          <label class="check" id="privHiresLabel" hidden title="Privateer at 640 x 480 in flight: the ships from their full art at twice the detail, the lasers sharp, the crosshair and target brackets a pixel wide, the cockpit's window smooth. Your own screen only. The ` key flips it while you fly (with Voice on push to talk that key talks: use this box, which works while flying too). Still being worked on, so off unless ticked. Remembered in this browser"><input type="checkbox" id="privHires"> High resolution (2x)</label>
           <label id="privFaceLabel" hidden title="Your face on the others' comm screens when you talk (the 0 key), and what the game takes your ship for there. Remembered in this browser; change it before any launch">Face
             <select id="privFace">
               <option value="MER_DP:47">Merchant (woman)</option>

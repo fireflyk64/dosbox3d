@@ -1877,14 +1877,17 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
                         lastY0 = y0;
                         render.scale.clearCache = true;
                     }
-                    const int sx = sdl.draw.width >= 640 ? 2 : 1, sy = sdl.draw.height >= 400 ? 2 : 1;
+                    const int sx = sdl.draw.width >= 640 ? 2 : 1, height = (int)sdl.draw.height;
                     const Bitu step = textPitch / sdl.draw.width;
                     for (int r = 0; r < 16; r++) {
+                        // (the rows a row of the game's 200 is shown as: 2 at 400; 2 or 3 at Privateer's 480, as
+                        // wcnet_priv_hires.cpp's make_tables has them)
+                        const int top = (2 * (y0 + r) * height + 199) / 400, sy = (2 * (y0 + r + 1) * height + 199) / 400 - top;
                         for (int k = 0; k < 16; k++) {
                             if (!(rows[r] & (0x8000 >> k))) continue;
                             for (int dy = 0; dy < sy; dy++) {
                                 for (int dx = 0; dx < sx; dx++) {
-                                    const int x = (x0 + k) * sx + dx, y = (y0 + r) * sy + dy;
+                                    const int x = (x0 + k) * sx + dx, y = top + dy;
                                     if (x < 0 || y < 0 || x >= (int)sdl.draw.width || y >= (int)sdl.draw.height) continue;
                                     Bit8u *px = textPixels + y * textPitch + x * step;
                                     if (step >= 3) { px[0] = 0xEE; px[1] = 0xEE; px[2] = 0xEE; }
@@ -2603,10 +2606,12 @@ static void HandleMouseMotion(SDL_MouseMotionEvent * motion) {
 #ifdef EMSCRIPTEN
 		/* SDL measures a finger over the whole canvas; in full screen the page shows the picture letterboxed in it
 		 * (object-fit: contain), so the finger is taken over the picture: its share of the canvas's width
-		 * (pillarboxed, given negative) or of its height (letterboxed) */
+		 * (pillarboxed, given negative) or of its height (letterboxed).  A picture that fills its canvas, whatever
+		 * the two shapes (Privateer's 640 x 400 stretched to 4:3), has no bars */
 		double share = EM_ASM_DOUBLE({
 			var c = Module['canvas'];
 			if (!c || !c.width || !c.height) return 1;
+			if (getComputedStyle(c).objectFit !== 'contain') return 1;
 			var b = c.getBoundingClientRect();
 			if (!b.width || !b.height) return 1;
 			var a = c.width / c.height;     /* (no commas: they would split the macro's argument) */

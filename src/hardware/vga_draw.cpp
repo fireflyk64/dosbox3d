@@ -25,6 +25,7 @@
 #include "../gui/render_scalers.h"
 #include "vga.h"
 #include "pic.h"
+#include "../cpu/wcnet_priv_hires.h"
 
 //#undef C_DEBUG
 //#define C_DEBUG 1
@@ -835,7 +836,11 @@ static void VGA_VerticalTimer(Bitu /*val*/) {
 		break;
 	}
 	//Check if we can actually render, else skip the rest (frameskip)
-	if (vga.draw.vga_override || !RENDER_StartUpdate())
+	if (vga.draw.vga_override) {
+		wc_priv_hires_vsync();	// (Privateer's 640 x 480 picture, when the override is its own)
+		return;
+	}
+	if (!RENDER_StartUpdate())
 		return;
 
 	vga.draw.address_line = vga.config.hlines_skip;
