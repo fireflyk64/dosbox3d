@@ -1347,3 +1347,9 @@ are cleared and the art drawn in the colours of the sprite's own pixels at (22, 
 outline, the canopy's, its fill: damage shows); otherwise the blocks stay.  Measured (scratch ship1.sh): both Talons
 drawn with every pixel mirrored, only the front differs from before, the Centurion and Gothri unchanged, no game
 errors.
+Then the user: "The top of the talon cockpit is one pixel too high which means the wings poke through ... Also the
+bottom two pixels I believe are one too low and should be moved up by one pixel so they are next to their neighbors".
+The wings' struts end at the middle of the bar's end pixel (fine row 59) and the bar had been laid half a pixel
+outward, on row 58: the struts' last pixel sat inside the bulb.  The bulb's upper curve now moves outward only across
+(and never rises above the top row's middles: the spline overshoots), so the bar is on row 59; the tip's lowest two
+pixels are moved up to their neighbours' row (a flat bottom of four).

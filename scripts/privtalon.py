@@ -7,7 +7,10 @@
 # the game's outline pixels (its flat top, out to the game's widest row, back into the engines; below them a U to the
 # tip), the canopy the same with its fill, the engines and exhausts the game's blocks.  Each curve is laid half a fine
 # pixel outward of the game pixels' middles (the shape keeps its size), drawn on the left half and mirrored pixel for
-# pixel (u + u' = 51 in the part's frame: fine X and 103 - X).  The colours are the sprite's own at three pixels (its
+# pixel (u + u' = 51 in the part's frame: fine X and 103 - X).  The bulb's top is laid on the game pixels' middle row,
+# not above it (the user: "The top of the talon cockpit is one pixel too high which means the wings poke through": the
+# wings' struts end at those middles), and its tip's last two pixels on their neighbours' row ("the bottom two pixels
+# ... should be moved up by one pixel so they are next to their neighbors").  The colours are the sprite's own at three pixels (its
 # damage shows); the art is used only where the part's lit pixels are exactly GAME below.
 #   python3 scripts/privtalon.py > src/cpu/wcnet_priv_talon.h
 import math
@@ -55,9 +58,9 @@ def catmull(P, n=12):
     return out
 
 
-def thin(pts, centre):
-    """one fine pixel wide: half a pixel outward from the shape's middle, each point's pixel, gaps stepped, a pixel
-    between two that touch diagonally dropped; the left half, then its mirror"""
+def thin(pts, centre, sideways=False):
+    """one fine pixel wide: half a pixel outward from the shape's middle (sideways only: across, not up or down), each
+    point's pixel, gaps stepped, a pixel between two that touch diagonally dropped; the left half, then its mirror"""
     dense = []
     for i in range(len(pts) - 1):
         (x0, y0), (x1, y1) = pts[i], pts[i + 1]
@@ -70,7 +73,7 @@ def thin(pts, centre):
             continue
         dx, dy = a - centre[0], b - centre[1]
         L = math.hypot(dx, dy) or 1.0
-        q = (int(math.floor(a + 0.5 * dx / L)), int(math.floor(b + 0.5 * dy / L)))
+        q = (int(math.floor(a + 0.5 * dx / L)), int(math.floor(b + (0 if sideways else 0.5 * dy / L))))
         if q[0] >= AX or (path and path[-1] == q):
             continue
         while path and (abs(path[-1][0] - q[0]) > 1 or abs(path[-1][1] - q[1]) > 1):
@@ -101,6 +104,7 @@ def design():
     mirror = lambda P: [(MIRROR + 1 - a, b) for a, b in P]
     upper = catmull([G(25.5, 29), G(22, 29), (42.6, 60.6), (40.7, 63.2), (39.6, 66.2), (39.2, 69.0), (39.8, 71.6), G(20, 36)])
     lower = catmull([G(22.6, 39.2), G(23, 40), G(23.2, 42), (48.6, 87.6), (50.0, 89.8), G(25.5, 45.2)])
+    upper = [(a, max(b, G(0, V0)[1])) for a, b in upper]      # (never above the top row's middles: the curve overshoots)
     can = catmull([G(25.5, 32), G(24, 32), (46.6, 66.6), (46.6, 70.0), (48.0, 73.0), (50.2, 74.9), G(25.5, 37.2)])
     bulb, canopy = (52.0, 72.0), (52.0, 66.0)
     art = {}
@@ -111,7 +115,10 @@ def design():
                 art[(X, Y)] = 'f'
     for p in thin(can, canopy):
         art[p] = 'k'
-    for p in thin(upper, bulb) | thin(lower, bulb):
+    tip = thin(lower, bulb)
+    low = max(Y for X, Y in tip)
+    tip = {(X, Y - 1 if Y == low else Y) for X, Y in tip}    # (the tip's last pixels on their neighbours' row)
+    for p in thin(upper, bulb, sideways=True) | tip:
         art[p] = 'o'
     # (where the game's blocks stay, nothing of the art)
     for (X, Y) in list(art):
