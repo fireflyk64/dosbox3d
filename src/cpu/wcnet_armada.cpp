@@ -232,6 +232,20 @@ void loop_end() {
     const bool shift = held(0x2A) || held(0x36);
     const int x = ramped(AXIS_X, shift, now), y = ramped(AXIS_Y, shift, now);
     const PhysPt packet = frame_packet();
+    {
+        // WCNET_ARM_PACKET=1 (a test aid): the packet's stick bytes as the game made them (the stick, the keys), when they change
+        static int on = -1;
+        static Bit32u was = ~0u;
+        if (on < 0) on = getenv("WCNET_ARM_PACKET") != NULL;
+        if (on && packet) {
+            const Bit32u now = mem_readb(packet + 3) | (mem_readb(packet + 4) << 8) | (mem_readb(packet + 5) << 16);
+            if (now != was) {
+                was = now;
+                wclog(1, "Armada packet: %02x %02x %02x (x %+d, y %+d)", now & 0xFF, (now >> 8) & 0xFF, now >> 16,
+                      (int)(Bit8s)((now & 0x7F) << 1) / 2, (int)(Bit8s)(((now >> 8) & 0x7F) << 1) / 2);
+            }
+        }
+    }
     if (g_packet && g_packet != packet && !g_chainTold) {
         g_chainTold = true;     // (the keys wrote somewhere else: the drag's packet would be wrong; said once)
         wclog(0, "Armada: the keys wrote the packet at %05X, the frame's is at %05X", (unsigned)g_packet, (unsigned)packet);

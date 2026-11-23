@@ -985,8 +985,8 @@ function liveMission() {
 function renderMission() {
   // (a game the room does not fly, Privateer's: the row for its Face box alone -- and Full screen -- the room's own
   // choices hidden; the Face box was hidden with the whole row before: the user, 2026-11-09, "I also don't see an
-  // option to select comm portrait")
-  $("missionRow").hidden = !lobbyFlies() && !isPriv() && !isTvRoom();
+  // option to select comm portrait"); Armada's for its High resolution and Invert mouse boxes)
+  $("missionRow").hidden = !lobbyFlies() && !isPriv() && !isTvRoom() && !isArmada();
   loadCampaignManifest(gameById(lobbyGameId()));
   wordCampaign();
   buildMissionMenu();
@@ -1015,7 +1015,9 @@ function renderMission() {
   // (Privateer: Face, yours on the others' comm screens, in the Conn and Collide choices' place)
   $("privFaceLabel").hidden = !isPriv();
   $("privHiresLabel").hidden = !isPriv();
-  $("privMouseLabel").hidden = !isPriv();
+  $("privMouseLabel").hidden = !isPriv() && !isArmada();
+  $("privMouseLabel").title = isArmada() ? ARM_MOUSE_TITLE : PRIV_MOUSE_TITLE;
+  $("armHiresLabel").hidden = !isArmada();
   $("privFFLabel").hidden = !isPriv() || one;
   $("privFF").disabled = !isHost();       // (the host's counts, as Collide's)
   // (Terminal Velocity: the craft each pilot flies as in the others' games, the host's choice)
@@ -2289,6 +2291,21 @@ $("privMouseInvert").addEventListener("change", () => {
   const M = running && window.DOSBox;
   if (M && M._wc_web_priv_mouse_invert && isPriv()) M._wc_web_priv_mouse_invert(on ? 1 : 0);
 });
+// The same box for Armada's right-button drag (the user, 2026-11-22: "mouse (both inverted and otherwise--probably
+// default non-inverted like WC1)"): unticked a drag up raises the nose; ticked as a flight stick, the arrows' way
+const PRIV_MOUSE_TITLE = $("privMouseLabel").title;
+const ARM_MOUSE_TITLE = "Armada's mouse steering (hold the right button and drag). Unticked: dragging up raises the nose. Ticked: as a flight stick, the arrow keys' way (dragging up, the nose goes down). Works while flying too; remembered in this browser";
+// Armada at 640 x 400 (the user, 2026-11-22: "lets figure out how to double the screen x and y for armada"; "It should
+// be toggleable from the browser too"): off unless ticked, WCARMHIRES at the launch and wc_web_arm_hires while flying;
+// the ` key flips it in the emulator (src/cpu/wcnet_armada_hires.cpp)
+const ARM_HIRES_KEY = "wc:armHires";
+try { $("armHires").checked = localStorage.getItem(ARM_HIRES_KEY) === "1"; } catch (e) { /* off */ }
+$("armHires").addEventListener("change", () => {
+  const on = $("armHires").checked;
+  try { localStorage.setItem(ARM_HIRES_KEY, on ? "1" : "0"); } catch (e) { /* not kept */ }
+  const M = running && window.DOSBox;
+  if (M && M._wc_web_arm_hires && isArmada()) M._wc_web_arm_hires(on ? 1 : 0);
+});
 // (Privateer's friendly fire between pilots, the host's counts: src/cpu/wcnet_priv_session.cpp, ff_from_env)
 const PRIV_FF_KEY = "wc:privFF";
 try { const v = localStorage.getItem(PRIV_FF_KEY); if (["targeted", "always", "never"].includes(v)) $("privFF").value = v; } catch (e) { /* the first */ }
@@ -2376,16 +2393,18 @@ function armadaMouseInput() {
   if (!send) return;
   const steer = window.DOSBox?._wc_web_arm_steer;
   const keys = [];
+  // (the game's pitch is a flight stick's: its Up arrow dives; a drag up raises the nose unless Invert mouse is ticked)
+  const pitch = $("privMouseInvert").checked ? 1 : -1;
   if (armadaDrag) {
     if (!steer) {
       if (armadaDrag.x < -12) keys.push("kp4");
       if (armadaDrag.x > 12) keys.push("kp6");
-      if (armadaDrag.y < -12) keys.push("kp8");
-      if (armadaDrag.y > 12) keys.push("kp2");
+      if (pitch * armadaDrag.y < -12) keys.push("kp8");
+      if (pitch * armadaDrag.y > 12) keys.push("kp2");
     }
     if (armadaDrag.fire) keys.push("space");
   }
-  if (steer) steer(armadaDrag ? armadaDragAxis(armadaDrag.x) : 0, armadaDrag ? armadaDragAxis(armadaDrag.y) : 0, armadaDrag ? 1 : 0);
+  if (steer) steer(armadaDrag ? armadaDragAxis(armadaDrag.x) : 0, armadaDrag ? pitch * armadaDragAxis(armadaDrag.y) : 0, armadaDrag ? 1 : 0);
   for (const key of armadaMouseKeys) if (!keys.includes(key)) send(KEY[key], 0);
   for (const key of keys) if (!armadaMouseKeys.has(key)) send(KEY[key], 1);
   armadaMouseKeys.clear();
@@ -2524,6 +2543,7 @@ async function start(fromGesture) {
     if (isPriv()) env.WCPRIVPOINTER = privPointer;
     if (isPriv()) env.WCPRIVMOUSEINVERT = $("privMouseInvert").checked ? "1" : "0";
     if (isPriv() && $("privHires").checked && !PRIV_CLASSIC) env.WCPRIVHIRES = "1";
+    if (isArmada() && $("armHires").checked) env.WCARMHIRES = "1";
     if (isPriv() && PRIV_CLASSIC) env.WCPRIVCLASSIC = "1";
     if (isPriv() && together) env.WCPRIVFF = $("privFF").value;
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;

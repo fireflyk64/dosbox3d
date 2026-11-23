@@ -1,6 +1,9 @@
 // Two browsers in one LobbyLink room, exercising the game's own network menus.
 // PLAYWRIGHT_DIR points to a directory with Playwright installed.
 // MODE=arcade or MODE=strategy exercises Proving Grounds or Armada's strategy mode.
+// HIRES=1: the host flies with High resolution (2x) ticked (its 640x400 picture checked, the ` key flipping it);
+// INVERT=1: the host's Invert mouse ticked (a drag up then dives, as a flight stick). Both pilots log the emulator's
+// sound (WCNET_AUDIOLOG): the music's OPL writes and the Sound Blaster's samples are checked, and the page's audio.
 // node scripts/web-armada.mjs PAGE_URL LOBBY_URL GOG_INSTALLER [GUEST_ZIP]
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -18,6 +21,8 @@ const mode = process.env.MODE || "battle";
 assert(["battle", "strategy", "arcade"].includes(mode), `unknown MODE ${mode}`);
 const arena = mode === "arcade";
 const strategy = mode === "strategy";
+const hires = process.env.HIRES === "1";
+const invert = process.env.INVERT === "1";
 const program = arena ? "armadapg" : "armada";
 const room = `${arena ? "PG" : "ARM"}-${mode}-${Date.now()}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || "/usr/bin/google-chrome",
@@ -45,8 +50,10 @@ const checkpoints = strategy ? { lobby: 88, turn1: 108, turn2: 126 }
 async function pilot(who, files) {
   const page = await browser.newPage({ viewport: { width: 1200, height: 960 } });
   const logs = [];
+  const times = [];
   page.on("console", (line) => {
     logs.push(line.text());
+    times.push(Date.now());
     if (/IPX|extract|lobby: joined|failed|key script/.test(line.text())) console.log(`${who}: ${line.text()}`);
   });
   page.on("pageerror", (error) => console.error(`${who}: ${error.message}`));
@@ -58,6 +65,8 @@ async function pilot(who, files) {
   if (who === "guest") url.searchParams.set("room", room);
   url.searchParams.set("env.WCNET_KEYSCRIPT_FROM", "boot");
   url.searchParams.set("env.WCNET_LOG", "2");
+  url.searchParams.set("env.WCNET_AUDIOLOG", "1");
+  url.searchParams.set("env.WCNET_ARM_FPS", "1");
   const route = [...entry, typeAt(arena ? 23 : 33, who), ...routes[who]];
   if (strategy) route.push(clickAt(104, 0.82, 0.735), clickAt(114, 0.78, 0.925), clickAt(118, 0.48, 0.35));
   else {
@@ -78,7 +87,24 @@ async function pilot(who, files) {
   assert.equal(await page.locator("#seats").getAttribute("max"), arena ? "6" : "2");
   if (arena) assert.equal(await page.locator("#seats").getAttribute("min"), "2");
   await page.locator("#fullStart").evaluate((el) => { if (el.checked) el.click(); });
-  return { who, page, logs };
+  return { who, page, logs, times };
+}
+
+// In the room: the High resolution and Invert mouse boxes shown, unticked by default; the host's ticked as asked
+async function roomBoxes({ who, page }) {
+  const why = await page.evaluate(() => {
+    const el = document.getElementById("armHiresLabel");
+    const chain = [];
+    for (let e = el; e; e = e.parentElement) chain.push(`${e.tagName}#${e.id}${e.hidden ? "[hidden]" : ""}:${getComputedStyle(e).display}`);
+    return { chain: chain.slice(0, 5), program: document.getElementById("program").value, fullStart: document.getElementById("fullStartLabel").offsetParent !== null };
+  });
+  console.log(`${who}: the boxes' state ${JSON.stringify(why)}`);
+  assert.equal(await page.locator("#armHiresLabel").isVisible(), true, `${who}: the High resolution box is shown for Armada`);
+  assert.equal(await page.locator("#privMouseLabel").isVisible(), true, `${who}: the Invert mouse box is shown for Armada`);
+  assert.equal(await page.locator("#armHires").isChecked(), false, `${who}: High resolution is off unless ticked`);
+  assert.equal(await page.locator("#privMouseInvert").isChecked(), false, `${who}: the mouse is not inverted unless ticked`);
+  if (who === "host" && hires) await page.check("#armHires");
+  if (who === "host" && invert) await page.check("#privMouseInvert");
 }
 
 async function screenshotAt({ who, page }, name, time) {
@@ -111,7 +137,17 @@ async function flyWithMouse({ page, logs }) {
   await canvas.screenshot({ path: path.join(out, "host-mouse-flight.png") });
   await page.mouse.up();
   await page.mouse.up({ button: "right" });
-  const { keys, steer } = await page.evaluate(() => ({ keys: window.mouseFlightKeys, steer: window.mouseFlightSteer }));
+  // a drag up: the nose up (the steer's y the Down arrow's sign, +) unless Invert mouse is ticked
+  await page.evaluate(() => { window.mouseFlightPitch = window.mouseFlightSteer.length; });
+  await page.mouse.move(x + width / 2, y + height / 2);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(x + width / 2, y + height / 2 - 40, { steps: 8 });
+  await page.waitForTimeout(600);
+  await page.mouse.up({ button: "right" });
+  const { keys, steer, pitchFrom } = await page.evaluate(() => ({ keys: window.mouseFlightKeys, steer: window.mouseFlightSteer, pitchFrom: window.mouseFlightPitch }));
+  const pitch = steer.slice(pitchFrom).filter(([, , on]) => on === 1).map(([, sy]) => sy);
+  assert(pitch.length && (invert ? Math.min(...pitch) < -0.3 : Math.max(...pitch) > 0.3),
+    `a drag up ${invert ? "dived (Invert mouse)" : "raised the nose"} (${JSON.stringify(pitch.slice(-4))})`);
   assert(keys.some(([k, down]) => k === KEY.space && down === 1), "mouse flight pressed Space");
   assert(keys.some(([k, down]) => k === KEY.space && down === 0), "mouse flight released Space");
   assert(!keys.some(([k]) => [KEY.kp4, KEY.kp6, KEY.kp8, KEY.kp2].includes(k)), "the drag steers without the keypad");
@@ -134,6 +170,7 @@ try {
   for (const { page } of [host, guest]) {
     await page.waitForFunction(() => document.querySelectorAll("#roster .dot.up").length === 2);
   }
+  for (const p of [host, guest]) await roomBoxes(p);
   await host.page.click("#fly");
   for (const [name, time] of Object.entries(checkpoints)) {
     await Promise.all([host, guest].map((p) => screenshotAt(p, name, time)));
@@ -143,6 +180,7 @@ try {
     await guest.page.locator("#canvas").press("ArrowRight", { delay: 850 });
     await guest.page.locator("#canvas").press("Space", { delay: 850 });
     await guest.page.locator("#canvas").screenshot({ path: path.join(out, "guest-keyboard-flight.png") });
+    if (process.env.FLY_WAIT) await host.page.waitForTimeout(Number(process.env.FLY_WAIT));   // (flying on: the speed)
   }
   for (const [pilot, other] of [[host, "GUEST"], [guest, "HOST"]]) {
     assert(pilot.logs.some((line) => line.includes(`IPX: ${other} is on the network`)), `${pilot.who} saw the other IPX node`);
@@ -160,7 +198,46 @@ try {
     const [, first, last] = /ramped ([+-]\d+) to ([+-]\d+)/.exec(ramp);
     assert(Number(first) > 0 && Number(first) <= Math.ceil(full / 9) && Number(last) === full, `ramped from a ninth to the stop (${ramp})`);
   }
-  console.log(`ARMADA PAGE OK (${mode}). Screenshots in ${out}`);
+  // the emulator's speed in the browser while flying: its fps lines come every 5 emulated seconds
+  for (const p of [host, guest]) {
+    const at = p.logs.map((l, i) => [l, p.times[i]]).filter(([l]) => /Armada fps: [0-9.]+/.test(l));
+    if (at.length >= 2) {
+      const span = (at.at(-1)[1] - at[0][1]) / 1000, emulated = 5 * (at.length - 1);
+      console.log(`${p.who}: flying at ${at.slice(-3).map(([l]) => /fps: ([0-9.]+)/.exec(l)[1]).join(", ")} fps, ${(emulated / span).toFixed(2)} emulated s a second`);
+    }
+  }
+  // the emulator's sound: the music on the OPL and the effects on the Sound Blaster, and the page's audio running
+  for (const p of [host, guest]) {
+    const audio = p.logs.filter((line) => /^audio [0-9.]+s opl=/.test(line));
+    assert(audio.length > 10, `${p.who}: the emulator's sound log`);
+    assert(audio.some((line) => Number(/opl=(\d+)/.exec(line)[1]) > 0), `${p.who}: the music played (OPL writes)`);
+    const sb = audio.map((line) => /\bSB=(\d+)\/(\d+)/.exec(line)).filter(Boolean);
+    assert(sb.some(([, energy, fed]) => Number(energy) > 0 && Number(fed) > 0), `${p.who}: the Sound Blaster played (${audio.at(-1)})`);
+    const ctx = await p.page.evaluate(async () => {
+      const c = window.DOSBox && window.DOSBox.SDL2 && window.DOSBox.SDL2.audioContext;
+      if (!c) return null;
+      const t0 = c.currentTime;
+      await new Promise((r) => setTimeout(r, 500));
+      return { state: c.state, advanced: c.currentTime - t0 };
+    });
+    assert(ctx && ctx.state === "running" && ctx.advanced > 0.2, `${p.who}: the page's sound is running (${JSON.stringify(ctx)})`);
+  }
+  if (hires && !strategy) {
+    for (const said of ["Armada: the first frame at 640x400", "Armada: the flight's picture is 640x400"]) {
+      assert(host.logs.some((line) => line.includes(said)), `the host's emulator said "${said}"`);
+    }
+    assert(!guest.logs.some((line) => line.includes("the first frame at 640x400")), "the guest's picture stayed the game's own");
+    await host.page.locator("#canvas").press("Backquote");
+    await host.page.waitForTimeout(800);
+    await host.page.locator("#canvas").screenshot({ path: path.join(out, "host-hires-off.png") });
+    await host.page.locator("#canvas").press("Backquote");
+    await host.page.waitForTimeout(800);
+    await host.page.locator("#canvas").screenshot({ path: path.join(out, "host-hires-on.png") });
+    for (const said of ["the high-resolution picture off", "the high-resolution picture on"]) {
+      assert(host.logs.some((line) => line.includes(said)), `the \` key: "${said}"`);
+    }
+  }
+  console.log(`ARMADA PAGE OK (${mode}${hires ? ", hi-res" : ""}${invert ? ", inverted mouse" : ""}). Screenshots in ${out}`);
 } finally {
   await browser.close();
 }

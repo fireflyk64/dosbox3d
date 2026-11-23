@@ -15,6 +15,7 @@
 #   CYCLES=     the emulated CPU (default 25000)
 #   ENV=        more of the environment ("WCPORT=7400 WCHOST=127.0.0.1 WCCALLSIGN=GUEST")
 #   KEEP=1      keep $OUT/game from an earlier run
+#   JOYPORT=1   the game port as the page's built-in pad has it (counting, timed=false: !joystick=1, !joy=x:y move it)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/armadarun}; mkdir -p $OUT; rm -f $OUT/*.ppm $OUT/*.txt
 DUR=${1:-60}; SCRIPT=${2:-}
@@ -54,6 +55,7 @@ dma=1
 hdma=5
 [ipx]
 ipx=$ipx
+$( [ "${JOYPORT:-0}" = 1 ] && printf '[joystick]\njoysticktype=none\ntimed=false\n' )
 [autoexec]
 @echo off
 mount c $OUT/game
