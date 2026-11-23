@@ -838,6 +838,30 @@ bool art_word(const Target &t, Bit16u caller, const Shape &s, int x, int y) {
 // corners were tried and taken out ("the gothri and dralthi were acceptable before and this edit made it way worse").
 // Worked out once a shape (its hash), 8 kept; shapes over 96 x 96 stay the game's blocks.
 
+// A part on this list is drawn with some of its pixels left out (runs down a column, the left side's, and their
+// mirror images about the art's middle: u + u' = mirror) and the table's own straight lines in their place (the left
+// side's, and their mirror images), each side's in the colour of its own pixel at (sampleU, sampleV) -- one of those
+// left out: its damage shows.  The Centurion's nose (the user: "centurion should have a smoother curve towards the
+// front part of the cockpit not a harsh triangle", "just needs to pull the nose triangle towards the center so it's
+// more sloped", "so the slope starts at the wings", "maybe as two slopes--one to the lower horizontal bar, then
+// another one to the corner of the wing that touches the body"): its middle part (82 pixels, the nose and its tip)
+// has each side straight down column 25 from the wing's corner (row 24) to row 34 and then one slope to the tip
+// (29, 46); drawn instead from the wing's corner (25, 24) to the lower bar's end (27, 40), and from there to the tip.
+struct WireRun { signed char u, v0, v1; };
+struct WireEdit {
+    Bit32u part;
+    int mirror, sampleU, sampleV;
+    WireRun drop[8];
+    int drops;
+    signed char lineU[6], lineV[6];
+    int points;
+};
+const WireEdit kWireEdits[] = {
+    { 0x92E829FBu, 59, 25, 30, { { 25, 25, 34 }, { 26, 35, 38 }, { 27, 39, 39 }, { 27, 41, 42 }, { 28, 43, 45 } }, 5,
+      { 25, 27, 29 }, { 24, 40, 46 }, 3 },
+};
+enum { kWireEditCount = sizeof(kWireEdits) / sizeof(kWireEdits[0]) };
+
 struct Wireframe {
     Bit32u hash;
     int w, h;
@@ -875,7 +899,7 @@ void simplify(const std::vector<int> &cu, const std::vector<int> &cv, double tol
     }
 }
 
-void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
+void wire_make(const Shape &s, const std::vector<char> &block, int edit, int colL, int colR, Wireframe &out) {
     const int w = s.w, h = s.h, W = 2 * w, H = 2 * h;
     out.w = w;
     out.h = h;
@@ -1245,6 +1269,13 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
             }
         }
     }
+    if (edit >= 0 && edit < kWireEditCount) {     // (a part's own lines, both sides: before the mirror's copy)
+        const WireEdit &e = kWireEdits[edit];
+        for (int i = 0; i + 1 < e.points && i + 1 < 6; i++) {
+            drawf(2 * e.lineU[i] + 1, 2 * e.lineV[i] + 1, 2 * e.lineU[i + 1] + 1, 2 * e.lineV[i + 1] + 1, colL);
+            drawf(2 * (e.mirror - e.lineU[i]) + 1, 2 * e.lineV[i] + 1, 2 * (e.mirror - e.lineU[i + 1]) + 1, 2 * e.lineV[i + 1] + 1, colR);
+        }
+    }
     // a mirror image?  The axis (u + u' of a mirrored pair) near the middle that most of the outline agrees with
     int lit = 0, best = -1, bestAgree = -1;
     for (int i = 0; i < w * h; i++) lit += s.px[i] >= 0;
@@ -1348,16 +1379,36 @@ Bit32u part_mask_hash(const Shape &s) {
 
 Shape g_wireComp;
 std::vector<char> g_wireBlock;      // per pixel of it: from a part on the list above, drawn as the game's blocks
+int g_wireEdit = -1;                // the composite's part on kWireEdits (above wire_make), if one is
 bool g_wirePending = false;
 Target g_wireT;
 int g_wireX = 0, g_wireY = 0;
 
-void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y);
+void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y, int edit, int colL, int colR);
 
 void wire_flush() {
     if (!g_wirePending) return;
     g_wirePending = false;
-    shape_wire(g_wireT, g_wireComp, g_wireBlock, g_wireX, g_wireY);
+    if (g_wireEdit >= 0 && g_wireEdit < kWireEditCount) {
+        const WireEdit &e = kWireEdits[g_wireEdit];
+        Shape cut = g_wireComp;
+        const int w = cut.w, h = cut.h, ru = e.mirror - e.sampleU;
+        auto at = [&](int u, int v) { return u >= 0 && v >= 0 && u < w && v < h ? (int)cut.px[v * w + u] : -1; };
+        const int colL = at(e.sampleU, e.sampleV), colR = at(ru, e.sampleV);
+        if (colL >= 0 && colR >= 0) {
+            for (int i = 0; i < e.drops && i < 8; i++) {
+                for (int v = e.drop[i].v0; v <= e.drop[i].v1; v++) {
+                    const int us[2] = { e.drop[i].u, e.mirror - e.drop[i].u };
+                    for (int k = 0; k < 2; k++) {
+                        if (us[k] >= 0 && v >= 0 && us[k] < w && v < h) cut.px[v * w + us[k]] = (Bit16s)-1;
+                    }
+                }
+            }
+            shape_wire(g_wireT, cut, g_wireBlock, g_wireX, g_wireY, g_wireEdit, colL, colR);
+            return;
+        }
+    }
+    shape_wire(g_wireT, g_wireComp, g_wireBlock, g_wireX, g_wireY, -1, -1, -1);
 }
 
 void wire_gather(const Target &t, const Shape &s, int x, int y) {
@@ -1373,6 +1424,7 @@ void wire_gather(const Target &t, const Shape &s, int x, int y) {
         g_wireComp.stamp = 0;
         g_wireComp.px.assign(s.w * s.h, (Bit16s)-1);
         g_wireBlock.assign(s.w * s.h, 0);
+        g_wireEdit = -1;
         g_wireT = t;
         g_wireX = x;
         g_wireY = y;
@@ -1381,6 +1433,9 @@ void wire_gather(const Target &t, const Shape &s, int x, int y) {
     const Bit32u part = part_mask_hash(s);
     char keep = 0;
     for (size_t i = 0; i < sizeof(kWireBlockParts) / sizeof(kWireBlockParts[0]); i++) keep |= kWireBlockParts[i] == part;
+    for (int i = 0; i < kWireEditCount; i++) {
+        if (kWireEdits[i].part == part) g_wireEdit = i;
+    }
     for (size_t i = 0; i < s.px.size() && i < g_wireComp.px.size(); i++) {
         if (s.px[i] >= 0) {
             g_wireComp.px[i] = s.px[i];
@@ -1389,11 +1444,12 @@ void wire_gather(const Target &t, const Shape &s, int x, int y) {
     }
 }
 
-void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y) {
+void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y, int edit, int colL, int colR) {
     static Wireframe cache[kWireCache];
     static int used = 0, next = 0;
     Bit32u hash = shape_hash(s);
     for (size_t i = 0; i < block.size(); i++) hash = (hash ^ (Bit32u)block[i]) * 16777619u;
+    hash = (((hash ^ (Bit32u)(edit + 1)) * 16777619u ^ (Bit32u)(colL + 1)) * 16777619u ^ (Bit32u)(colR + 1)) * 16777619u;
     const Wireframe *wf = NULL;
     for (int i = 0; i < used && !wf; i++) {
         if (cache[i].hash == hash && cache[i].w == s.w && cache[i].h == s.h) wf = &cache[i];
@@ -1403,7 +1459,7 @@ void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block,
         next = (next + 1) % kWireCache;
         if (used < kWireCache) used++;
         made.hash = hash;
-        wire_make(s, block, made);
+        wire_make(s, block, edit, colL, colR, made);
         wf = &made;
     }
     const int X0 = 2 * (x - s.left), Y0 = 2 * (y - s.top), W = 2 * wf->w, H = 2 * wf->h;

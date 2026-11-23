@@ -1321,3 +1321,14 @@ anywhere in a picture moved them: leaving the Centurion's nose pixels out took t
 the whole region or piece (at most the picture) before judging it.  Thirteen ships drew differently (thin lines where
 the chance blocks were); the user, shown them side by side with the live ones: "Take the fixes".  The Python prototype
 (scratch wire2.py) had the same cut.
+
+**The Centurion's nose (2026-11-23).**  The user: "centurion should have a smoother curve towards the front part of the
+cockpit not a harsh triangle", "centurion just needs to pull the nose triangle towards the center so it's more sloped",
+"so the slope starts at the wings I believe", "maybe as two slopes--one to the lower horizontal bar, then another one
+to the corner of the wing that touches the body".  kWireEdits: a part (by its mask hash, as kWireBlockParts) drawn with
+runs of its pixels left out (the left side's, mirrored about the art's middle) and the table's own straight lines in
+their place, each side's in the colour of its own pixel at a sample place (one left out: its damage shows), drawn
+before the mirror's copy.  The Centurion's middle part (92E829FB, 82 pixels: the nose and its tip) loses each side's
+column 25 from row 25 to 34 and the steps below it to the tip, and gets two slopes: from the wing's corner (25, 24) to
+the lower bar's end (27, 40), and from there to the tip (29, 46).  Shown with and without (scratch cent-nose2.png), the
+user: "Yes, ship it".  With the floods whole, the edit changes the nose and nothing else.
