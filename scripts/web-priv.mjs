@@ -6,8 +6,8 @@
 //
 //   PLAYWRIGHT_DIR=... SHOT_DIR=... node scripts/web-priv.mjs PAGE_URL LOBBY_URL INSTALLER [seconds]
 //   RF=1: Righteous Fire (the menu's other program)
-//   HIRES=1: the page's "High resolution (2x)" (ticked by default) left ticked: 640 x 480 in flight, the frame rate
-//   held, ` flips it; HIRES=0: unticked before Fly, the game's own picture and none of the high resolution's hooks
+//   HIRES=1: the page's "High resolution (2x)" (ticked by default) left ticked: 640 x 400 in flight, the frame rate
+//   held, ` cycles it (all, the space alone, off), Hi-res cockpit unticked and ticked; HIRES=0: unticked before Fly, the game's own picture and none of the high resolution's hooks
 //   CLASSIC=1: the page opened with ?privclassic=1: the box unticked and greyed, the game as it was (WCPRIVCLASSIC)
 //   ROOM=<code>: the page joins that room as a guest (scripts/web-priv.sh ROOM=1 makes a native host's) and checks the
 //   room's presence lines (src/cpu/wcnet_priv_session.cpp) instead of flying alone
@@ -118,6 +118,8 @@ if (process.env.CLASSIC) {
 } else {
   const box = await page.evaluate(() => { const el = document.getElementById("privHires"); return !!el && el.offsetParent !== null && el.checked && el.type === "checkbox"; });
   check("the High resolution checkbox shows, ticked by default", box);
+  check("the Hi-res cockpit checkbox shows, ticked by default",
+    await page.evaluate(() => { const el = document.getElementById("privHiresCockpit"); return !!el && el.offsetParent !== null && el.checked && !el.disabled; }));
   if (process.env.HIRES === "0") await page.uncheck("#privHires");
 }
 // the mouse's pitch (the user, 2026-11-22: "The mouse is inverted. Is there a way to change it back. An option or toggle")
@@ -145,17 +147,23 @@ check(`in flight, the ${mode}'s controls read every frame`, flying, (logs.filter
 await sleep(3000);
 const box = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; });
 await page.screenshot({ path: path.join(shotDir, "web-priv-flight.png"), clip: box });
-// the picture 4:3 as on a monitor of 1993, in the page and full screen (the user, 2026-11-22: "The ratio should be
-// ideantical to what the original players of privateer saw"); full screen, as large as the screen takes
-check("the picture is 4:3", Math.abs(box.width / box.height - 4 / 3) < 0.01, `${Math.round(box.width)} x ${Math.round(box.height)}`);
+// the game's pixels kept square, 16:10 (the user, 2026-11-22, after a day of 4:3: "it looks worse because of the 4:3
+// stretch. We should keep pixel ratios"); full screen, as large as the screen takes (the element the screen, the
+// picture contained in it)
+// (the picture as shown: Fly goes full screen when "start in full screen" is ticked, the default, and there the canvas is
+// the whole screen with the picture contained in it)
+const shown = await page.$eval("#canvas", (c) => {
+  const b = c.getBoundingClientRect();
+  const k = getComputedStyle(c).objectFit === "contain" ? Math.min(b.width / c.width, b.height / c.height) : 0;
+  return k ? { width: c.width * k, height: c.height * k } : { width: b.width, height: b.height };
+});
+check("the picture keeps its pixels: 16:10", Math.abs(shown.width / shown.height - 16 / 10) < 0.01, `${Math.round(shown.width)} x ${Math.round(shown.height)}`);
 await page.evaluate(() => document.getElementById("screen").requestFullscreen());
 await sleep(1500);
-const full = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height, vw: innerWidth, vh: innerHeight }; });
-const fill = Math.min(full.vw, full.vh * 4 / 3);
-check("full screen: 4:3, as large as fits, in the middle",
-  Math.abs(full.width / full.height - 4 / 3) < 0.01 && Math.abs(full.width - fill) < 2
-    && Math.abs(full.x - (full.vw - full.width) / 2) < 2 && Math.abs(full.y - (full.vh - full.height) / 2) < 2,
-  `${Math.round(full.width)} x ${Math.round(full.height)} at ${Math.round(full.x)}, ${Math.round(full.y)} on ${full.vw} x ${full.vh}`);
+const full = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { width: b.width, height: b.height, vw: innerWidth, vh: innerHeight, fit: getComputedStyle(c).objectFit, w: c.width, h: c.height }; });
+check("full screen: the whole screen, the picture contained at 16:10",
+  Math.abs(full.width - full.vw) < 2 && Math.abs(full.height - full.vh) < 2 && full.fit === "contain" && full.w * 10 === full.h * 16,
+  `${Math.round(full.width)} x ${Math.round(full.height)} on ${full.vw} x ${full.vh}, ${full.fit}, ${full.w} x ${full.h}`);
 await page.screenshot({ path: path.join(shotDir, "web-priv-full.png") });
 await page.evaluate(() => document.exitFullscreen());
 await sleep(1000);
@@ -173,21 +181,39 @@ if (process.env.HIRES === "0") {
 }
 if (process.env.HIRES && process.env.HIRES !== "0") {
   const size = await page.$eval("#canvas", (c) => `${c.width} x ${c.height}`);
-  check("the emulator's picture is 640 x 480", size === "640 x 480", size);
+  check("the emulator's picture is 640 x 400 (each game pixel 2 x 2)", size === "640 x 400" && logs.some((l) => /the picture is 640 x 400/.test(l)), size);
   await sleep(6000);
   const fps = logs.map((l) => /Privateer: t=[\d.]+, (\d+) \w+ frames/.exec(l)).filter(Boolean).map((m) => +m[1]).slice(-5);
   check("28 frames a second with it", fps.length > 0 && fps.reduce((a, b) => a + b, 0) / fps.length >= 27.5, fps.join(" "));
   const at = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; });
   await page.screenshot({ path: path.join(shotDir, "web-priv-hires.png"), clip: at });
   await page.focus("#canvas");
-  for (const want of ["off", "on"]) {
+  // the ` key cycles the three: all, the space alone, off, all
+  const since = async (mark, re, ms) => {
+    for (let waited = 0; waited < ms; waited += 250) {
+      if (logs.slice(mark).some((l) => re.test(l))) return true;
+      await sleep(250);
+    }
+    return false;
+  };
+  for (const [want, shot] of [["on in space alone", "space"], ["off", "off"], ["on", ""]]) {
+    const mark = logs.length;
     await page.keyboard.down("Backquote");
     await sleep(200);
     await page.keyboard.up("Backquote");
-    check(`the backquote key flips it ${want}`, await waitLog(new RegExp(`high-resolution picture ${want}`), 5000));
+    check(`the backquote key: ${want}`, await since(mark, new RegExp(`high-resolution picture ${want === "on" ? "on(?! in)" : want}`), 5000));
     await sleep(700);
-    if (want === "off") await page.screenshot({ path: path.join(shotDir, "web-priv-hires-off.png"), clip: at });
+    if (shot) await page.screenshot({ path: path.join(shotDir, `web-priv-hires-${shot}.png`), clip: at });
   }
+  // the third mode by the page's box: Hi-res cockpit unticked, then ticked again, while flying
+  for (const [tick, want] of [[false, "on in space alone"], [true, "on"]]) {
+    const mark = logs.length;
+    if (tick) await page.check("#privHiresCockpit"); else await page.uncheck("#privHiresCockpit");
+    check(`Hi-res cockpit ${tick ? "ticked" : "unticked"} while flying: ${want}`,
+      await since(mark, new RegExp(`high-resolution picture ${want} \\(the page's\\)`), 5000)
+        && await page.evaluate(() => localStorage.getItem("wc:privHiresCockpit")) === (tick ? "1" : "0"));
+  }
+  await page.focus("#canvas");
 }
 // Invert mouse: the launch's (unticked: pushed up climbs), then ticked and unticked while flying
 check("the mouse pushed up climbs (the launch's choice)", logs.some((l) => /the mouse pushed up raises the nose/.test(l)),

@@ -1,15 +1,15 @@
 /*
- *  Privateer at 640 x 480 (docs/privateer.md section 20).
+ *  Privateer at 640 x 400, each game pixel a block of 2 x 2 (docs/privateer.md sections 20, 26).
  *
  *  In flight the game draws the scene and the instruments into one buffer in memory, every pixel of it by a dozen
  *  routines of its graphics library (kPlaces), and shows it by copying a list of spans, the cockpit's window and
  *  screens, to the VGA (seg205:0002); the cockpit itself it drew to the VGA once.  So each call of the library on
- *  that buffer is drawn again here, from its own arguments as it is entered, into a 640 x 480 picture (H); the
+ *  that buffer is drawn again here, from its own arguments as it is entered, into a 640 x 400 picture (H); the
  *  game's drawing is not touched and neither is its memory: one pilot's display, nothing a room could see.
  *
  *  At the span copy H is frozen with what the game shows (the buffer under the spans).  At the VGA's frame the
  *  picture is made: a pixel of the spans that still holds what was copied shows H; every other, and any screen that
- *  is not a flight's, is the game's own pixel, 2 wide and 2 or 3 tall.
+ *  is not a flight's, is the game's own pixel, 2 x 2.
  *
  *  The game runs paged (its memory manager's): linear A0000 is memory of its own, where that buffer is, and the
  *  screen is mapped at FFFF:0010.  So the screen is known by its physical address, and the game's memory is read
@@ -45,7 +45,8 @@ namespace wc {
 
 namespace {
 
-enum { LW = 320, LH = 200, HW = 640, HH = 480 };
+enum { LW = 320, LH = 200, HW = 640, HH = 400 };
+const double kSy = (double)HH / LH;      // (H's rows to a game row: 2, each game pixel a block of 2 x 2)
 enum {
     kMaxShapeSide = 640,            // a shape's width or height
     kMaxShapeBytes = 0x10000,       // what one shape's decoding may read
@@ -85,6 +86,7 @@ enum { kPlaceCount = sizeof(kPlaces) / sizeof(kPlaces[0]) };
 enum {
     kCrosshairCaller = 0x2897,      // seg060: the crosshair's shape, drawn as one-pixel lines
     kRadarCaller = 0x13AE,          // the radar's: its art (one shape a frame, under the blips), drawn as line art
+    kBracketCaller = 0x2903,        // the target's box (its lines): one pixel wide in space alone too
     kFillerSelf = 0x47A2,           // seg116 calls itself once, to align its stack
 };
 
@@ -132,21 +134,33 @@ bool g_haveCornerX = false;
 
 bool g_onlyOurs[0x10000];           // an IP watched for these places alone
 
-int g_want = -1;                    // the checkbox (WCPRIVHIRES at the launch)
-bool g_flipped = false;             // the backquote key's
+int g_want = -1;                    // the page's level (WCPRIVHIRES at the launch): 0 off, 1 space, 2 all (see hires_level)
+int g_level = 0;                    // what shows: the page's level, or the backquote key's since
 bool g_never = false;               // WCPRIVHIRES=off, or the game as it was (priv_classic): nothing of this runs
 bool g_used = false;                // wanted once: its places are watched from then on
 bool g_hooked = false;              // ... and they are
 bool g_override = false;
 int g_setW = 0;
 
-inline bool hires_wanted() {
+// The levels (the user, 2026-11-22: "Can we have a third toggle mode where reticle and cockpit are not high rez but
+// sprites in space are?"; "Target boxes are but aiming and all other things are not in that third mode"): 2, all of
+// it; 1, the space alone -- the ships, bases and planets drawn from their art (scaled and turned), the lasers and the
+// target boxes at 640 x 400, the cockpit, its window's edge, the crosshair, the radar, every other line and the text
+// the game's own pixels; 0, the game's picture.  WCPRIVHIRES=1 (or all) 2, =space 1; the page's two boxes.
+inline int hires_level() {
     if (g_want < 0) {
         const char *env = getenv("WCPRIVHIRES");
         g_never = priv_classic() || (env && !strcmp(env, "off"));
-        g_want = !g_never && env && env[0] && env[0] != '0' ? 1 : 0;
+        g_want = g_never || !env || !env[0] || env[0] == '0' ? 0 : !strcmp(env, "space") ? 1 : 2;
+        g_level = g_want;
     }
-    return !g_never && (g_want != 0) != g_flipped;
+    return g_never ? 0 : g_level;
+}
+
+inline bool hires_cockpit() { return hires_level() == 2; }
+
+inline bool hires_wanted() {
+    return hires_level() > 0;
 }
 
 // Wanted for the first time: its places watched from the next instruction (until then none of this runs at all).
@@ -205,7 +219,7 @@ inline bool flights_buffer(const Target &t) {
     return g_bufSeg && t.seg == g_bufSeg && row_of(t, 0) == g_bufRow0;
 }
 
-// ---- the 640 x 480 picture's drawing: a game pixel is the block g_rowFrom gives -------------------------------------
+// ---- the 640 x 400 picture's drawing: a game pixel is the block g_rowFrom gives (2 x 2) -------------------------------------
 
 inline void block_row(int x0, int x1, int y, Bit8u c) {     // (clipped already)
     for (int Y = g_rowFrom[y]; Y < g_rowFrom[y + 1]; Y++) memset(g_hi + Y * HW + 2 * x0, c, 2 * (x1 - x0 + 1));
@@ -230,7 +244,7 @@ inline void plot(const Target &t, int X, int Y, Bit8u c) {
 }
 
 inline int fine_x(int x) { return 2 * x + 1; }
-inline int fine_y(int y) { return (12 * y + 6) / 5; }       // (the middle of the pixel)
+inline int fine_y(int y) { return (2 * HH * y + HH) / (2 * LH); }      // (the middle of the pixel)
 
 // One fine pixel wide, between two fine pixels (clipped by plot).
 void line_fine(const Target &t, int X, int Y, int Xe, int Ye, Bit8u c) {
@@ -253,7 +267,7 @@ void line(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
 
 void ellipse(const Target &t, int x, int y, int rx, int ry, Bit8u c) {
     if (rx < 0 || ry < 0 || rx > 1000 || ry > 1000 || x < -2000 || x > 2000 || y < -2000 || y > 2000) return;
-    const double cx = 2 * x + 1, cy = (y + 0.5) * 2.4, a = 2.0 * rx, b = 2.4 * ry;
+    const double cx = 2 * x + 1, cy = (y + 0.5) * kSy, a = 2.0 * rx, b = kSy * ry;
     const int n = 8 + (int)(8 * (a > b ? a : b));
     for (int i = 0; i < n; i++) {
         const double w = i * 6.283185307179586 / n;
@@ -359,18 +373,288 @@ void shape_blocks(const Target &t, const Shape &s, int x, int y, int colour) {
     }
 }
 
-// Line art of one pixel's width: each pixel joined to its neighbours' middles.
+// The game's own pixels for a line (the space alone: the cockpit's lines, the radar's, the nav map's): the line's game
+// pixels as blocks, as the game's own line routine steps them (Bresenham, both ends).
+void line_blocks(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
+    if (x0 < -2000 || x0 > 2000 || x1 < -2000 || x1 > 2000 || y0 < -2000 || y0 > 2000 || y1 < -2000 || y1 > 2000) return;
+    const int dx = abs(x1 - x0), dy = -abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        if (x0 >= t.x0 && x0 <= t.x1 && y0 >= t.y0 && y0 <= t.y1) block(x0, y0, c);
+        if (x0 == x1 && y0 == y1) break;
+        const int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+void ellipse_blocks(const Target &t, int x, int y, int rx, int ry, Bit8u c) {
+    if (rx < 0 || ry < 0 || rx > 1000 || ry > 1000 || x < -2000 || x > 2000 || y < -2000 || y > 2000) return;
+    const int n = 8 + 8 * (rx > ry ? rx : ry);
+    for (int i = 0; i < n; i++) {
+        const double w = i * 6.283185307179586 / n;
+        const int px = (int)floor(x + rx * cos(w) + 0.5), py = (int)floor(y + ry * sin(w) + 0.5);
+        if (px >= t.x0 && px <= t.x1 && py >= t.y0 && py <= t.y1) block(px, py, c);
+    }
+}
+
+// One fine pixel wide: every line with the cockpit in high resolution, the target's box alone without it.
+bool fine_lines(Bit16u caller) {
+    return hires_cockpit() || caller == kBracketCaller;
+}
+
+// ---- rings: the line art's round parts drawn round --------------------------------------------------------------------
+//
+// The radar's rings and the crosshair's circle are the game's pixels at 320 x 200: joined pixel to pixel they were the
+// pixels' staircase, bumpy and not round (the user, 2026-11-22: "the radar is very bumpy and not circular. Same with
+// the targeting reticle").  So each colour's pixels are split into pieces (8-connected), and in each piece the ellipse
+// (upright, about the piece's middle) that most of its pixels lie on is looked for: its height to width tried from 0.6
+// to 1.6, its size the band of 1.2 pixels holding the most of them, then the ellipse fitted to the pixels near it
+// (least squares, four rounds).  It is a ring when it has 2.5 pixels' radius at
+// least and its pixels go 80 in 100 of the way round; then its pixels are drawn as that ellipse, one fine pixel wide,
+// wherever the game's ring has pixels (its gaps kept), and the rest of the piece is looked at again (a ring inside a
+// ring, the cross's middle).  What is no ring is joined as before, a piece touching a ring reaching its pixel's middle.
+// Worked out once a shape (by its pixels' hash: the radar's art is drawn every frame); kept for 16 shapes.
+
+struct Ring { double cx, cy, a, b; int colour; };
+struct Rings {
+    Bit32u hash;
+    std::vector<Ring> rings;
+    std::vector<Bit8u> on;          // per pixel of the shape: 1 + the ring's index it belongs to, 0 none
+};
+enum { kRingCache = 16, kMaxRings = 24, kMaxPiecePixels = 4096, kRingSectors = 48 };
+Bit32u shape_hash(const Shape &s);
+
+// M x = the last column, four unknowns (Gauss, the largest pivot): false if it has no single answer.
+bool solve4(double M[4][5], double x[4]) {
+    for (int c = 0; c < 4; c++) {
+        int p = c;
+        for (int r = c + 1; r < 4; r++) {
+            if (fabs(M[r][c]) > fabs(M[p][c])) p = r;
+        }
+        if (fabs(M[p][c]) < 1e-9) return false;
+        for (int k = 0; k < 5; k++) std::swap(M[c][k], M[p][k]);
+        for (int r = 0; r < 4; r++) {
+            if (r == c) continue;
+            const double f = M[r][c] / M[c][c];
+            for (int k = c; k < 5; k++) M[r][k] -= f * M[c][k];
+        }
+    }
+    for (int i = 0; i < 4; i++) x[i] = M[i][4] / M[i][i];
+    return true;
+}
+
+void rings_find(const Shape &s, int ground, Rings &out) {
+    const int w = s.w, h = s.h;
+    out.rings.clear();
+    out.on.assign(w * h, 0);
+    std::vector<Bit8u> seen(w * h, 0);
+    std::vector<int> piece, stack;
+    for (int start = 0; start < w * h && (int)out.rings.size() < kMaxRings; start++) {
+        const int colour = s.px[start];
+        if (colour < 0 || colour == ground || seen[start]) continue;
+        // the piece: this colour's pixels 8-connected to it
+        piece.clear();
+        stack.assign(1, start);
+        seen[start] = 1;
+        while (!stack.empty() && (int)piece.size() < kMaxPiecePixels) {
+            const int i = stack.back();
+            stack.pop_back();
+            piece.push_back(i);
+            const int u = i % w, v = i / w;
+            for (int dv = -1; dv <= 1; dv++) {
+                for (int du = -1; du <= 1; du++) {
+                    const int nu = u + du, nv = v + dv;
+                    if (nu < 0 || nv < 0 || nu >= w || nv >= h) continue;
+                    const int j = nv * w + nu;
+                    if (!seen[j] && s.px[j] == colour) {
+                        seen[j] = 1;
+                        stack.push_back(j);
+                    }
+                }
+            }
+        }
+        // rings in it, the biggest first, each found taken out before the next look (at most four a piece)
+        for (int round = 0; round < 4 && (int)out.rings.size() < kMaxRings; round++) {
+            std::vector<int> left;
+            for (size_t k = 0; k < piece.size(); k++) {
+                if (!out.on[piece[k]]) left.push_back(piece[k]);
+            }
+            if (left.size() < 12) break;
+            int u0 = w, u1 = -1, v0 = h, v1 = -1;
+            for (size_t k = 0; k < left.size(); k++) {
+                const int u = left[k] % w, v = left[k] / w;
+                u0 = std::min(u0, u); u1 = std::max(u1, u); v0 = std::min(v0, v); v1 = std::max(v1, v);
+            }
+            const double cx = (u0 + u1) / 2.0, cy = (v0 + v1) / 2.0;
+            double bestQ = 1, bestR = 0;
+            int bestN = 0;
+            std::vector<double> r(left.size());
+            for (int qi = 0; qi <= 50; qi++) {
+                const double q = 0.6 + qi * 0.02;           // (height over width)
+                for (size_t k = 0; k < left.size(); k++) {
+                    const double du = left[k] % w - cx, dv = (left[k] / w - cy) / q;
+                    r[k] = sqrt(du * du + dv * dv);
+                }
+                std::sort(r.begin(), r.end());
+                for (size_t a = 0, b = 0; a < r.size(); a++) {
+                    while (b < r.size() && r[b] - r[a] <= 1.2) b++;
+                    if ((int)(b - a) > bestN) {
+                        bestN = (int)(b - a);
+                        bestQ = q;
+                        bestR = (r[a] + r[b - 1]) / 2;
+                    }
+                }
+            }
+            if (bestR < 2.5 || bestR * bestQ < 2.5) break;
+            // the ellipse itself, fitted: A du^2 + B dv^2 + C du + D dv = 1 by least squares over the pixels near the last
+            // one (within a pixel, then 0.8), four times.  (Its pixels' box was taken first: the crosshair's ticks lie on
+            // its axes, and the box made its circle of 9 an ellipse of 9 by 10 that most of its pixels missed: the user,
+            // "The targeting reticle is still wobbly back and forth instead of a beautiful circle like the radar".)
+            double ex = cx, ey = cy, ea = bestR, eb = bestR * bestQ;
+            bool fitted = true;
+            for (int it = 0; it < 4 && fitted; it++) {
+                const double tol = it ? 0.8 : 1.0;
+                double M[4][5] = { { 0 } };
+                int n = 0;
+                for (size_t k = 0; k < left.size(); k++) {
+                    const double du = left[k] % w - ex, dv = left[k] / w - ey;
+                    const double rho = sqrt((du / ea) * (du / ea) + (dv / eb) * (dv / eb));
+                    if (rho < 1e-6 || sqrt(du * du + dv * dv) * fabs(1 - 1 / rho) > tol) continue;
+                    const double f[4] = { du * du, dv * dv, du, dv };
+                    for (int i = 0; i < 4; i++) {
+                        M[i][4] += f[i];
+                        for (int j = 0; j < 4; j++) M[i][j] += f[i] * f[j];
+                    }
+                    n++;
+                }
+                double sol[4];
+                fitted = n >= 8 && solve4(M, sol) && sol[0] > 0 && sol[1] > 0;
+                if (!fitted) break;
+                ex -= sol[2] / (2 * sol[0]);
+                ey -= sol[3] / (2 * sol[1]);
+                const double K = 1 + sol[2] * sol[2] / (4 * sol[0]) + sol[3] * sol[3] / (4 * sol[1]);
+                fitted = K > 0;
+                if (!fitted) break;
+                ea = sqrt(K / sol[0]);
+                eb = sqrt(K / sol[1]);
+                fitted = ea < w && eb < h && fabs(ex - cx) < w && fabs(ey - cy) < h;
+            }
+            if (!fitted) break;
+            Ring g = { ex, ey, ea, eb, colour };
+            if (g.a < 2.5 || g.b < 2.5) break;
+            // the pixels near that ellipse (within 0.8 of a pixel along its radius), and how far round they go: of the
+            // points along it, those with one of them within a pixel
+            std::vector<int> on;
+            std::vector<Bit8u> mark(w * h, 0);
+            for (size_t k = 0; k < left.size(); k++) {
+                const double du = left[k] % w - g.cx, dv = left[k] / w - g.cy;
+                const double rho = sqrt((du / g.a) * (du / g.a) + (dv / g.b) * (dv / g.b));
+                if (rho < 1e-6 || sqrt(du * du + dv * dv) * fabs(1 - 1 / rho) > 0.8) continue;
+                on.push_back(left[k]);
+                mark[left[k]] = 1;
+            }
+            int covered = 0;
+            for (int k = 0; k < kRingSectors; k++) {
+                const double th = k * 6.283185307179586 / kRingSectors;
+                const int cu = (int)floor(g.cx + g.a * cos(th) + 0.5), cv = (int)floor(g.cy + g.b * sin(th) + 0.5);
+                bool near = false;
+                for (int dv = -1; dv <= 1 && !near; dv++) {
+                    for (int du = -1; du <= 1 && !near; du++) {
+                        const int u = cu + du, v = cv + dv;
+                        near = u >= 0 && v >= 0 && u < w && v < h && mark[v * w + u];
+                    }
+                }
+                covered += near;
+            }
+            if (covered * 100 < kRingSectors * 80) break;
+            out.rings.push_back(g);
+            for (size_t k = 0; k < on.size(); k++) out.on[on[k]] = (Bit8u)out.rings.size();
+        }
+    }
+}
+
+const Rings &rings_of(const Shape &s, int ground) {
+    static Rings cache[kRingCache];
+    static int used = 0, next = 0;
+    const Bit32u hash = shape_hash(s) ^ (Bit32u)(ground + 1) * 0x9E3779B9u;
+    for (int i = 0; i < used; i++) {
+        if (cache[i].hash == hash && cache[i].on.size() == s.px.size()) return cache[i];
+    }
+    Rings &r = cache[next];
+    next = (next + 1) % kRingCache;
+    if (used < kRingCache) used++;
+    r.hash = hash;
+    rings_find(s, ground, r);
+    return r;
+}
+
+// The rings drawn: each one fine pixel wide along its ellipse, where the game's ring has a pixel within one of it.  The
+// ellipse's fine pixels in order round it, the corner of any L of three left out (the curve 8-connected, one wide).
+void rings_draw(const Target &t, const Shape &s, const Rings &r, int left, int top, int ground) {
+    std::vector<int> px, py;
+    for (size_t k = 0; k < r.rings.size(); k++) {
+        const Ring &g = r.rings[k];
+        const double fx = 2 * (left + g.cx) + 1, fy = kSy * (top + g.cy) + kSy / 2, A = 2 * g.a, B = kSy * g.b;
+        const int n = 16 + (int)(8 * (A > B ? A : B));
+        px.clear();
+        py.clear();
+        auto flush = [&]() {
+            for (size_t i = 0; i < px.size(); i++) {
+                const bool corner = i > 0 && i + 1 < px.size() && abs(px[i + 1] - px[i - 1]) == 1 && abs(py[i + 1] - py[i - 1]) == 1;
+                if (corner) continue;
+                if (i > 0 && (abs(px[i] - px[i - 1]) > 1 || abs(py[i] - py[i - 1]) > 1)) {
+                    line_fine(t, px[i - 1], py[i - 1], px[i], py[i], (Bit8u)g.colour);
+                }
+                plot(t, px[i], py[i], (Bit8u)g.colour);
+            }
+            px.clear();
+            py.clear();
+        };
+        for (int i = 0; i <= n; i++) {
+            const double th = i * 6.283185307179586 / n;
+            const double cu = g.cx + g.a * cos(th), cv = g.cy + g.b * sin(th);
+            bool near = false;
+            for (int dv = -1; dv <= 1 && !near; dv++) {
+                for (int du = -1; du <= 1 && !near; du++) {
+                    const int u = (int)floor(cu + 0.5) + du, v = (int)floor(cv + 0.5) + dv;
+                    near = u >= 0 && v >= 0 && u < s.w && v < s.h && r.on[v * s.w + u] == k + 1;
+                }
+            }
+            if (!near) {
+                // (where two rings touch, a pixel they share is one ring's colour: the other passes over any ink there)
+                const int u = (int)floor(cu + 0.5), v = (int)floor(cv + 0.5);
+                near = u >= 0 && v >= 0 && u < s.w && v < s.h && s.px[v * s.w + u] >= 0 && s.px[v * s.w + u] != ground;
+            }
+            if (!near) {
+                flush();
+                continue;
+            }
+            const int X = (int)floor(fx + A * cos(th) + 0.5), Y = (int)floor(fy + B * sin(th) + 0.5);
+            if (!px.empty() && X == px.back() && Y == py.back()) continue;
+            px.push_back(X);
+            py.push_back(Y);
+        }
+        flush();
+    }
+}
+
+// Line art of one pixel's width: each pixel joined to its neighbours' middles, its rings drawn round.
 void shape_lines(const Target &t, const Shape &s, int x, int y) {
     static const int kDx[4] = { 1, 0, 1, -1 }, kDy[4] = { 0, 1, 1, 1 };
     const int left = x - s.left, top = y - s.top;
+    const Rings &r = rings_of(s, -1);
+    rings_draw(t, s, r, left, top, -1);
     for (int v = 0; v < s.h; v++) {
         for (int u = 0; u < s.w; u++) {
             const int c = s.px[v * s.w + u];
             if (c < 0) continue;
-            line(t, left + u, top + v, left + u, top + v, (Bit8u)c);
+            const bool ring = r.on[v * s.w + u] != 0;
+            if (!ring) line(t, left + u, top + v, left + u, top + v, (Bit8u)c);
             for (int k = 0; k < 4; k++) {
                 const int nu = u + kDx[k], nv = v + kDy[k];
                 if (nu < 0 || nu >= s.w || nv >= s.h || s.px[nv * s.w + nu] < 0) continue;
+                if (ring && r.on[nv * s.w + nu]) continue;
                 if (kDx[k] && kDy[k] && (s.px[v * s.w + nu] >= 0 || s.px[nv * s.w + u] >= 0)) continue;
                 line(t, left + u, top + v, left + nu, top + nv, (Bit8u)c);
             }
@@ -396,6 +680,8 @@ void shape_radar(const Target &t, const Shape &s, int x, int y) {
         if (count[c] > count[ground]) ground = c;
     }
     shape_blocks(t, s, x, y, ground);
+    const Rings &r = rings_of(s, ground);
+    rings_draw(t, s, r, left, top, ground);
     auto same = [&](int u, int v, int c) { return u >= 0 && u < s.w && v >= 0 && v < s.h && s.px[v * s.w + u] == c; };
     auto ink = [&](int u, int v) {
         return u >= 0 && u < s.w && v >= 0 && v < s.h && s.px[v * s.w + u] >= 0 && s.px[v * s.w + u] != ground;
@@ -404,17 +690,19 @@ void shape_radar(const Target &t, const Shape &s, int x, int y) {
         for (int u = 0; u < s.w; u++) {
             const int c = s.px[v * s.w + u];
             if (c < 0 || c == ground) continue;
+            const bool ring = r.on[v * s.w + u] != 0;
             const int X = fine_x(left + u), Y = fine_y(top + v);
-            line_fine(t, X, Y, X, Y, (Bit8u)c);
+            if (!ring) line_fine(t, X, Y, X, Y, (Bit8u)c);
             for (int k = 0; k < 4; k++) {
                 const int nu = u + kDx[k], nv = v + kDy[k];
                 if (!same(nu, nv, c)) continue;
+                if (ring && r.on[nv * s.w + nu]) continue;
                 if (kDx[k] && kDy[k] && (same(nu, v, c) || same(u, nv, c))) continue;
                 line_fine(t, X, Y, fine_x(left + nu), fine_y(top + nv), (Bit8u)c);
             }
             int alike = 0;
             for (int k = 0; k < 8; k++) alike += same(u + kAx[k], v + kAy[k], c);
-            if (alike >= 2) continue;
+            if (alike >= 2 || ring) continue;
             for (int k = 0; k < 8; k++) {
                 const int nu = u + kAx[k], nv = v + kAy[k];
                 if (!ink(nu, nv) || same(nu, nv, c)) continue;
@@ -662,7 +950,7 @@ void overlay_base(const Bit8u *low) {
             const int c = sm.px[v * sm.w + u], x = g_base.x0 + u;
             if (c < 0 || x < 0 || x >= LW || low[y * LW + x] != c) continue;
             for (int Y = g_rowFrom[y]; Y < g_rowFrom[y + 1]; Y++) {
-                const int V = (int)(((Y + 0.5) / 2.4 - g_base.y0) * fy);
+                const int V = (int)(((Y + 0.5) / kSy - g_base.y0) * fy);
                 if (V < 0 || V >= bg.h) continue;
                 for (int X = 2 * x; X < 2 * x + 2; X++) {
                     const int U = (int)(((X + 0.5) / 2.0 - g_base.x0) * fx);
@@ -699,7 +987,7 @@ void shape_scaled(const Target &t, const Shape &s, int x, int y, double sx, doub
     if (loy < t.y0) loy = t.y0;
     if (hiy > t.y1 + 1) hiy = t.y1 + 1;
     if (lox >= hix || loy >= hiy) return;
-    int X0 = (int)(lox * 2), X1 = (int)ceil(hix * 2), Y0 = (int)(loy * 2.4), Y1 = (int)ceil(hiy * 2.4);
+    int X0 = (int)(lox * 2), X1 = (int)ceil(hix * 2), Y0 = (int)(loy * kSy), Y1 = (int)ceil(hiy * kSy);
     if (X0 < 2 * t.x0) X0 = 2 * t.x0;
     if (X1 > 2 * (t.x1 + 1)) X1 = 2 * (t.x1 + 1);
     if (Y0 < g_rowFrom[t.y0]) Y0 = g_rowFrom[t.y0];
@@ -708,7 +996,7 @@ void shape_scaled(const Target &t, const Shape &s, int x, int y, double sx, doub
     const Bit32s du = (Bit32s)floor(c * 0.5 * mx / sx * 65536 + 0.5), dv = (Bit32s)floor(-n * 0.5 * my / sy * 65536 + 0.5);
     const Bit16s *src = &s.px[0];
     for (int Y = Y0; Y < Y1; Y++) {
-        const double gx = (X0 + 0.5) / 2 - x - 0.5, gy = (Y + 0.5) / 2.4 - y - 0.5;
+        const double gx = (X0 + 0.5) / 2 - x - 0.5, gy = (Y + 0.5) / kSy - y - 0.5;
         const double u0 = (gx * c + gy * n) * mx / sx + 0.5 + s.left, v0 = (-gx * n + gy * c) * my / sy + 0.5 + s.top;
         if (fabs(u0) > 16000 || fabs(v0) > 16000) continue;
         Bit32s u = (Bit32s)floor(u0 * 65536), v = (Bit32s)floor(v0 * 65536);
@@ -735,7 +1023,7 @@ void polygon(const Target &t, const double *px, const double *py, int n, PhysPt 
         if (py[i] < lo) lo = py[i];
         if (py[i] > hi) hi = py[i];
     }
-    const double top = (lo + 0.5) * 2.4, bottom = (hi + 0.5) * 2.4;
+    const double top = (lo + 0.5) * kSy, bottom = (hi + 0.5) * kSy;
     if (bottom < 0 || top >= HH) return;
     int Y0 = (int)floor(top), Y1 = (int)floor(bottom);
     if (Y0 < g_rowFrom[t.y0]) Y0 = g_rowFrom[t.y0];
@@ -749,8 +1037,8 @@ void polygon(const Target &t, const double *px, const double *py, int n, PhysPt 
         double l = 1e9, r = -1e9;
         for (int i = 0; i < n; i++) {
             const int j = i + 1 == n ? 0 : i + 1;
-            const double ax = (px[i] + 0.5) * 2, ay = (py[i] + 0.5) * 2.4;
-            const double bx = (px[j] + 0.5) * 2, by = (py[j] + 0.5) * 2.4;
+            const double ax = (px[i] + 0.5) * 2, ay = (py[i] + 0.5) * kSy;
+            const double bx = (px[j] + 0.5) * 2, by = (py[j] + 0.5) * kSy;
             if (ay == by) {
                 if (ay != mid) continue;
                 if (ax < l) l = ax;
@@ -893,19 +1181,22 @@ void call(const Place &p) {
         fill(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
         break;
     case OP_LINE:
-        line(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
+        if (fine_lines(caller)) line(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
+        else line_blocks(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
         break;
     case OP_RECT: {
         const int x0 = arg16(1), y0 = arg16(2), x1 = arg16(3), y1 = arg16(4);
         const Bit8u c = (Bit8u)arg16(5);
-        line(t, x0, y0, x1, y0, c);
-        line(t, x1, y0, x1, y1, c);
-        line(t, x1, y1, x0, y1, c);
-        line(t, x0, y1, x0, y0, c);
+        void (*draw)(const Target &, int, int, int, int, Bit8u) = fine_lines(caller) ? line : line_blocks;
+        draw(t, x0, y0, x1, y0, c);
+        draw(t, x1, y0, x1, y1, c);
+        draw(t, x1, y1, x0, y1, c);
+        draw(t, x0, y1, x0, y0, c);
         break;
     }
     case OP_ELLIPSE:
-        ellipse(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
+        if (hires_cockpit()) ellipse(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
+        else ellipse_blocks(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
         break;
     case OP_PIXEL: {
         const int x = arg16(1), y = arg16(2);
@@ -960,8 +1251,8 @@ void call(const Place &p) {
         if (p.op == OP_SILHOUETTE) {
             shape_blocks(t, *s, x, y, (Bit8u)arg16(6));
         } else if (p.op == OP_SHAPE) {
-            if (caller == kCrosshairCaller) shape_lines(t, *s, x, y);
-            else if (caller == kRadarCaller) shape_radar(t, *s, x, y);
+            if (caller == kCrosshairCaller && hires_cockpit()) shape_lines(t, *s, x, y);
+            else if (caller == kRadarCaller && hires_cockpit()) shape_radar(t, *s, x, y);
             else shape_blocks(t, *s, x, y, -1);
         } else if (p.op == OP_SCALE_HAZE) {
             Haze h;
@@ -1008,7 +1299,7 @@ void smooth_edge() {
     for (int Y = 0; Y < HH; Y++) {
         // (positions in twentieths of a game pixel)
         const int y = g_lowRow[Y];
-        int vy = (20 * Y + 10) * 5 / 12 - 10;
+        int vy = (20 * Y + 10) * LH / HH - 10;
         if (vy < 0) vy = 0;
         int y0 = vy / 20, fy = vy % 20;
         if (y0 >= LH - 1) { y0 = LH - 1; fy = 0; }
@@ -1048,7 +1339,7 @@ void compose() {
     static Bit8u madeFrom[LW * LH];
     static Bit32u madeSerial = 0;
     static int madeFlight = -1;
-    const int mode = flight ? 1 : hires_wanted() ? 2 : 0;      // (2: the game's picture, a scene's base over it)
+    const int mode = flight ? (hires_cockpit() ? 1 : 3) : hires_wanted() ? 2 : 0;  // (2: the game's picture, a base over it; 3: space alone)
     const Bit32u serial = flight ? g_frameSerial : mode == 2 ? g_base.serial : 0;
     if (madeFlight == mode && madeSerial == serial && !memcmp(madeFrom, low, LW * LH)) return;
     madeFlight = mode;
@@ -1067,6 +1358,16 @@ void compose() {
         if (mode == 2) overlay_base(low);
         return;
     }
+    if (mode == 3) {            // (the space alone: the cockpit's window edge the game's own, block for block)
+        for (int Y = 0; Y < HH; Y++) {
+            const int row = g_lowRow[Y] * LW;
+            for (int X = 0; X < HW; X++) {
+                const int from = row + (X >> 1), i = Y * HW + X;
+                g_out[i] = g_window[from] && low[from] == g_shownLow[from] ? g_shownHi[i] : low[from];
+            }
+        }
+        return;
+    }
     smooth_edge();
     for (int i = 0; i < HW * HH; i++) {
         const int from = g_from[i];
@@ -1082,12 +1383,20 @@ bool game_picture() {           // the game's own 320 x 200, shown from the star
 
 bool priv_hires_on() { return g_override; }
 
-void priv_hires_set(bool on) {
-    hires_wanted();
+static const char *level_name(int level) {
+    return level == 2 ? "on" : level == 1 ? "on in space alone" : "off";
+}
+
+void priv_hires_set(int level) {
+    const int was = hires_level();
     if (g_never) return;
-    g_want = on ? 1 : 0;
-    g_flipped = false;
+    g_want = g_level = level < 0 ? 0 : level > 2 ? 2 : level;
+    if (g_level != was) wclog(1, "Privateer: the high-resolution picture %s (the page's)", level_name(g_level));
     now_wanted();
+}
+
+int priv_hires_level() {
+    return hires_level();
 }
 
 void priv_hires_flip() {
@@ -1096,12 +1405,12 @@ void priv_hires_flip() {
         wclog(1, "Privateer: the high-resolution picture is off for this run (the game as it was)");
         return;
     }
-    g_flipped = !g_flipped;
+    g_level = (hires_level() + 2) % 3;          // (all, then the space alone, then off, then all)
     now_wanted();
-    wclog(1, "Privateer: the high-resolution picture %s", hires_wanted() ? "on" : "off");
+    wclog(1, "Privateer: the high-resolution picture %s", level_name(g_level));
 }
 
-// The picture is 640 x 480 from the first time hi-res is wanted, so that the key flips without a change of mode.
+// The picture is the override's 640 x 400 from the first time hi-res is wanted, so that the key flips without a change of mode.
 void priv_hires_tick() {
     now_wanted();
     const bool want = g_used && g_hooked && game_picture();
@@ -1112,7 +1421,7 @@ void priv_hires_tick() {
         const double fps = vga.draw.delay.vtotal > 0 ? 1000.0 / vga.draw.delay.vtotal : 70.0;
         VGA_SetOverride(true);
         RENDER_SetSize(HW, HH, 8, (float)fps, 1.0, false, false);
-        wclog(1, "Privateer: the picture is 640 x 480");
+        wclog(1, "Privateer: the picture is 640 x 400 (each game pixel 2 x 2)");
     } else {
         g_haveFrame = false;
         g_bufSeg = 0;

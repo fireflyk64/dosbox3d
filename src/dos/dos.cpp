@@ -29,6 +29,7 @@
 #include "setup.h"
 #include "support.h"
 #include "serialport.h"
+#include "../cpu/wcnet_priv_native.h"
 
 DOS_Block dos;
 DOS_InfoBlock dos_infoblock;
@@ -256,6 +257,7 @@ static Bitu DOS_21Handler(void) {
 		break;
 	case 0x0c:		/* Flush Buffer and read STDIN call */
 		{
+			wc::priv_dos_keyboard_poll();	// (Privateer's bases wait round it: idled there, wcnet_priv_native.cpp)
 			/* flush buffer if STDIN is CON */
 			Bit8u handle=RealHandle(STDIN);
 			if (handle!=0xFF && Files[handle] && Files[handle]->IsName("CON")) {

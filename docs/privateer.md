@@ -1140,3 +1140,70 @@ game has it").  The rig aid `!privmode=keyboard|mouse|joystick` writes the optio
 Measured, a Tarsus out of Achilles, the options' MOUSE, the pointer at the middle then 40 of 200 above it for two
 seconds, then 40 below (the forward row's z from DGROUP each second): unticked the nose went -6 -> +10 degrees, then
 down to -51; ticked (the game's own) +0 -> -77.
+
+## 26. Even pixels, round rings, and the space alone (2026-11-22)
+
+The user, after the first evening of it: "the radar is very bumpy and not circular. Same with the targeting reticle.
+And the pixel art in the cockpit is not exactly 2:1 and there's some strange aliasing around"; then "it looks worse
+because of the 4:3 stretch. We should keep pixel ratios"; "Can we have a third toggle mode where reticle and cockpit
+are not high rez but sprites in space are?"; "Target boxes are but aiming and all other things are not in that third
+mode".
+
+**Square pixels, 2 x 2.**  Sections 20 to 25 drew H at 640 x 480: 200 rows over 480 made each game row 2 or 3 rows tall
+in turn, an uneven staircase on every edge, and the page's 4:3 (section 20's `stretch`) did the same to the game's own
+picture.  Now H is 640 x 400, every game pixel a block of 2 x 2 (`kSy` = 2 where 2.4 was: the sprites' scaling, the
+lasers, the bases' overlay, the window's edge; `fine_y` = 2y + 1), and the page shows Privateer at 16:10 as the other
+games, full screen contained.  The art was drawn for a 4:3 monitor's tall pixels (round bodies 1.22 times as wide as
+tall): it shows as in any DOSBox without aspect correction.  The registry's `stretch` stays for a game that wants it.
+
+**Round rings.**  The radar's rings and the crosshair's circle are fitted: each colour's pixels split into 8-connected
+pieces; in each, the upright ellipse about the piece's middle that most of its pixels lie on (height to width 0.6 to
+1.6, the band of 1.2 pixels holding the most), then fitted to the pixels near it by least squares (A du^2 + B dv^2 +
+C du + D dv = 1, four rounds, the pixels within a pixel and then 0.8 of the last); a ring when its radius is 2.5 pixels
+at least and points along it have its pixels within a pixel 80 times in 100.  (The ring's pixels' box was taken at
+first: the crosshair's ticks lie on its axes, and the box made its circle of 9 an ellipse of 9 by 10 that most of its
+pixels missed -- gaps and a wobble: the user, "The targeting reticle is still wobbly back and forth instead of a
+beautiful circle like the radar"; "we need a better reticle or it looks like a cheap uprez".  Fitted, it is a circle of
+8.95 about the art's middle.)  It is drawn one fine pixel wide along that ellipse, in order round it (an
+L's corner left out), only where the game's ring has a pixel within one: its gaps stay, and where two rings touch a
+shared pixel of the other's colour carries it over.  What is left of the piece is looked at again (the radar's inner
+ring, then its middle ring), and the rest is joined as before.  Worked out once a shape (its hash), 16 kept.
+
+**Three levels.**  0 off; 2 all of it; 1 the space alone: the scaled and turned shapes (the ships, bases, planets),
+the lasers and the target box (its lines come from one place, para 0x2903: found by logging each drawing routine's
+callers in a fight) at 640 x 400, and everything else the game's own pixels -- the crosshair and radar as blocks, every
+other line and ellipse the game's pixels stepped as blocks (line_blocks), the cockpit window's edge block for block (no
+smoothing).  The page: "High resolution (2x)" and beside it "Hi-res cockpit" (ticked by default, greyed while the first
+is unticked; remembered); `WCPRIVHIRES=1` (all) or `=space`, `wc_web_priv_hires(level)` while flying.  The ` key cycles
+all -> the space alone -> off -> all.  The nav map is drawn outside the flight's buffer: the game's own at every level.
+
+Looked at (scratch levels.sh: the Tarsus, two pirates, one targeted, guns firing; the picture at each level and the nav
+map): at the space alone the crosshair and radar are the game's blocks, the target box a fine pixel wide, the Talon
+from its art; at all, the rings round, the radar's middle and side rings too.
+
+## 27. A base's wait for a key idled (2026-11-22)
+
+The user: "the sound was kind scratchy in the base"; asked to choose, "less emulated CPU at bases only--- maybe we can
+do some optimizations if we need to for the base drawing"; "lets evaluate if animations can keep up"; "I remember they
+were fairly low framerate to begin with"; and of a bigger sound buffer, "delay isn't good for realtime fighting".
+
+**Measured first.**  `WCMIXERSTATS=1` (the mixer's callbacks: dropouts, stretched, overflows, clipped samples, the
+peak; a measuring aid) in a headless Chrome at Achilles' concourse: dropouts 0 to 2 a minute with the high-resolution
+picture on, off and `?privclassic=1` alike, nothing clipped (the base's music peaking near 5,000) -- but the page's main
+thread busy 96 to 100 in 100 of the time in all three (Chrome's TaskDuration over each 5 s), `?privclassic=1` falling
+behind (0.95 to 0.98 of real time): no room for a slower machine's hiccup, which starves the sound.  The screen there
+changes on the game's clock: 10 times a second in the concourse, 5 to 6 in the bar, the same at 30,000, 15,000, 10,000
+and 6,000 cycles (a scratch counter of changes of the VGA's 64,000 bytes).  A flat cut of the cycles outside flight
+made a launch 2 s longer (7.2 s from the click at 10,000 against 5.0 at 30,000: the flight's load), so not that.
+
+**The loop.**  Counted by vector (a scratch counter in CPU_Interrupt): at a base the game calls DOS's "flush the
+keyboard's buffer" (INT 21h AH=0Ch) 62,000 times a second, each one of its protected mode's trips to DOS through its
+memory manager (as many VCPI calls, INT 67h DE0x): the whole of the emulated CPU goes round that loop.  The menus wait
+the same way.  Now DOS's handler tells the layer of each call (src/dos/dos.cpp -> priv_dos_keyboard_poll, Privateer
+only, outside a flight): one within 0.1 ms of the last (the loop going round, not a key read in the middle of work)
+ends the millisecond's slice, as a hlt does.  The loop goes round about twice a millisecond; the drawing between its
+calls, a load and the timer's music keep all their cycles.  `WCPRIVIDLE=0` (as for the flight's wait) and the game as
+it was leave the loop as it is.
+
+Measured natively at the concourse and the bar: 25,400 of the 30,000 cycles a millisecond skipped, and the screen's
+changes the same with and without it, second by second (8, 2, 7.8, 3.4, ... 9.6, 10.2, 7.2, 5, 7.6, 5.6, 6.4).
