@@ -1560,32 +1560,65 @@ void capture_begin(const Shape &s, int left, int top) {
 void capture_show(const Target &t, const Shape &s, int left, int top) {
     g_cap.on = false;
     const int w = s.w, h = s.h, W = g_cap.W, H = g_cap.H;
-    auto col = [&](int u, int v) { return u >= 0 && v >= 0 && u < w && v < h ? (int)s.px[v * w + u] : -1; };
-    int lit = 0;
-    for (int i = 0; i < w * h; i++) lit += s.px[i] >= 0;
-    for (int pass = 0; pass < 2 && lit > 0; pass++) {
-        const bool across = pass == 0;
-        const int n = across ? w : h;
-        int best = -1, bestAgree = -1;
-        for (int S = n - 9; S <= n + 7; S++) {
-            int agree = 0;
-            for (int v = 0; v < h; v++) {
-                for (int u = 0; u < w; u++) {
-                    const int c = col(u, v);
-                    if (c >= 0 && c == (across ? col(S - u, v) : col(u, S - v))) agree++;
+    // (worked out once a picture -- its axes, and for each of its pixels and a margin of two whether the art's 3 x 3
+    //  about it is the same as about its mirror -- and kept by its hash, 8 kept: every frame this had cost more than
+    //  the frame's whole composition)
+    struct Mirror { Bit32u hash; int w, h, axis[2]; std::vector<char> same[2]; };
+    static Mirror cache[8];
+    static int used = 0, next = 0;
+    const Bit32u hash = shape_hash(s);
+    const Mirror *mr = NULL;
+    for (int i = 0; i < used && !mr; i++) {
+        if (cache[i].hash == hash && cache[i].w == w && cache[i].h == h) mr = &cache[i];
+    }
+    if (!mr) {
+        Mirror &m = cache[next];
+        next = (next + 1) % 8;
+        if (used < 8) used++;
+        m.hash = hash;
+        m.w = w;
+        m.h = h;
+        auto col = [&](int u, int v) { return u >= 0 && v >= 0 && u < w && v < h ? (int)s.px[v * w + u] : -1; };
+        int lit = 0;
+        for (int i = 0; i < w * h; i++) lit += s.px[i] >= 0;
+        for (int pass = 0; pass < 2; pass++) {
+            const bool across = pass == 0;
+            const int n = across ? w : h;
+            int best = -1, bestAgree = -1;
+            for (int S = n - 9; S <= n + 7 && lit > 0; S++) {
+                int agree = 0;
+                for (int v = 0; v < h; v++) {
+                    for (int u = 0; u < w; u++) {
+                        const int c = col(u, v);
+                        if (c >= 0 && c == (across ? col(S - u, v) : col(u, S - v))) agree++;
+                    }
+                }
+                if (agree > bestAgree) { bestAgree = agree; best = S; }
+            }
+            m.axis[pass] = lit > 0 && bestAgree * 100 >= lit * 60 ? best : -1;
+            m.same[pass].assign((size_t)(w + 4) * (h + 4), 0);
+            if (m.axis[pass] < 0) continue;
+            for (int v = -2; v < h + 2; v++) {
+                for (int u = -2; u < w + 2; u++) {
+                    bool same = true;           // (the art's 3 x 3 about (u, v) the same as about its mirror)
+                    for (int dv = -1; dv <= 1 && same; dv++) {
+                        for (int du = -1; du <= 1 && same; du++) {
+                            const int mc = across ? col(best - u - du, v + dv) : col(u + du, best - v - dv);
+                            same = col(u + du, v + dv) == mc;
+                        }
+                    }
+                    m.same[pass][(v + 2) * (w + 4) + u + 2] = same;
                 }
             }
-            if (agree > bestAgree) { bestAgree = agree; best = S; }
         }
-        if (bestAgree * 100 < lit * 60) continue;
-        auto same = [&](int u, int v) {             // (the art's 3 x 3 about (u, v) the same as about its mirror)
-            for (int dv = -1; dv <= 1; dv++) {
-                for (int du = -1; du <= 1; du++) {
-                    const int m = across ? col(best - u - du, v + dv) : col(u + du, best - v - dv);
-                    if (col(u + du, v + dv) != m) return false;
-                }
-            }
-            return true;
+        mr = &m;
+    }
+    for (int pass = 0; pass < 2; pass++) {
+        const bool across = pass == 0;
+        const int best = mr->axis[pass];
+        if (best < 0) continue;
+        auto same = [&](int u, int v) {
+            return u >= -2 && v >= -2 && u < w + 2 && v < h + 2 && mr->same[pass][(v + 2) * (w + 4) + u + 2];
         };
         const int off = 4;                          // (the canvas's margin: fine x from the shape's left is x - off)
         for (int y = 0; y < H; y++) {

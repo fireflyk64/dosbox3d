@@ -1383,3 +1383,14 @@ four spokes on the diagonals from the bright circle (11) out to 19 are drawn ins
 corner dropped against the kept pixels), then mirrored with the rest.  Measured: all four cockpits' reticles 0
 unmatched both ways, one pixel wide (the top tick's bars 9, 5, 9 about a one-pixel stem); the Centurion's radar four
 slices; the others' radars as before.
+
+**The mirror's cost (2026-11-23).**  The user, after the reticle and radar mirror went live: "I get lots more damage on
+my hull when I upres than when I don't upres.... the game feels choppier too", "ya the damage is way higher with high
+res--- probably somehow proportional to frame time", "I suspect they're all related to the same thing: lower framerate".
+Measured with temporary per-part timers (native, a dogfight with five pirates in the user's Centurion): capture_show
+cost 20-49 ms a second of play, more than the frame's whole composition (15-21): every frame it searched both axes over
+17 candidates and compared the art's 3 x 3 with its mirror's for each of some 15,000 canvas pixels, for art that never
+changes.  Now worked out once a picture and kept by its hash (8 kept): its axes and, for each of its pixels and a
+margin of two, whether the art's 3 x 3 is the same as its mirror's; each frame only the copy with a lookup.  The same
+dogfight: the mirror 4-6 ms a second, all the hooks 31 (from 75); the reticles pixel for pixel as before, the radars
+too (the runs differ only where a blip is).
