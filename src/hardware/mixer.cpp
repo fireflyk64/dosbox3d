@@ -483,6 +483,15 @@ static void MIXER_Mix_NoSound(void) {
 // callbacks that found too little (silence given: a dropout), that stretched what there was, that dropped what was too
 // much, and the least the buffer held.  A measuring aid for crackling sound (scratchy, a game's base in the browser).
 enum { MIXSTAT_OK, MIXSTAT_DROPOUT, MIXSTAT_STRETCH, MIXSTAT_OVERFLOW, MIXSTAT_KINDS };
+static Bitu mixer_clipped, mixer_samples;   // (since the last line: samples past the 16 bits, out of how many)
+static Bits mixer_peak;
+static INLINE Bits MIXER_Watch(Bits sample) {
+	const Bits a = sample < 0 ? -sample : sample;
+	if (a > mixer_peak) mixer_peak = a;
+	if (sample > MAX_AUDIO || sample < MIN_AUDIO) mixer_clipped++;
+	mixer_samples++;
+	return sample;
+}
 static void MIXER_Stat(int kind, Bitu need) {
 	static int on = -1;
 	static Bitu count[MIXSTAT_KINDS], samples, least = ~(Bitu)0;
@@ -492,10 +501,14 @@ static void MIXER_Stat(int kind, Bitu need) {
 	if (mixer.done < least) least = mixer.done;
 	samples += need;
 	if (samples >= 2 * mixer.freq) {
-		LOG_MSG("mixer: %u callbacks of %u samples: %u dropouts, %u stretched, %u overflows; the buffer at least %u (min %u)",
+		LOG_MSG("mixer: %u callbacks of %u samples: %u dropouts, %u stretched, %u overflows; the buffer at least %u (min %u); "
+		        "%u of %u samples clipped, the peak %d",
 		        (unsigned)(count[0] + count[1] + count[2] + count[3]), (unsigned)need, (unsigned)count[MIXSTAT_DROPOUT],
-		        (unsigned)count[MIXSTAT_STRETCH], (unsigned)count[MIXSTAT_OVERFLOW], (unsigned)least, (unsigned)mixer.min_needed);
+		        (unsigned)count[MIXSTAT_STRETCH], (unsigned)count[MIXSTAT_OVERFLOW], (unsigned)least, (unsigned)mixer.min_needed,
+		        (unsigned)mixer_clipped, (unsigned)mixer_samples, (int)mixer_peak);
 		memset(count, 0, sizeof count);
+		mixer_clipped = mixer_samples = 0;
+		mixer_peak = 0;
 		samples = 0;
 		least = ~(Bitu)0;
 	}
@@ -590,9 +603,9 @@ static void MIXER_CallBack(void * userdata, Uint8 *stream, int len) {
 			Bitu i = (pos + (index >> MIXER_SHIFT )) & MIXER_BUFMASK;
 			index += index_add;
 			sample=mixer.work[i][0]>>MIXER_VOLSHIFT;
-			*output++=MIXER_CLIP(sample);
+			*output++=MIXER_CLIP(MIXER_Watch(sample));
 			sample=mixer.work[i][1]>>MIXER_VOLSHIFT;
-			*output++=MIXER_CLIP(sample);
+			*output++=MIXER_CLIP(MIXER_Watch(sample));
 		}
 		/* Clean the used buffer */
 		while (reduce--) {
@@ -605,9 +618,9 @@ static void MIXER_CallBack(void * userdata, Uint8 *stream, int len) {
 		while (reduce--) {
 			pos &= MIXER_BUFMASK;
 			sample=mixer.work[pos][0]>>MIXER_VOLSHIFT;
-			*output++=MIXER_CLIP(sample);
+			*output++=MIXER_CLIP(MIXER_Watch(sample));
 			sample=mixer.work[pos][1]>>MIXER_VOLSHIFT;
-			*output++=MIXER_CLIP(sample);
+			*output++=MIXER_CLIP(MIXER_Watch(sample));
 			mixer.work[pos][0]=0;
 			mixer.work[pos][1]=0;
 			pos++;
