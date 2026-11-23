@@ -150,7 +150,14 @@ await page.screenshot({ path: path.join(shotDir, "web-priv-flight.png"), clip: b
 // the game's pixels kept square, 16:10 (the user, 2026-11-22, after a day of 4:3: "it looks worse because of the 4:3
 // stretch. We should keep pixel ratios"); full screen, as large as the screen takes (the element the screen, the
 // picture contained in it)
-check("the picture keeps its pixels: 16:10", Math.abs(box.width / box.height - 16 / 10) < 0.01, `${Math.round(box.width)} x ${Math.round(box.height)}`);
+// (the picture as shown: Fly goes full screen when "start in full screen" is ticked, the default, and there the canvas is
+// the whole screen with the picture contained in it)
+const shown = await page.$eval("#canvas", (c) => {
+  const b = c.getBoundingClientRect();
+  const k = getComputedStyle(c).objectFit === "contain" ? Math.min(b.width / c.width, b.height / c.height) : 0;
+  return k ? { width: c.width * k, height: c.height * k } : { width: b.width, height: b.height };
+});
+check("the picture keeps its pixels: 16:10", Math.abs(shown.width / shown.height - 16 / 10) < 0.01, `${Math.round(shown.width)} x ${Math.round(shown.height)}`);
 await page.evaluate(() => document.getElementById("screen").requestFullscreen());
 await sleep(1500);
 const full = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { width: b.width, height: b.height, vw: innerWidth, vh: innerHeight, fit: getComputedStyle(c).objectFit, w: c.width, h: c.height }; });
