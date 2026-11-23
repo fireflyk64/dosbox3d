@@ -680,10 +680,10 @@ bool letter(const Target &t, const Shape &s, int x, int y, int index, Bit8u c) {
 // with two neighbours, between ends and junctions (or round a loop), are simplified to straight segments (Douglas and
 // Peucker, within 0.75 of a pixel: a staircase of any slope is one segment, a corner stays) and drawn one fine pixel
 // wide between the pixels' middles.  A pixel in a square of four of its colour is a solid part, the game's 2 x 2 block.
-// The display draws the ship in parts, each in the same frame (the hull's halves, its middle, each shield): a part all
-// on the right of the frame's middle is drawn as its mirror image's drawing mirrored (wire_make), so the hull's halves
-// are exact mirror images.  A part's drawing is made on a canvas of its own fine pixels; when a part is a mirror image of
-// itself (its
+// The display draws the ship in parts, each in the same frame (the hull's halves, its middle, each shield): they are
+// gathered into one picture as the game lays them and drawn whole (wire_gather, wire_flush).  Chains of a colour that
+// meet at a pixel and together run straight are one line (the Talon's wing edges).  The drawing is made on a canvas of
+// the picture's own fine pixels; when the picture is a mirror image of itself (its
 // pixels' outline 60 in 100 the same about one column or the line between two: the shields' arcs, one side's to its
 // state, differ), wherever the art is the same as its mirror about a pixel the canvas's left half is copied onto its
 // right, pixel for pixel, each copy taking its colour from the art's right half there (a side's damage shows) -- so
@@ -729,7 +729,7 @@ struct Wireframe {
     int axis;                       // u + u' of a mirrored pair of the art's columns, -1: not a mirror image
     std::vector<Bit16s> fine;       // 2w x 2h: a colour, or -1
 };
-enum { kWireCache = 8, kWireMax = 64, kChainMax = 4096 };
+enum { kWireCache = 8, kWireMax = 96, kChainMax = 4096, kMaxChains = 512 };
 
 // The chain's points simplified (Douglas and Peucker, within tol), its ends kept: the indices kept, in order.
 void simplify(const std::vector<int> &cu, const std::vector<int> &cv, double tol, std::vector<int> &keep) {
@@ -760,52 +760,7 @@ void simplify(const std::vector<int> &cu, const std::vector<int> &cv, double tol
     }
 }
 
-void wire_draw(const Shape &s, Wireframe &out);
-
-// A part of the ship all on the right of its frame's middle (the hull's right half, a right shield: the display draws
-// the ship in parts, each in the same frame, a half of the hull 112 pixels with none of its own mirrored) is drawn as
-// the drawing of its mirror image, mirrored back pixel for pixel: so the right half of the hull is exactly the mirror
-// of the left's, whatever the lines' rounding.  Others are drawn as they are (wire_draw).
-void wire_make(const Shape &s, Wireframe &out) {
-    const int w = s.w, h = s.h, mid = w - 1;        // (u and mid - u: mirror images about the frame's middle)
-    int left = 0, right = 0;
-    for (int v = 0; v < h; v++) {
-        for (int u = 0; u < w; u++) {
-            if (s.px[v * w + u] < 0) continue;
-            if (2 * u < mid) left++;
-            else if (2 * u > mid) right++;
-        }
-    }
-    if (!(right > 0 && left == 0)) {
-        wire_draw(s, out);
-        return;
-    }
-    Shape m;
-    m.w = w;
-    m.h = h;
-    m.left = s.left;
-    m.top = s.top;
-    m.stamp = 0;
-    m.px.assign(w * h, (Bit16s)-1);
-    for (int v = 0; v < h; v++) {
-        for (int u = 0; u < w; u++) m.px[v * w + (mid - u)] = s.px[v * w + u];
-    }
-    Wireframe flipped;
-    wire_draw(m, flipped);
-    const int W = 2 * w, H = 2 * h, sum = 2 * mid + 1;   // (fine X and sum - X: mirror images)
-    out.w = w;
-    out.h = h;
-    out.axis = mid;
-    out.fine.assign(W * H, (Bit16s)-1);
-    for (int Y = 0; Y < H; Y++) {
-        for (int X = 0; X < W; X++) {
-            const int M = sum - X;
-            if (M >= 0 && M < W) out.fine[Y * W + X] = flipped.fine[Y * W + M];
-        }
-    }
-}
-
-void wire_draw(const Shape &s, Wireframe &out) {
+void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
     const int w = s.w, h = s.h, W = 2 * w, H = 2 * h;
     out.w = w;
     out.h = h;
@@ -813,14 +768,14 @@ void wire_draw(const Shape &s, Wireframe &out) {
     out.fine.assign(W * H, (Bit16s)-1);
     auto col = [&](int u, int v) { return u >= 0 && v >= 0 && u < w && v < h ? (int)s.px[v * w + u] : -1; };
     auto put = [&](int X, int Y, int c) { if (X >= 0 && Y >= 0 && X < W && Y < H) out.fine[Y * W + X] = (Bit16s)c; };
-    auto draw = [&](int u0, int v0, int u1, int v1, int c) {
-        int X = 2 * u0 + 1, Y = 2 * v0 + 1;
-        const int Xe = 2 * u1 + 1, Ye = 2 * v1 + 1;
-        const int dx = abs(Xe - X), dy = -abs(Ye - Y), sx = X < Xe ? 1 : -1, sy = Y < Ye ? 1 : -1;
+    auto drawf = [&](double x0, double y0, double x1, double y1, int c) {
+        const int X0 = (int)floor(x0 + 0.5), Y0 = (int)floor(y0 + 0.5), X1 = (int)floor(x1 + 0.5), Y1 = (int)floor(y1 + 0.5);
+        int X = X0, Y = Y0;
+        const int dx = abs(X1 - X), dy = -abs(Y1 - Y), sx = X < X1 ? 1 : -1, sy = Y < Y1 ? 1 : -1;
         int err = dx + dy;
         for (int n = 0; n < 4 * (W + H); n++) {
             put(X, Y, c);
-            if (X == Xe && Y == Ye) break;
+            if (X == X1 && Y == Y1) break;
             const int e2 = 2 * err;
             if (e2 >= dy) { err += dy; X += sx; }
             if (e2 <= dx) { err += dx; Y += sy; }
@@ -832,6 +787,7 @@ void wire_draw(const Shape &s, Wireframe &out) {
         for (int u = 0; u < w; u++) {
             const int c = col(u, v);
             if (c < 0) continue;
+            if ((size_t)(v * w + u) < block.size() && block[v * w + u]) solid[v * w + u] = 1;
             for (int dv = -1; dv <= 0 && !solid[v * w + u]; dv++) {
                 for (int du = -1; du <= 0; du++) {
                     if (col(u + du, v + dv) == c && col(u + du + 1, v + dv) == c && col(u + du, v + dv + 1) == c &&
@@ -865,17 +821,22 @@ void wire_draw(const Shape &s, Wireframe &out) {
             }
         }
     }
-    std::vector<int> cu, cv, keep;
-    auto walk = [&](int pu, int pv, int k) {        // (along pixels of two links, each link marked used both ways)
-        cu.assign(1, pu);
-        cv.assign(1, pv);
+    // the chains: pixels of two links between ends and junctions (or round a loop), each link walked once
+    struct Chain { int col; std::vector<int> u, v; bool alive; };
+    std::vector<Chain> chains;
+    auto walk = [&](int pu, int pv, int k) {
+        Chain c;
+        c.col = col(pu, pv);
+        c.alive = true;
+        c.u.assign(1, pu);
+        c.v.assign(1, pv);
         int u = pu, v = pv;
         for (int steps = 0; steps < kChainMax; steps++) {
             used[v * w + u] |= (Bit8u)(1 << k);
             const int nu = u + kDu[k], nv = v + kDv[k];
             used[nv * w + nu] |= (Bit8u)(1 << ((k + 4) & 7));
-            cu.push_back(nu);
-            cv.push_back(nv);
+            c.u.push_back(nu);
+            c.v.push_back(nv);
             u = nu;
             v = nv;
             if (solid[v * w + u] || degree[v * w + u] != 2) break;
@@ -886,20 +847,130 @@ void wire_draw(const Shape &s, Wireframe &out) {
             if (next < 0) break;
             k = next;
         }
-        const int c = col(pu, pv);
-        simplify(cu, cv, 0.75, keep);
-        for (size_t i = 0; i + 1 < keep.size(); i++) draw(cu[keep[i]], cv[keep[i]], cu[keep[i + 1]], cv[keep[i + 1]], c);
+        if (chains.size() < kMaxChains) chains.push_back(c);
     };
     for (int pass = 0; pass < 2; pass++) {          // (from the ends and junctions first, then what is left: loops)
         for (int v = 0; v < h; v++) {
             for (int u = 0; u < w; u++) {
                 const int i = v * w + u;
                 if (col(u, v) < 0 || solid[i] || (pass == 0 && degree[i] == 2)) continue;
-                if (pass == 0) put(2 * u + 1, 2 * v + 1, col(u, v));
                 for (int k = 0; k < 8; k++) {
                     if ((link[i] & (1 << k)) && !(used[i] & (1 << k))) walk(u, v, k);
                 }
             }
+        }
+    }
+    // A straight line through a junction is one line (the user, 2026-11-23: "the talon's leading edge wings are
+    // straight, but the system drew it as a subtle curve": the wing's 45-degree edge, met half-way by an inner stroke,
+    // was two chains, each simplified to its own slope).  Of the chains of a colour that end at one pixel, the pair
+    // that together simplify to no corner there (within the tolerance) is joined -- the straightest pair first, again
+    // until no pair is left; a closed loop and a chain's own two ends are not joined.
+    std::vector<int> keep, cu, cv;
+    auto cat = [&](const Chain &A, bool aEndsHere, const Chain &B, bool bStartsHere) {
+        cu.clear();
+        cv.clear();
+        const int na = (int)A.u.size(), nb = (int)B.u.size();
+        for (int i = 0; i < na; i++) {
+            const int j = aEndsHere ? i : na - 1 - i;
+            cu.push_back(A.u[j]);
+            cv.push_back(A.v[j]);
+        }
+        for (int i = 1; i < nb; i++) {
+            const int j = bStartsHere ? i : nb - 1 - i;
+            cu.push_back(B.u[j]);
+            cv.push_back(B.v[j]);
+        }
+        return na - 1;                              // (the junction's index in the joined chain)
+    };
+    for (int round = 0; round < kMaxChains; round++) {
+        double best = 1e9;
+        int bi = -1, bj = -1;
+        bool bEi = false, bEj = false;
+        for (size_t i = 0; i < chains.size(); i++) {
+            const Chain &A = chains[i];
+            if (!A.alive || A.u.size() < 2 || (A.u.front() == A.u.back() && A.v.front() == A.v.back())) continue;
+            for (int ei = 0; ei < 2; ei++) {
+                const int ju = ei ? A.u.back() : A.u.front(), jv = ei ? A.v.back() : A.v.front();
+                for (size_t j = i + 1; j < chains.size(); j++) {
+                    const Chain &B = chains[j];
+                    if (!B.alive || B.col != A.col || B.u.size() < 2 || (B.u.front() == B.u.back() && B.v.front() == B.v.back())) continue;
+                    for (int ej = 0; ej < 2; ej++) {
+                        const int ku = ej ? B.u.back() : B.u.front(), kv = ej ? B.v.back() : B.v.front();
+                        if (ku != ju || kv != jv) continue;
+                        const int at = cat(A, ei == 1, B, ej == 0);
+                        simplify(cu, cv, 0.75, keep);
+                        int k0 = -1, k1 = -1;
+                        bool corner = false;
+                        for (size_t k = 0; k < keep.size(); k++) {
+                            if (keep[k] == at) corner = true;
+                            if (keep[k] < at) k0 = keep[k];
+                            if (keep[k] > at && k1 < 0) k1 = keep[k];
+                        }
+                        if (corner || k0 < 0 || k1 < 0) continue;
+                        const double dx = cu[k1] - cu[k0], dy = cv[k1] - cv[k0], len = sqrt(dx * dx + dy * dy);
+                        const double d = len > 0 ? fabs(dx * (cv[at] - cv[k0]) - dy * (cu[at] - cu[k0])) / len : 0;
+                        if (d < best) { best = d; bi = (int)i; bj = (int)j; bEi = ei == 1; bEj = ej == 0; }
+                    }
+                }
+            }
+        }
+        if (bi < 0) break;
+        cat(chains[bi], bEi, chains[bj], bEj);
+        chains[bi].u = cu;
+        chains[bi].v = cv;
+        chains[bj].alive = false;
+    }
+    // each chain's straight segments, drawn between the pixels' middles; a chain ending where another's line passes
+    // through (a junction) ends on that line, the nearest point of it within 1.5 pixels
+    struct Poly { int col; std::vector<double> x, y; const Chain *chain; };
+    std::vector<Poly> polys;
+    for (size_t i = 0; i < chains.size(); i++) {
+        const Chain &c = chains[i];
+        if (!c.alive || c.u.size() < 2) continue;
+        simplify(c.u, c.v, 0.75, keep);
+        Poly p;
+        p.col = c.col;
+        p.chain = &c;
+        for (size_t k = 0; k < keep.size(); k++) {
+            p.x.push_back(c.u[keep[k]]);
+            p.y.push_back(c.v[keep[k]]);
+        }
+        polys.push_back(p);
+    }
+    auto snap = [&](double &px, double &py, size_t own) {
+        double best = 1.5;
+        double bx = px, by = py;
+        for (size_t k = 0; k < polys.size(); k++) {
+            if (k == own || polys[k].col != polys[own].col) continue;
+            const Chain &c = *polys[k].chain;
+            bool through = false;                       // (the point one of its inner pixels)
+            for (size_t i = 1; i + 1 < c.u.size() && !through; i++) through = c.u[i] == px && c.v[i] == py;
+            if (!through) continue;
+            for (size_t i = 0; i + 1 < polys[k].x.size(); i++) {
+                const double ax = polys[k].x[i], ay = polys[k].y[i], dx = polys[k].x[i + 1] - ax, dy = polys[k].y[i + 1] - ay;
+                const double l2 = dx * dx + dy * dy;
+                double t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+                t = t < 0 ? 0 : t > 1 ? 1 : t;
+                const double qx = ax + t * dx, qy = ay + t * dy, d = sqrt((qx - px) * (qx - px) + (qy - py) * (qy - py));
+                if (d < best) { best = d; bx = qx; by = qy; }
+            }
+        }
+        px = bx;
+        py = by;
+    };
+    std::vector<char> inChain(w * h, 0);
+    for (size_t k = 0; k < polys.size(); k++) {
+        Poly &p = polys[k];
+        snap(p.x.front(), p.y.front(), k);
+        snap(p.x.back(), p.y.back(), k);
+        for (size_t i = 0; i + 1 < p.x.size(); i++) {
+            drawf(2 * p.x[i] + 1, 2 * p.y[i] + 1, 2 * p.x[i + 1] + 1, 2 * p.y[i + 1] + 1, p.col);
+        }
+        for (size_t i = 0; i < p.chain->u.size(); i++) inChain[p.chain->v[i] * w + p.chain->u[i]] = 1;
+    }
+    for (int v = 0; v < h; v++) {                   // (a pixel in no chain, nor solid: its middle)
+        for (int u = 0; u < w; u++) {
+            if (col(u, v) >= 0 && !solid[v * w + u] && !inChain[v * w + u]) put(2 * u + 1, 2 * v + 1, col(u, v));
         }
     }
     // a mirror image?  The axis (u + u' of a mirrored pair) near the middle that most of the outline agrees with
@@ -920,8 +991,17 @@ void wire_draw(const Shape &s, Wireframe &out) {
     // as about its mirror) are the left half's copied, pixel for pixel; elsewhere (a side's shields, which differ) each
     // half keeps its own drawing.  A copy's colour is the art's own there (its pixel, or the nearest lit one about it
     // whose mirror is the left's colour, or any lit one): a side's damage shows.
-    std::vector<Bit16s> drawn(out.fine);
     const int sum = 2 * best + 1;                  // (fine X and sum - X are mirror images)
+    if (best % 2 == 0) {
+        // A column on the axis itself (best even: u and best - u the same column): its two fine columns are each
+        // other's mirror, so a line along it, drawn in its right one (the pixels' middles are 2u + 1), is drawn in
+        // both -- two pixels wide, the one way it is a mirror image of itself
+        const int XL = best, XR = best + 1;
+        for (int Y = 0; Y < H; Y++) {
+            if (XR < W && out.fine[Y * W + XR] >= 0 && out.fine[Y * W + XL] < 0) out.fine[Y * W + XL] = out.fine[Y * W + XR];
+        }
+    }
+    std::vector<Bit16s> drawn(out.fine);
     auto mirrored = [&](int u, int v) {
         for (int dv = -1; dv <= 1; dv++) {
             for (int du = -1; du <= 1; du++) {
@@ -968,10 +1048,56 @@ bool target_art_call() {
     return true;
 }
 
-void shape_wire(const Target &t, const Shape &s, int x, int y) {
+// The parts of one target display (the hull's halves, its middle, the shields' arcs: each a shape in one frame, drawn
+// one after another) are gathered into one picture as the game lays them, and that is drawn when anything else is
+// drawn next (or the frame is shown): so its lines run on across the parts, and its mirror image is the whole ship's
+// (the halves are not each other's mirrors: the drone's left half has the middle column's pixels, the Gothri's right).
+Shape g_wireComp;
+std::vector<char> g_wireBlock;      // per pixel of it: from a part that is no line art (a picture, a band): the game's block
+bool g_wirePending = false;
+Target g_wireT;
+int g_wireX = 0, g_wireY = 0;
+
+void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y);
+
+void wire_flush() {
+    if (!g_wirePending) return;
+    g_wirePending = false;
+    shape_wire(g_wireT, g_wireComp, g_wireBlock, g_wireX, g_wireY);
+}
+
+void wire_gather(const Target &t, const Shape &s, int x, int y) {
+    if (g_wirePending && (s.w != g_wireComp.w || s.h != g_wireComp.h || s.left != g_wireComp.left || s.top != g_wireComp.top ||
+                          x != g_wireX || y != g_wireY || t.seg != g_wireT.seg)) {
+        wire_flush();
+    }
+    if (!g_wirePending) {
+        g_wireComp.w = s.w;
+        g_wireComp.h = s.h;
+        g_wireComp.left = s.left;
+        g_wireComp.top = s.top;
+        g_wireComp.stamp = 0;
+        g_wireComp.px.assign(s.w * s.h, (Bit16s)-1);
+        g_wireBlock.assign(s.w * s.h, 0);
+        g_wireT = t;
+        g_wireX = x;
+        g_wireY = y;
+        g_wirePending = true;
+    }
+    const char art = line_art(s) ? 0 : 1;        // (each part judged on its own: a band of colours, a picture)
+    for (size_t i = 0; i < s.px.size() && i < g_wireComp.px.size(); i++) {
+        if (s.px[i] >= 0) {
+            g_wireComp.px[i] = s.px[i];
+            g_wireBlock[i] = art;
+        }
+    }
+}
+
+void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y) {
     static Wireframe cache[kWireCache];
     static int used = 0, next = 0;
-    const Bit32u hash = shape_hash(s);
+    Bit32u hash = shape_hash(s);
+    for (size_t i = 0; i < block.size(); i++) hash = (hash ^ (Bit32u)block[i]) * 16777619u;
     const Wireframe *wf = NULL;
     for (int i = 0; i < used && !wf; i++) {
         if (cache[i].hash == hash && cache[i].w == s.w && cache[i].h == s.h) wf = &cache[i];
@@ -981,7 +1107,7 @@ void shape_wire(const Target &t, const Shape &s, int x, int y) {
         next = (next + 1) % kWireCache;
         if (used < kWireCache) used++;
         made.hash = hash;
-        wire_make(s, made);
+        wire_make(s, block, made);
         wf = &made;
     }
     const int X0 = 2 * (x - s.left), Y0 = 2 * (y - s.top), W = 2 * wf->w, H = 2 * wf->h;
@@ -1506,6 +1632,7 @@ void present() {
 }
 
 void call(const Place &p) {
+    if (g_wirePending && !(p.op == OP_SHAPE && target_art_call())) wire_flush();     // (the target display's ship, whole)
     if (p.op == OP_CORNER_X || p.op == OP_CORNER_Y) {
         corner(p.op == OP_CORNER_Y);
         return;
@@ -1607,8 +1734,8 @@ void call(const Place &p) {
                 shape_blocks(t, *s, x, y, (Bit8u)arg16(6));
             }
         } else if (p.op == OP_SHAPE) {
-            if (hires_cockpit() && target_art_call() && s->w <= kWireMax && s->h <= kWireMax && line_art(*s)) {
-                shape_wire(t, *s, x, y);
+            if (hires_cockpit() && target_art_call() && s->w <= kWireMax && s->h <= kWireMax) {
+                wire_gather(t, *s, x, y);
             } else if (caller == kCrosshairCaller && hires_cockpit()) shape_lines(t, *s, x, y);
             else if (caller == kRadarCaller && hires_cockpit()) shape_radar(t, *s, x, y);
             else shape_blocks(t, *s, x, y, -1);

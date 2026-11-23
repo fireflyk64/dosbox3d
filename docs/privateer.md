@@ -1246,3 +1246,19 @@ there.  Pictures (line_art: over 30 in 100 of the pixels in squares of four) and
 Measured (scratch comm.sh, levels.sh: a targeted Talon): every pixel of the drawn diagram has a mirror partner of its
 colour about the frame's middle (1,084 with its shields down, 1,468 with them up; the hull's 628), in runs where the
 overlay sat at different segments.
+
+**Every ship, and straight lines through junctions (2026-11-23).**  The user: "the talon's leading edge wings are
+straight, but the system drew it as a subtle curve. Can they be straight. Can you render all the high rez wireframes
+from the game and see how they turn out and if others need fixing?"  The Talon's wing edge is a 45-degree staircase
+met half-way by an inner stroke: the chains broke at that junction and each half took its own slope (2:3, then 7:8).
+Now chains of a colour that meet at a pixel and together simplify to no corner there are joined, the straightest pair
+first, until none is left; a chain ending where a joined line passes through ends on that line (its nearest point
+within 1.5 pixels), and junction pixels are no longer dotted.  A scratch rig (ship1.sh: each type spawned ahead and
+targeted, the display at both levels; GLXYTYPE:MERCHANT, ORIOTYPE:TUG -- GALAXY1 and SCOUT, wrong appearances, made the
+game's own errors 6142 and 6482 with the high resolution off too) drew all sixteen.  Found and fixed: the Kilrathi
+ships' frames are 69 wide (the size limit is now 96); the halves are not each other's mirrors (the drone's left half
+carries the middle column, the Gothri's right), so the parts are now gathered into one picture as the game lays them
+(wire_gather) and drawn whole at the next other drawing (wire_flush), each part's pixels judged line art on its own
+(a part that is not -- a band of colours, a picture -- the game's blocks there); a line along a middle column is drawn
+in both its fine columns (the one way it mirrors itself).  Measured: every ship's drawing has each pixel's mirror of its
+colour, except where the game's own art has none (the Broadsword's one pixel, the Tarsus's offset cockpit).
