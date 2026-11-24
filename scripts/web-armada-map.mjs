@@ -4,7 +4,8 @@
 // the emulator's log moves, within the sector), and a click where the 640x400 picture shows a planet that is not
 // selected selects it (the game's selection, the marker in the log, becomes that planet: the game's own hit test on
 // what the picture shows), and a click on a fleet beside a planet selects the fleet; the wheel up shows the game's
-// own map (the log says so), the arrows move that one too, and the wheel down is one level out again; in Dock (F4)
+// own map (the log says so), the arrows move that one too, the wheel down is one level out again and once more further
+// out (a planet clicked there selected); in Dock (F4)
 // - undocks one of the top row and = docks it again.  The
 // emulator's WCARMHIRESDEBUG lines give the objects' 640x400 places (the planets, then the ships and markers beside
 // them).
@@ -153,6 +154,32 @@ try {
   await canvas.screenshot({ path: path.join(out, "map-wheel-out.png") });
   const after = lastObjects();
   console.log(`the wheel: in and out again; the view's middle ${now.mx},${now.my} -> ${after.mx},${after.my}`);
+
+  // the wheel down again: further out (three of the game's panels across in the picture of two); a click on a planet
+  // there where the picture shows it; the wheel up, one level out again
+  const mark7 = logs.length;
+  await page.mouse.move(cx0, cy0);
+  await page.mouse.wheel(0, 120);
+  assert(await waitLog(/Armada map: further out/, mark7, 5000), "the wheel down from one level out is further out");
+  const mark8 = logs.length;
+  assert(await waitLog(/Armada map: middle/, mark8, 10000), "the map drawn further out");
+  await canvas.screenshot({ path: path.join(out, "map-further.png") });
+  const far = lastObjects();
+  const farMarker = lastMarker();
+  const farTarget = far.objects.find((o) => o.id !== farMarker && o.x > 215 && o.x < 600 && o.y > 35 && o.y < 300);
+  if (farTarget) {
+    const [tx, ty] = toPage(farTarget.x, farTarget.y);
+    await page.mouse.click(tx, ty);
+    const mark9 = logs.length;
+    assert(await waitLog(new RegExp(`Armada map: marker ${farTarget.id} `), mark9, 10000),
+      `further out, the click at ${farTarget.x},${farTarget.y} selects ${farTarget.id} (now ${lastMarker()})`);
+    console.log(`further out: clicked ${farTarget.id} at ${farTarget.x},${farTarget.y}: selected (${far.objects.length} planets in view, ${now.objects.length} one level out)`);
+  }
+  await page.waitForTimeout(400);
+  const mark10 = logs.length;
+  await page.mouse.move(cx0, cy0);
+  await page.mouse.wheel(0, -120);
+  assert(await waitLog(/Armada map: one level out/, mark10, 5000), "the wheel up from further out is one level out");
 
   // Dock (the game's own F4) over the new game's carrier, its fighters docked: - undocks one of the top row (the row's
   // numbers change on the picture), = docks it again (the row as it was); Escape cancels

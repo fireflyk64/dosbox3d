@@ -1013,7 +1013,8 @@ void set_override(bool on, bool map) {
 //  - The overview's rectangle (seg14C6:44CD) is the doubled view's, kept inside the overview.
 //  - The arrow keys, which the map does not use, move the view (250 units a second; 125 on the game's own map), within
 //    those limits, the picture on or not; not under a dialog.
-//  - The wheel: up, the game's own map; down, one level out again; about the pointer (map_zoom).
+//  - The wheel: the game's own map, one level out, further out (three panels across in the picture of two: the
+//    planets at two thirds of their distances, map_px; the grid drawn here, map_grid_draw); about the pointer.
 //  - + and - in Move Resources, Dock and Move: a click on the top row's arrows (arrows_click; the game's own keys do the
 //    rest: F1..F8, C, D, A).
 // The picture: each screen refresh the game's screen doubled, and in the panel wherever the screen still holds the
@@ -1076,7 +1077,9 @@ Bit16u g_mapOvHalf[2];
 bool g_mapOvSet;
 unsigned g_mapFrames;
 Bit16u g_mapMarker;             // the sector record's +15Ch: the selection's marker (drawn in the panel routine), or 0
-bool g_mapZoomIn;               // the wheel's: the game's own map (up), or one level out (down; the default)
+int g_mapLevel = 1;             // the wheel's: 0 the game's own map, 1 one level out (the default), 2 further out
+double g_mapZoomAt = -1e9;      // the latest level change (a run of the wheel's turns is one step)
+unsigned g_mapGridDone;         // further out, the grid drawn in this quarter: 1 the minor lines, 2 the major
 int g_mapWheel;                 // the wheel's turn not yet taken (the frame's entry takes it: the quarters' scroll and
                                 // pointer are the game's own again there)
 double g_mapFrameAt = -1e9;     // the map screen's frame function's latest entry
@@ -1137,7 +1140,20 @@ bool mr_code_here() {
     return true;
 }
 
-bool map_wanted() { return g_m && g_mapCodeOk && wanted() && !g_mapZoomIn && vga.mode == M_VGA; }
+bool map_wanted() { return g_m && g_mapCodeOk && wanted() && g_mapLevel >= 1 && vga.mode == M_VGA; }
+
+// A world distance on the 640x400 screen at the map's level: one level out a unit is a pixel; further out (the user,
+// 2026-11-23: "one last zoom out level--can really give a tactical view of the situation without making it too
+// crowded": three of the game's panels across and down in the picture of two) two thirds of one, the floor of 2v/3
+// taken of each place itself (the same for every object, so they keep their distances as the view moves)
+int map_px(int v) { return g_mapLevel >= 2 ? (v >= 0 ? 2 * v / 3 : -((2 * -v + 2) / 3)) : v; }
+
+// World units a 640x400 pixel at the level (the game's own map: half a unit)
+double map_units() { return !map_wanted() ? 0.5 : g_mapLevel >= 2 ? 1.5 : 1.0; }
+
+// The view's half-size in world units at the level (one level out, the game's panel; further out half as much again)
+int map_half_w(int level) { return level >= 2 ? kPW * 3 / 2 : kPW; }
+int map_half_h(int level) { return level >= 2 ? kPH * 3 / 2 : kPH; }
 
 // A dialog over the map (view+2A4h: Move Resources' and the like; view+2ACh: the catalog's, the menu's): the arrows
 // and the wheel leave the map alone then (the catalog's list takes Up and Down)
@@ -1146,43 +1162,51 @@ bool map_dialog() {
     return mem_readw(view + 0x2A4) || mem_readw(view + 0x2AC);
 }
 
-// The doubled view's middle for the view's own middle (cx, cy): within the sector
-void map_clamp(PhysPt view, int &cx, int &cy, bool doubled) {
+// The view's middle at a level (0 the game's own) for the view's own middle (cx, cy): within the sector
+void map_clamp(PhysPt view, int &cx, int &cy, int level) {
     const int x0 = (Bit16s)mem_readw(view + 0x46), x1 = (Bit16s)mem_readw(view + 0x48);
     const int y0 = (Bit16s)mem_readw(view + 0x4A), y1 = (Bit16s)mem_readw(view + 0x4C);
-    if (!doubled) {
+    if (level <= 0) {
         cx = cx < x0 ? x0 : cx > x1 ? x1 : cx;
         cy = cy < y0 ? y0 : cy > y1 ? y1 : cy;
         return;
     }
+    const int hw = map_half_w(level), hh = map_half_h(level);
     const int left = x0 - kPCX + kPX0, right = x1 + (kPX0 + kPW - kPCX), top = y0 - kPCY + kPY0, bottom = y1 + (kPY0 + kPH - kPCY);
-    cx = left + kPW > right - kPW ? (left + right) / 2 : std::max(left + kPW, std::min(right - kPW, cx));
-    cy = top + kPH > bottom - kPH ? (top + bottom) / 2 : std::max(top + kPH, std::min(bottom - kPH, cy));
+    cx = left + hw > right - hw ? (left + right) / 2 : std::max(left + hw, std::min(right - hw, cx));
+    cy = top + hh > bottom - hh ? (top + bottom) / 2 : std::max(top + hh, std::min(bottom - hh, cy));
 }
 
 void arrows_click();
 
-// The wheel's turn, at the frame's entry
+// The wheel's turn, at the frame's entry: a level in or out, about the pointer (the world place under it stays under
+// it: the middle moves by the pointer's offset times the change in units a pixel)
 void map_zoom(bool in) {
     g_mapWheel = 0;
     const PhysPt view = map_view();
-    if (in == g_mapZoomIn || !wanted() || map_dialog()) return;
+    const int to = g_mapLevel + (in ? -1 : 1);
+    if (to < 0 || to > 2 || !wanted() || map_dialog()) return;
     const int px = (Bit16s)mem_readw(ds_at(g_m->mouseX)), py = 2 * (Bit16s)mem_readw(ds_at(g_m->mouseY));
     int ox = 0, oy = 0;
     if (px >= kMapX0 && px < kMapX0 + kMW && py >= kMapY0 && py < kMapY0 + kMH) {
         ox = px - (kMapX0 + kPW);
         oy = py - (kMapY0 + kPH);
     }
+    const double u0 = map_units();
+    const int was = g_mapLevel;
+    g_mapLevel = to;
+    const double u1 = map_units();
     int cx = (Bit16s)mem_readw(view + 0x42) + kPCX, cy = (Bit16s)mem_readw(view + 0x44) + kPCY;
-    cx += in ? ox / 2 : -(ox / 2);
-    cy += in ? oy / 2 : -(oy / 2);
-    map_clamp(view, cx, cy, !in);
+    cx += (int)floor(ox * (u0 - u1) + 0.5);
+    cy += (int)floor(oy * (u0 - u1) + 0.5);
+    map_clamp(view, cx, cy, to);
     mem_writew(view + 0x42, (Bit16u)(cx - kPCX));
     mem_writew(view + 0x44, (Bit16u)(cy - kPCY));
     mem_writew(view + 0x52, 0);         // (the game's own glide to a place, if one was going)
-    g_mapZoomIn = in;
-    g_mapHave[0] = g_mapHave[1] = false;    // (one level out again: from its next frame)
-    wclog(1, "Armada map: %s (the middle %d,%d; the pointer %d,%d)", in ? "the game's own" : "one level out", cx, cy, px, py);
+    g_mapHave[0] = g_mapHave[1] = false;    // (the new level's picture from its next frame)
+    g_mapZoomAt = PIC_FullIndex();
+    static const char *const name[3] = { "the game's own", "one level out", "further out" };
+    wclog(1, "Armada map: %s (from %s; the middle %d,%d; the pointer %d,%d)", name[to], name[was], cx, cy, px, py);
 }
 
 // At the frame function's entry (the picture on or not): the wheel's turn, the arrows' move, and the game's scroll put
@@ -1202,7 +1226,7 @@ void map_frame() {
     const int ay = free ? (mem_readb(held + 0x50) == 1) - (mem_readb(held + 0x48) == 1) : 0;
     if ((ax || ay) && g_mapPanAt >= 0) {
         const double dt = std::min(now - g_mapPanAt, 100.0);
-        const double speed = map_wanted() ? kPanPerMs : kPanPerMs / 2;   // (the same on the screen at either level)
+        const double speed = kPanPerMs * map_units();   // (the same on the screen at every level)
         g_mapPanX += ax * speed * dt;
         g_mapPanY += ay * speed * dt;
         const int mx = (int)g_mapPanX, my = (int)g_mapPanY;
@@ -1215,8 +1239,8 @@ void map_frame() {
         g_mapPanX = g_mapPanY = 0;
     }
     g_mapPanAt = now;
-    if (map_wanted()) map_clamp(view, cx, cy, true);                    // (one level out: the doubled view's limits)
-    else if (cx != wasX || cy != wasY) map_clamp(view, cx, cy, false);  // (the game's own map: its own, when moved)
+    if (map_wanted()) map_clamp(view, cx, cy, g_mapLevel);          // (out: the view's limits at its level)
+    else if (cx != wasX || cy != wasY) map_clamp(view, cx, cy, 0);  // (the game's own map: its own, when moved)
     if (cx != wasX || cy != wasY) {
         mem_writew(view + 0x42, (Bit16u)(cx - kPCX));
         mem_writew(view + 0x44, (Bit16u)(cy - kPCY));
@@ -1269,7 +1293,14 @@ bool map_beside(const MapObj &m, PhysPt &planet, int &dx, int &dy) {
     return true;
 }
 
-void map_objects_at(int q, int sx, int sy) {
+// A planet's world place (+10h, +12h) as a place in quarter q's panel (the game's 320x200 terms): its 640x400 place
+// (the view's middle cx, cy at the panel's middle, distances by map_px) less the quarter's corner
+void map_planet_in(PhysPt o, int q, int cx, int cy, int &a, int &b) {
+    a = kPX0 + kPW + map_px((Bit16s)mem_readw(o + 0x10)) - map_px(cx) - (q & 1) * kPW;
+    b = kPY0 + kPH + map_px((Bit16s)mem_readw(o + 0x12)) - map_px(cy) - (q >> 1) * kPH;
+}
+
+void map_objects_at(int q, int cx, int cy) {
     for (int pass = 0; pass < 3; pass++) {
         for (size_t i = 0; i < g_mapObjs.size(); i++) {
             if (g_mapObjs[i].kind != pass) continue;
@@ -1285,13 +1316,13 @@ void map_objects_at(int q, int sx, int sy) {
                     continue;
                 }
                 const int a0 = (Bit16s)(g_mapObjs[i].f[8] | g_mapObjs[i].f[9] << 8), b0 = (Bit16s)(g_mapObjs[i].f[10] | g_mapObjs[i].f[11] << 8);
-                const int X = g_mapMode ? 2 * a0 : kMapX0 + a0 + kPW - kPCX, Y = g_mapMode ? 2 * b0 : kMapY0 + b0 + kPH - kPCY;
+                const int X = g_mapMode ? 2 * a0 : kMapX0 + kPW + map_px(a0 - kPCX + cx) - map_px(cx);
+                const int Y = g_mapMode ? 2 * b0 : kMapY0 + kPH + map_px(b0 - kPCY + cy) - map_px(cy);
                 mem_writew(o + 0x0A, (Bit16u)(kPX0 + X - kMapX0 - (q & 1) * kPW));
                 mem_writew(o + 0x0C, (Bit16u)(kPY0 + Y - kMapY0 - (q >> 1) * kPH));
                 continue;
             }
-            a = (Bit16s)mem_readw(o + 0x10) - sx;
-            b = (Bit16s)mem_readw(o + 0x12) - sy;
+            map_planet_in(o, q, cx, cy, a, b);
             mem_writew(o + 0x0A, (Bit16u)a);
             mem_writew(o + 0x0C, (Bit16u)b);
             if (!mem_readw(o + 0x1E)) {
@@ -1346,7 +1377,8 @@ void map_quarter(int q) {
     const int sx = cx - kPW + (q & 1) * kPW - kPX0, sy = cy - kPH + (q >> 1) * kPH - kPY0;
     mem_writew(view + 0x42, (Bit16u)sx);
     mem_writew(view + 0x44, (Bit16u)sy);
-    map_objects_at(q, sx, sy);
+    map_objects_at(q, cx, cy);
+    g_mapGridDone = 0;
     // the pointer in the quarter's terms (it is the 640x400 one: x in 640ths, y in 200ths, as the game keeps it)
     map_mouse_moved();
     const int px = (Bit16s)g_mapMouse[0], py = 2 * (Bit16s)g_mapMouse[1];
@@ -1449,8 +1481,8 @@ void map_after() {
         const int cx = (Bit16s)mem_readw(view + 0x42) + kPCX, cy = (Bit16s)mem_readw(view + 0x44) + kPCY;
         std::string line, more;
         const auto planetXY = [&](PhysPt o, int &X, int &Y) {
-            X = kMapX0 + (Bit16s)mem_readw(o + 0x10) - (cx - kPW);
-            Y = kMapY0 + (Bit16s)mem_readw(o + 0x12) - (cy - kPH);
+            X = kMapX0 + kPW + map_px((Bit16s)mem_readw(o + 0x10)) - map_px(cx);
+            Y = kMapY0 + kPH + map_px((Bit16s)mem_readw(o + 0x12)) - map_px(cy);
         };
         for (size_t i = 0; i < g_mapObjs.size(); i++) {
             const PhysPt o = g_mapObjs[i].at;
@@ -1516,10 +1548,47 @@ void map_present() {
     g_mapLastOwn = PIC_FullIndex();
 }
 
-// The grid's line call in a quarter: every other line kept (minor every 20 units, major every 80, in the world)
+// Further out the grid is drawn here, the game's own line calls skipped (they reach only a game's panel of the world
+// a quarter): a line every 30 units in the minor colour and every 120 in the major's, 20 and 80 pixels apart on the
+// screen as at the other levels, each at a world place of the game's own lines; at the first of each kind's calls in
+// a quarter (the game draws the minor ones first, over the panel's background), across the whole panel as the game's
+void map_grid_draw(bool major, Bit8u colour) {
+    const Bitmap bm = bitmap();
+    if (!bm.row[0]) return;
+    const int q = g_mapPass, cx = (Bit16s)g_mapScroll[0] + kPCX, cy = (Bit16s)g_mapScroll[1] + kPCY;
+    const int every = major ? 120 : 30;
+    std::vector<Bit8u> line(kPW, colour);
+    for (int down = 0; down < 2; down++) {
+        const int c = down ? cx : cy, phase = down ? 25 : 15, half = down ? kPW : kPH;
+        const int from = c - 2 * half - every, to = c + 2 * half + every;
+        for (int w = from - ((from - phase) % every + every) % every; w <= to; w += every) {
+            if (down) {
+                const int x = kPX0 + kPW + map_px(w) - map_px(cx) - (q & 1) * kPW;
+                if (x < kPX0 || x >= kPX0 + kPW) continue;
+                for (int y = kPY0; y < kPY0 + kPH; y++) lin_write(bm.row[y] + x, &colour, 1);
+            } else {
+                const int y = kPY0 + kPH + map_px(w) - map_px(cy) - (q >> 1) * kPH;
+                if (y < kPY0 || y >= kPY0 + kPH) continue;
+                lin_write(bm.row[y] + kPX0, &line[0], kPW);
+            }
+        }
+    }
+}
+
+// The grid's line call in a quarter: one level out every other line kept (minor every 20 units, major every 80, in
+// the world); further out none (map_grid_draw)
 void map_grid(int which) {
     if (g_mapPass < 0 || g_mapPass > 3) return;
     const PhysPt sp = SegPhys(ss) + reg_sp;     // (rec, x0, y0, x1, y1, colour)
+    if (g_mapLevel >= 2) {
+        const unsigned kind = which >= 2 ? 2 : 1;
+        if (!(g_mapGridDone & kind)) {
+            g_mapGridDone |= kind;
+            map_grid_draw(kind == 2, (Bit8u)mem_readw(sp + 0x0A));
+        }
+        reg_eip += 5;                   // (past the call; the caller pops)
+        return;
+    }
     const PhysPt view = map_view();
     const bool across = which == 0 || which == 2;
     const int world = across ? (Bit16s)mem_readw(sp + 4) + (Bit16s)mem_readw(view + 0x44)
@@ -1644,8 +1713,9 @@ void map_overview(bool lines) {
     if (!lines) {
         g_mapOvHalf[0] = mem_readw(di + 0x18);
         g_mapOvHalf[1] = mem_readw(di + 0x1A);
-        mem_writew(di + 0x18, (Bit16u)(2 * (Bit16s)g_mapOvHalf[0]));
-        mem_writew(di + 0x1A, (Bit16u)(2 * (Bit16s)g_mapOvHalf[1]));
+        const int k = g_mapLevel >= 2 ? 3 : 2;    // (the view's size in the game's panels across)
+        mem_writew(di + 0x18, (Bit16u)(k * (Bit16s)g_mapOvHalf[0]));
+        mem_writew(di + 0x1A, (Bit16u)(k * (Bit16s)g_mapOvHalf[1]));
         g_mapOvSet = true;
         return;
     }
@@ -1705,8 +1775,11 @@ void map_conv() {
     // (a place a on the game's panel is the doubled view's column a - (kPCX - kPW) - kPX0 ... : with the game's middle
     // and the doubled view's the same, column u = a + kPW - kPCX + kPX0 - kPX0 = a - 6; on the screen kMapX0 + u, and
     // the game's pointer half that: (kMapX0 + a - 6) >> 1; likewise down: row v = b + kPH - kPCY = b + 54)
-    const int a = (Bit16s)mem_readw(o + 0x0A), b = (Bit16s)mem_readw(o + 0x0C);
-    const int X = kMapX0 + a + kPW - kPCX, Y = kMapY0 + b + kPH - kPCY - kPY0 + kPY0;
+    // (further out: the distances from the middle by map_px, of the world places themselves: the picture's places)
+    const PhysPt view = map_view();
+    const int cx = (Bit16s)mem_readw(view + 0x42) + kPCX, cy = (Bit16s)mem_readw(view + 0x44) + kPCY;
+    const int X = kMapX0 + kPW + map_px((Bit16s)mem_readw(o + 0x10)) - map_px(cx);
+    const int Y = kMapY0 + kPH + map_px((Bit16s)mem_readw(o + 0x12)) - map_px(cy);
     mem_writew(o + 0x0A, (Bit16u)(X >> 1));
     mem_writew(o + 0x0C, (Bit16u)(Y >> 1));
     g_mapConvObj = o;
@@ -1776,6 +1849,7 @@ bool mr_key(int kbdKey, bool pressed) {
 // view's limits let it; the pointer off the map: about the middle.  Not while a dialog is over the map.
 bool map_wheel(int dy) {
     if (!dy || !g_m || !g_mapCodeOk || !wanted() || PIC_FullIndex() - g_mapFrameAt > 300.0) return false;
+    if (PIC_FullIndex() - g_mapZoomAt < 300.0) return true;   // (a trackpad's run of turns: one level a flick)
     g_mapWheel = dy > 0 ? 1 : -1;
     return true;
 }
@@ -1802,7 +1876,7 @@ void arm_hires_loaded(const char *exe, Bit16u loadSeg) {
     g_mapHave[0] = g_mapHave[1] = false;
     g_mapTail = g_mapDiff = false;
     g_mapLastOwn = -1e9;
-    g_mapZoomIn = false;
+    g_mapLevel = 1;
     g_mapWheel = 0;
     g_mapFrameAt = -1e9;
     g_mrOk = false;
@@ -1997,7 +2071,7 @@ bool arm_hires_script_item(const std::string &item, double t) {
 void arm_hires_set(int lvl) {
     level();
     g_level = lvl < 0 ? 0 : lvl > 2 ? 2 : lvl;
-    g_mapZoomIn = false;
+    g_mapLevel = 1;
     now_wanted();
     wclog(1, "Armada: the high-resolution picture %s", g_level == 2 ? "all" : g_level == 1 ? "the space alone" : "off");
 }
@@ -2007,7 +2081,7 @@ void arm_hires_flip() {
     if (g_never) return;
     const int l = level();
     g_level = l == 2 ? 1 : l == 1 ? 0 : 2;
-    g_mapZoomIn = false;
+    g_mapLevel = 1;
     now_wanted();
     wclog(1, "Armada: the high-resolution picture %s", g_level == 2 ? "all" : g_level == 1 ? "the space alone" : "off");
 }
