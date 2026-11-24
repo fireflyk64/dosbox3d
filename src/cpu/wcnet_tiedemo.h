@@ -40,6 +40,10 @@ enum {
     kObjects = 0x67CA,          // FlightObject objects[116], 88 bytes each (the CD's layout: +4 ship_idx, +6 x y z ...)
     kObjectSize = 0x58,
     kObjectCount = 0x74,
+    // an object's fields (the names the room's code shares with X-Wing's build, wcnet_xw.h: wcnet_tdm_game.h)
+    kOId = 0x00, kOCat = 0x02, kOGenus = 0x03, kOType = 0x04, kOPos = 0x06, kOPrev = 0x12, kOHeading = 0x1E, kOPitch = 0x20,
+    kORoll = 0x22, kOSpeed = 0x26, kORadius = 0x2A, kODeath = 0x2C, kOAge = 0x2E, kOSelf = 0x30, kOSide = 0x33, kOFg = 0x35,
+    kOMove = 0x3A, kOAxes = 0x42, kOCraft = 0x54,
     kCraftSlots = 0x1C,         // NUM_CRAFTS: objects 0..27 are craft (each its CraftData, +0x54), from 28 projectiles
     kPlayer = 0xCD78,           // pstate: +0 the player's object (near), +2 its craft, +4 its object number,
     kPlayerObj = 0xCD7C,
