@@ -1624,7 +1624,9 @@ void map_reg_ret() {
 
 // The overview's rectangle: the doubled view's half-sizes for its computation, the result kept inside the overview
 void map_overview(bool lines) {
-    if (!g_mapMode || g_mapPass >= 0) {
+    // (drawn in the game's own pass, 4: the quarters skip it; it was gated off there too at first, so the rectangle
+    // stayed the game's own size until 2026-11-23)
+    if (!g_mapMode || (g_mapPass >= 0 && g_mapPass <= 3)) {
         if (lines && g_mapOvSet) { g_mapOvSet = false; }
         return;
     }
