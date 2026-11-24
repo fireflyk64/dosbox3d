@@ -58,39 +58,39 @@ typedef Bit8u u8; typedef Bit16u u16; typedef Bit32u u32; typedef Bit8s s8; type
 // Where things are in the data segment
 enum : u16 {
     // the face and its object (inputs)
-    kVertexPoint = 0x213A,      // [2v] vertex v's screen point (near pointer to {long x, long y}; 0 = behind the near plane)
-    kVertexLight = 0x223A,      // [2v] its light
-    kGouraud = 0x243A,          // 1: the face is shaded from its vertices' lights
-    kObject = 0x2464, kFace = 0x2474, kRecord = 0x247E, kEdges = 0x2470,
-    kShadeMode = 0x26DC,
+    kVertexPoint = XA(0x213A, 0x2C72),      // [2v] vertex v's screen point (near pointer to {long x, long y}; 0 = behind the near plane)
+    kVertexLight = XA(0x223A, 0x2D72),      // [2v] its light
+    kGouraud = XA(0x243A, 0x2F72),          // 1: the face is shaded from its vertices' lights
+    kObject = XA(0x2464, 0x2F9C), kFace = XA(0x2474, 0x2FAC), kRecord = XA(0x247E, 0x2FB6), kEdges = XA(0x2470, 0x2FA8),
+    kShadeMode = XA(0x26DC, 0x3214),
     // the edges' tables (inputs; the flags and the slope's cache are written)
-    kPointA = 0x2AF0, kPointB = 0x2BF0,                 // [2e] the edge's two points
-    kAbsDx = 0x3090, kAbsDy = 0x3978,                   // [4e] longs
-    kSignDx = 0x28F0, kSignDy = 0x2970,                 // [e]
-    kFlags = 0x2FF0,                                    // [e]
-    kSlopeFrac = 0x2DF0, kSlopeLo = 0x2EF0, kSlopeHi = 0x3B78,     // [2e] the slope kept (flag 40)
+    kPointA = XA(0x2AF0, 0x3635), kPointB = XA(0x2BF0, 0x3735),                 // [2e] the edge's two points
+    kAbsDx = XA(0x3090, 0x3BD5), kAbsDy = XA(0x3978, 0x44BD),                   // [4e] longs
+    kSignDx = XA(0x28F0, 0x3435), kSignDy = XA(0x2970, 0x34B5),                 // [e]
+    kFlags = XA(0x2FF0, 0x3B35),                                    // [e]
+    kSlopeFrac = XA(0x2DF0, 0x3935), kSlopeLo = XA(0x2EF0, 0x3A35), kSlopeHi = XA(0x3B78, 0x46BD),     // [2e] the slope kept (flag 40)
     // the window
-    kWide = 0x48C5, kWideLess1 = 0x48C7, kDeep = 0x48D1,
-    kWide7 = 0x28AE,            // the width << 7
-    kRowLimit = 0x28B0,         // (long) the steep tracers' end: row.fraction and light packed as they keep them
-    kDeep2 = 0x28B4,            // the depth * 2
-    kOddWord = 0x28D2,          // (a word the game's clip leaves in CX in one case; FFFF)
+    kWide = XA(0x48C5, 0x5423), kWideLess1 = XA(0x48C7, 0x5427), kDeep = XA(0x48D1, 0x5433),
+    kWide7 = XA(0x28AE, 0x33F3),            // the width << 7
+    kRowLimit = XA(0x28B0, 0x33F5),         // (long) the steep tracers' end: row.fraction and light packed as they keep them
+    kDeep2 = XA(0x28B4, 0x33F9),            // the depth * 2
+    kOddWord = XA(0x28D2, 0x3417),          // (a word the game's clip leaves in CX in one case; FFFF)
     // the lists
-    kRows = 0x6232, kPool = 0x274A,
+    kRows = XA(0x6232, 0xD3C8), kPool = XA(0x274A, 0x3282),
     // the routine's own variables (the game's, kept in the image where the game keeps them)
-    kCountdown = 0x245E, kTraced = 0x2466,
-    kId = 0x274C,               // byte: the edge, byte: the object -- the tag of every entry written
-    kLightA = 0x274E, kLightB = 0x2750,     // the lights at the edge's first and second point
-    kLightPerPixel = 0x2752,    // a steep edge's light step a pixel of x
-    kLightPerRow2 = 0x2754,     // twice the light's step a row
-    kStartX32 = 0x2756,         // (long) a shallow edge's x where it starts
-    kStartX = 0x275A,           // the x it starts at in the window (or how the clip left it)
-    kRowFrom = 0x275C, kRowTo = 0x275E,     // bytes: the rows it runs between
-    kSignX = 0x2760, kSignY = 0x2762,       // bytes: +1 / -1
-    kSpareEdge = 0x2764,        // an edge number of this face that needs no tracing: lent to the cut's closing edge
-    kCutPoint = 0x2766, kBehind = 0x2768,
+    kCountdown = XA(0x245E, 0x2F96), kTraced = XA(0x2466, 0x2F9E),
+    kId = XA(0x274C, 0x3284),               // byte: the edge, byte: the object -- the tag of every entry written
+    kLightA = XA(0x274E, 0x3286), kLightB = XA(0x2750, 0x3288),     // the lights at the edge's first and second point
+    kLightPerPixel = XA(0x2752, 0x328A),    // a steep edge's light step a pixel of x
+    kLightPerRow2 = XA(0x2754, 0x328C),     // twice the light's step a row
+    kStartX32 = XA(0x2756, 0x328E),         // (long) a shallow edge's x where it starts
+    kStartX = XA(0x275A, 0x3292),           // the x it starts at in the window (or how the clip left it)
+    kRowFrom = XA(0x275C, 0x3294), kRowTo = XA(0x275E, 0x3296),     // bytes: the rows it runs between
+    kSignX = XA(0x2760, 0x3298), kSignY = XA(0x2762, 0x329A),       // bytes: +1 / -1
+    kSpareEdge = XA(0x2764, 0x32A4),        // an edge number of this face that needs no tracing: lent to the cut's closing edge
+    kCutPoint = XA(0x2766, 0x32A6), kBehind = XA(0x2768, 0x32A8),
 };
-enum { kPoolEnd = 0x9F80, kShadesMiddle = 0x0798 };
+enum { kPoolEnd = XA(0x9F80, 0xDF80), kShadesMiddle = XA(0x0798, 0x0798) };
 enum Side { kLeftSide, kRightSide };
 
 // The check's notes of which parts of the tracer have run (the log lists them, and those that never did)
@@ -578,7 +578,7 @@ struct Tracer {
         const u16 top = (u16)(((u16)row2 >> 1) + 1 - rows);
         at = (at & 0xFFFF0000u) | l;
         const u32 beside = (u32)rows * slope + (dir < 0 ? (0 - at) >> 16 : at >> 16);
-        running(top, dir < 0 ? 0xFFFC : 0xFFF3, slope, l, (u32)rows << 24 | (beside & 0xFFFFFF));
+        running(top, dir < 0 ? 0xFFFC : XA(0xFFF3, 0xFFF3), slope, l, (u32)rows << 24 | (beside & 0xFFFFFF));
     }
 
     // -----------------------------------------------------------------------------------------------------------
@@ -760,7 +760,7 @@ struct Tracer {
         if (from == to) return;
         const bool back = sign_x() < 0;
         if (from < to) {
-            const u16 kind = side == kLeftSide ? (back ? 0xFFF9 : 0xFFFA) : (back ? 0xFFF1 : 0xFFF2);
+            const u16 kind = side == kLeftSide ? (back ? XA(0xFFF9, 0xFFF9) : XA(0xFFFA, 0xFFFA)) : (back ? XA(0xFFF1, 0xFFF1) : XA(0xFFF2, 0xFFF2));
             seen(k_steepbeside_down);
             const u32 out = side == kLeftSide ? 0 - x : x;
             running(from, kind, slope, m.d16(kLightA), (u32)(u8)(to - from) << 24 | (out & 0xFFFFFF));
@@ -769,7 +769,7 @@ struct Tracer {
         // upwards: the record starts at the top, so x and the light are taken there
         seen(k_steepbeside_up);
         const u8 rows = (u8)(from - to);
-        u16 kind = side == kLeftSide ? 0xFFFA : 0xFFF2;
+        u16 kind = side == kLeftSide ? XA(0xFFFA, 0xFFFA) : XA(0xFFF2, 0xFFF2);
         if (!upright) {
             u16 columns = (u16)(((u32)rows << 8) / slope);
             if (!back) { kind--; columns = (u16)(0 - columns); }
@@ -1102,7 +1102,7 @@ struct Tracer {
                 const u32 columns = slope ? (u32)(((Bit64u)above << 8) / slope) : 0;
                 out = grows ? out + columns : out - columns;
             }
-            kind = (u16)((side == kLeftSide ? 0xFFFA : 0xFFF2) - (back ? 1 : 0));
+            kind = (u16)((side == kLeftSide ? XA(0xFFFA, 0xFFFA) : XA(0xFFF2, 0xFFF2)) - (back ? 1 : 0));
             slopeWord = (slope >> 16) ? 0xFFFF : (u16)slope;
         }
         running(top, kind, slopeWord, light, (u32)(u8)rows << 24 | (out & 0xFFFFFF));
@@ -1262,32 +1262,32 @@ struct Tracer {
 // ---------------------------------------------------------------------------------------------------------------
 enum : u16 {
     // the flat objects' tables ([n] or [2n], n = the flat object's number; its object byte is 80h + n)
-    kFlatNext = 0x26E3,         // the next flat object's number (77h = none left)
-    kFlatColour = 0x410C, kFlatComponent = 0x428C, kFlatParent = 0x418C,
-    kFlatX = 0x3E0C, kFlatY = 0x3F0C, kFlatZ = 0x400C,
-    kParent = 0x2480, kIdLow = 0x2484,
+    kFlatNext = XA(0x26E3, 0x321B),         // the next flat object's number (77h = none left)
+    kFlatColour = XA(0x410C, 0x4C51), kFlatComponent = XA(0x428C, 0x4DD1), kFlatParent = XA(0x418C, 0x4CD1),
+    kFlatX = XA(0x3E0C, 0x4951), kFlatY = XA(0x3F0C, 0x4A51), kFlatZ = XA(0x400C, 0x4B51),
+    kParent = XA(0x2480, 0x2FB8), kIdLow = XA(0x2484, 0x2FBC),
     // a flat polygon's screen points: a ring of {long x, long y}
-    kRingFirst = 0x2452, kRingEnd = 0x2454,
-    kMinX = 0x2456, kMaxX = 0x2458, kMinY = 0x245A, kMaxY = 0x245C,     // pointers to the extreme points
-    kPoints = 0x2472, kSameRow = 0x2460, kSameColumn = 0x2462,          // how many points; how many share a row / a column
-    kColour = 0x2447,
+    kRingFirst = XA(0x2452, 0x2F8A), kRingEnd = XA(0x2454, 0x2F8C),
+    kMinX = XA(0x2456, 0x2F8E), kMaxX = XA(0x2458, 0x2F90), kMinY = XA(0x245A, 0x2F92), kMaxY = XA(0x245C, 0x2F94),     // pointers to the extreme points
+    kPoints = XA(0x2472, 0x2FAA), kSameRow = XA(0x2460, 0x2F98), kSameColumn = XA(0x2462, 0x2F9A),          // how many points; how many share a row / a column
+    kColour = XA(0x2447, 0x2F7F),
     // a thick line
-    kLineSide = 0x2726,         // byte: which way the part left of the window leans
-    kLineSignY = 0x2727, kLineSignX = 0x2728,       // bytes: +1 / -1, the line's direction from its first point
-    kLineSlope = 0x2729,        // three words: the slope kept between the line's two edges
-    kLineState = 0x272F,        // byte: what the slope kept is (0 none yet, 1 steep, FF shallow, 2 a level line)
-    kThick = 0x2730, kLineP = 0x2732,
-    kCapLightP = 0x2734, kCapLightQ = 0x2736,       // the lights of the two end caps
-    kLightP = 0x2738, kLightQ = 0x273A,             // the two ends' lights (inputs; reworked)
-    kAcrossStep = 0x273E,       // twice the light's step a row across the line's thickness
-    kLineDx = 0x2740, kLineDy = 0x2744,             // longs
+    kLineSide = XA(0x2726, 0x325E),         // byte: which way the part left of the window leans
+    kLineSignY = XA(0x2727, 0x325F), kLineSignX = XA(0x2728, 0x3260),       // bytes: +1 / -1, the line's direction from its first point
+    kLineSlope = XA(0x2729, 0x3261),        // three words: the slope kept between the line's two edges
+    kLineState = XA(0x272F, 0x3267),        // byte: what the slope kept is (0 none yet, 1 steep, FF shallow, 2 a level line)
+    kThick = XA(0x2730, 0x3268), kLineP = XA(0x2732, 0x326A),
+    kCapLightP = XA(0x2734, 0x326C), kCapLightQ = XA(0x2736, 0x326E),       // the lights of the two end caps
+    kLightP = XA(0x2738, 0x3270), kLightQ = XA(0x273A, 0x3272),             // the two ends' lights (inputs; reworked)
+    kAcrossStep = XA(0x273E, 0x3276),       // twice the light's step a row across the line's thickness
+    kLineDx = XA(0x2740, 0x3278), kLineDy = XA(0x2744, 0x327C),             // longs
     // a sprite's rows
-    kBoxLeft = 0x48B2, kBoxTop = 0x48B4, kBoxRight = 0x48B6, kBoxBottom = 0x48B8,   // the dirty box (y upwards); then left, top row, width, rows
-    kRowStart = 0x48BA, kSpriteMap = 0x48A2, kDeepLess1 = 0x48D3,
-    kSpriteX = 0xC448, kSpriteY = 0xC44C, kSpriteZ = 0xC458,                         // longs: where the sprite is
-    kRowOffsets = 0xCFE0,       // in the CODE segment: [2 * row] the row's offset in the background buffer
+    kBoxLeft = XA(0x48B2, 0x5410), kBoxTop = XA(0x48B4, 0x5412), kBoxRight = XA(0x48B6, 0x5414), kBoxBottom = XA(0x48B8, 0x5416),   // the dirty box (y upwards); then left, top row, width, rows
+    kRowStart = XA(0x48BA, 0x5418), kSpriteMap = XA(0x48A2, 0x5400), kDeepLess1 = XA(0x48D3, 0x5437),
+    kSpriteX = XA(0xC448, 0xC282), kSpriteY = XA(0xC44C, 0xC286), kSpriteZ = XA(0xC458, 0xC28A),                         // longs: where the sprite is
+    kRowOffsets = XA(0xCFE0, 0xD400),       // in the CODE segment: [2 * row] the row's offset in the background buffer
 };
-enum { kNoFlatLeft = 0x77 };
+enum { kNoFlatLeft = XA(0x77, 0x6F) };
 
 struct Shapes : Tracer {
     int kind;       // what the call turned out to be (for the check's table)
@@ -1436,7 +1436,7 @@ struct Shapes : Tracer {
         if (!flat_in_window()) { seen(k_flat_outside); kind = 0; return 0; }
         if (m.d16(kFlatNext) == kNoFlatLeft) { seen(k_flat_none_left); kind = 0; return 0; }
         const u16 n = take_flat(m.d8(kColour));
-        m.D16((u16)(kFlatZ + 2 * n), 0x8001);       // (no place of its own: the caller may write one)
+        m.D16((u16)(kFlatZ + 2 * n), XA(0x8001, 0x8001));       // (no place of its own: the caller may write one)
         flat_id(n);
         const u8 points = (u8)m.d16(kPoints);
         if (points == m.d8(kSameColumn)) { seen(k_flat_upright_line); kind = 1; flat_upright_line(); return 1; }
@@ -1656,7 +1656,7 @@ struct Shapes : Tracer {
         const u32 rowsAPixel = (u32)(dy8 >> 32) >= dxl ? (u32)dy8 : (u32)(dy8 / dxl);
         const u16 slope = (rowsAPixel >> 16) ? 0xFFFF : (u16)rowsAPixel;
         seen(k_line_tall_left_record);
-        running(top, (m.d8(kLineSide) & 0x80) ? 0xFFFA : 0xFFF9, slope, light, (u32)(u8)(end - top) << 24 | ((0 - x) & 0xFFFFFF));
+        running(top, (m.d8(kLineSide) & 0x80) ? XA(0xFFFA, 0xFFFA) : XA(0xFFF9, 0xFFF9), slope, light, (u32)(u8)(end - top) << 24 | ((0 - x) & 0xFFFFFF));
     }
     // one of the two edges, its slope worked out
     void line_tall_edge(u16 p, u16 q, bool first) {
@@ -1759,8 +1759,9 @@ struct Shapes : Tracer {
     // the box grown by two pixels each way and cut to the window: kBoxLeft = its left, kBoxRight = its WIDTH,
     // kBoxTop = its top row (the box's y runs upwards: turned over), kBoxBottom = its ROWS.  False: nothing of it.
     bool sprite_box() {
-        m.D16(kBoxRight, (u16)(m.d16(kBoxRight) + 2)); m.D16(kBoxBottom, (u16)(m.d16(kBoxBottom) - 2));
-        m.D16(kBoxLeft, (u16)(m.d16(kBoxLeft) - 2)); m.D16(kBoxTop, (u16)(m.d16(kBoxTop) + 2));
+        // (grown by two pixels each way; X-Wing's by four)
+        m.D16(kBoxRight, (u16)(m.d16(kBoxRight) + XA(2, 4))); m.D16(kBoxBottom, (u16)(m.d16(kBoxBottom) - XA(2, 4)));
+        m.D16(kBoxLeft, (u16)(m.d16(kBoxLeft) - XA(2, 4))); m.D16(kBoxTop, (u16)(m.d16(kBoxTop) + XA(2, 4)));
         const s16 w = (s16)wide(), d = (s16)deep();
         s16 left = (s16)m.d16(kBoxLeft);
         if (left >= w) return false;
@@ -1857,7 +1858,7 @@ void tie640_trace_sprite_rows(TraceMem &m, Bit8u *bg, int *kind) {
 // The check
 // ---------------------------------------------------------------------------------------------------------------
 namespace {
-enum { kDataPara = 0x421F, kRendPara = 0x1CCA, kTablesSeg = 0xD8A6 };
+enum { kDataPara = XA(0x421F, 0x3F1C), kRendPara = XA(0x1CCA, 0x222D), kTablesSeg = XA(0xD8A6, 0xD34A) };
 Bit8u g_ds[0x10000], g_tb[0x10000], g_face[160];
 bool g_pending = false;
 int g_vertices = 0;
@@ -1869,14 +1870,14 @@ std::string g_inputs;
 std::string describe(Bit8u *ds, const Bit8u *face, int n) {
     char b[200];
     std::string t;
-    snprintf(b, sizeof(b), "object %u face %u gouraud %u, %d vertices:", host_readw(ds + 0x2464), host_readw(ds + 0x2474), ds[0x243A], n);
+    snprintf(b, sizeof(b), "object %u face %u gouraud %u, %d vertices:", host_readw(ds + XA(0x2464, 0x2F9C)), host_readw(ds + XA(0x2474, 0x2FAC)), ds[XA(0x243A, 0x2F72)], n);
     t = b;
     for (int i = 0; i < n; i++) {
         const int v1 = face[2 * i], e = face[2 * i + 1];
-        const Bit16u p1 = host_readw(ds + 0x2AF0 + 2 * e), p2 = host_readw(ds + 0x2BF0 + 2 * e);
-        snprintf(b, sizeof(b), " [e %d v %d flags %02X (%d,%d)-(%d,%d) light %04X]", e, v1, ds[0x2FF0 + e],
+        const Bit16u p1 = host_readw(ds + XA(0x2AF0, 0x3635) + 2 * e), p2 = host_readw(ds + XA(0x2BF0, 0x3735) + 2 * e);
+        snprintf(b, sizeof(b), " [e %d v %d flags %02X (%d,%d)-(%d,%d) light %04X]", e, v1, ds[XA(0x2FF0, 0x3B35) + e],
                  (int)(Bit32s)host_readd(ds + p1), (int)(Bit32s)host_readd(ds + (Bit16u)(p1 + 4)), (int)(Bit32s)host_readd(ds + p2), (int)(Bit32s)host_readd(ds + (Bit16u)(p2 + 4)),
-                 host_readw(ds + 0x223A + 2 * v1));
+                 host_readw(ds + XA(0x223A, 0x2D72) + 2 * v1));
         t += b;
     }
     return t;
@@ -1896,12 +1897,12 @@ void tie640_trace_check_entry(Bit16u loadSeg) {
     memcpy(g_ds, M + ds, 0x10000);
     memcpy(g_tb, M + ((PhysPt)host_readw(M + ds + kTablesSeg) << 4), 0x10000);
     g_vertices = reg_cx & 0x3F;
-    const PhysPt face = ((PhysPt)host_readw(M + ds + 0x2488) << 4) + host_readw(M + ds + 0x2486);
+    const PhysPt face = ((PhysPt)host_readw(M + ds + XA(0x2488, 0x2FC0)) << 4) + host_readw(M + ds + XA(0x2486, 0x2FBE));
     for (unsigned i = 0; i < sizeof(g_face); i++) g_face[i] = mem_readb(face + i);     // (the ship's data is in the EMS page frame: not in the flat memory)
     g_flagsOr = 0;
-    for (int i = 0; i < g_vertices; i++) g_flagsOr |= g_ds[0x2FF0 + g_face[2 * i + 1]];
+    for (int i = 0; i < g_vertices; i++) g_flagsOr |= g_ds[XA(0x2FF0, 0x3B35) + g_face[2 * i + 1]];
     g_inputs = describe(g_ds, g_face, g_vertices);
-    memcpy(g_entryFlags, g_ds + 0x2FF0, 256);
+    memcpy(g_entryFlags, g_ds + XA(0x2FF0, 0x3B35), 256);
     TraceMem m = { g_ds, g_tb, M + ((PhysPt)(Bit16u)(loadSeg + kRendPara) << 4) };
     tie640_trace_drawface(m, g_face, reg_cx);
     g_pending = true;
@@ -1917,10 +1918,10 @@ void tie640_trace_check_return(Bit16u loadSeg) {
     g_calls++;
     g_byFlags[g_flagsOr][0]++;
     int firstT = -1, firstD = -1, countT = 0, countD = 0;
-    for (int i = 0; i < 0xA000; i++) if (g_tb[i] != tables[i]) { if (firstT < 0) firstT = i; countT++; }
+    for (int i = 0; i < XA(0xA000, 0xE000); i++) if (g_tb[i] != tables[i]) { if (firstT < 0) firstT = i; countT++; }
     // (DS:6040..6077 are the input module's variables (code at image 19D0:00A7..), written from its interrupt handler
     // while the routine runs: not the tracer's)
-    for (int i = 0x2000; i < 0x6800; i++) if (g_ds[i] != live[i] && !(i >= 0x6040 && i < 0x6078)) { if (firstD < 0) firstD = i; countD++; }
+    for (int i = 0x2000; i < XA(0x6800, 0x6000); i++) if (g_ds[i] != live[i] && !(i >= XA(0x6040, 0xFFFE) && i < XA(0x6078, 0xFFFF))) { if (firstD < 0) firstD = i; countD++; }
     if (!countT && !countD) return;
     g_bad++;
     g_byFlags[g_flagsOr][1]++;
@@ -1929,9 +1930,9 @@ void tie640_trace_check_return(Bit16u loadSeg) {
         std::string t;
         char b[80];
         int shown = 0;
-        for (int i = 0x2000; i < 0x6800 && shown < 24; i++) if (g_ds[i] != live[i] && !(i >= 0x6040 && i < 0x6078)) { snprintf(b, sizeof(b), " DS:%04X %02X/%02X", i, g_ds[i], live[i]); t += b; shown++; }
+        for (int i = 0x2000; i < XA(0x6800, 0x6000) && shown < 24; i++) if (g_ds[i] != live[i] && !(i >= XA(0x6040, 0xFFFE) && i < XA(0x6078, 0xFFFF))) { snprintf(b, sizeof(b), " DS:%04X %02X/%02X", i, g_ds[i], live[i]); t += b; shown++; }
         shown = 0;
-        for (int i = 0; i < 0xA000 && shown < 40; i++) if (g_tb[i] != tables[i]) { snprintf(b, sizeof(b), " T:%04X %02X/%02X", i, g_tb[i], tables[i]); t += b; shown++; }
+        for (int i = 0; i < XA(0xA000, 0xE000) && shown < 40; i++) if (g_tb[i] != tables[i]) { snprintf(b, sizeof(b), " T:%04X %02X/%02X", i, g_tb[i], tables[i]); t += b; shown++; }
         wclog(1, "T640 trace check: call %u differs (%d bytes of the tables' segment, %d of the data segment; native/game):%s", g_calls, countT, countD, t.c_str());
         wclog(1, "T640 trace check: ... its face: %s", g_inputs.c_str());
         if (firstT >= 0x2000) {
@@ -1940,7 +1941,7 @@ void tie640_trace_check_return(Bit16u loadSeg) {
             const int chunk = firstT & ~0x7F;
             int row = -1;
             for (int r = 0; r < 256 && row < 0; r++)
-                for (int at = host_readw(live + 0x6232 + 2 * r), n = 0; at >= 0x2000 && at < 0xA000 && n < 300; n++) {
+                for (int at = host_readw(live + XA(0x6232, 0xD3C8) + 2 * r), n = 0; at >= 0x2000 && at < XA(0xA000, 0xE000) && n < 300; n++) {
                     if (at == chunk) { row = r; break; }
                     const int used = host_readw(tables + at);
                     if (used <= 0x7C) break;
@@ -1953,29 +1954,29 @@ void tie640_trace_check_return(Bit16u loadSeg) {
             char rec[24] = "";
             while (at < chunk + 4 + used) {
                 const Bit16u w = host_readw(tables + at);
-                const int size = w == 0xFFFF ? 8 : w >= 0xFFEF ? 12 : 4;
+                const int size = w == 0xFFFF ? 8 : w >= XA(0xFFEF, 0xFFEF) ? 12 : 4;
                 if (firstT < at + size || at + size >= chunk + 4 + used) {
-                    const int tag = w == 0xFFFF ? at + 4 : w >= 0xFFEF ? at + 4 : at;
+                    const int tag = w == 0xFFFF ? at + 4 : w >= XA(0xFFEF, 0xFFEF) ? at + 4 : at;
                     e = tables[tag]; o = tables[tag + 1];
                     if (w == 0xFFFF) kind = "FFFF prefix + entry";
-                    else if (w >= 0xFFEF) { snprintf(rec, sizeof(rec), "running record %04X", w); kind = rec; }
+                    else if (w >= XA(0xFFEF, 0xFFEF)) { snprintf(rec, sizeof(rec), "running record %04X", w); kind = rec; }
                     else kind = "plain entry";
                     break;
                 }
                 at += size;
             }
             wclog(1, "T640 trace check: ... first at T:%04X (native %02X, game %02X): row %d, %s at %04X, object %d face %u edge %d (its flags at entry %02X)",
-                  firstT, g_tb[firstT], tables[firstT], row, kind, at, o, host_readw(g_ds + 0x2474), e, e >= 0 ? g_entryFlags[e] : 0);
+                  firstT, g_tb[firstT], tables[firstT], row, kind, at, o, host_readw(g_ds + XA(0x2474, 0x2FAC)), e, e >= 0 ? g_entryFlags[e] : 0);
         }
         {   // the lists' chunks that differ (their first 30h bytes: native, game), and the rows they are of
             std::string u; char c[40];
-            for (int i = 0x2000; i < 0xA000; i += 0x80) {
+            for (int i = 0x2000; i < XA(0xA000, 0xE000); i += 0x80) {
                 if (!memcmp(g_tb + i, tables + i, 0x80)) continue;
                 snprintf(c, sizeof(c), " | chunk %04X N:", i); u += c;
                 for (int k = 0; k < 0x30; k++) { snprintf(c, sizeof(c), "%02X", g_tb[i + k]); u += c; if (k % 4 == 3) u += ' '; }
                 u += " G:";
                 for (int k = 0; k < 0x30; k++) { snprintf(c, sizeof(c), "%02X", tables[i + k]); u += c; if (k % 4 == 3) u += ' '; }
-                for (int r = 0; r < 200; r++) if (host_readw(live + 0x6232 + 2 * r) == i) { snprintf(c, sizeof(c), " row %d", r); u += c; }
+                for (int r = 0; r < 200; r++) if (host_readw(live + XA(0x6232, 0xD3C8) + 2 * r) == i) { snprintf(c, sizeof(c), " row %d", r); u += c; }
             }
             if (!u.empty()) wclog(1, "T640 trace check: ... %s", u.c_str());
         }
@@ -2008,7 +2009,7 @@ std::string lists_first_difference(Bit8u *live, Bit8u *tables, int firstT) {
     const int chunk = firstT & ~0x7F;
     int row = -1;
     for (int r = 0; r < 256 && row < 0; r++)
-        for (int at = host_readw(live + 0x6232 + 2 * r), n = 0; at >= 0x2000 && at < 0xA000 && n < 300; n++) {
+        for (int at = host_readw(live + XA(0x6232, 0xD3C8) + 2 * r), n = 0; at >= 0x2000 && at < XA(0xA000, 0xE000) && n < 300; n++) {
             if (at == chunk) { row = r; break; }
             const int used = host_readw(tables + at);
             if (used <= 0x7C) break;
@@ -2021,12 +2022,12 @@ std::string lists_first_difference(Bit8u *live, Bit8u *tables, int firstT) {
     char rec[24] = "";
     while (at < chunk + 4 + used) {
         const Bit16u w = host_readw(tables + at);
-        const int size = w == 0xFFFF ? 8 : w >= 0xFFEF ? 12 : 4;
+        const int size = w == 0xFFFF ? 8 : w >= XA(0xFFEF, 0xFFEF) ? 12 : 4;
         if (firstT < at + size || at + size >= chunk + 4 + used) {
-            const int tag = w >= 0xFFEF ? at + 4 : at;
+            const int tag = w >= XA(0xFFEF, 0xFFEF) ? at + 4 : at;
             e = tables[tag]; o = tables[tag + 1];
             if (w == 0xFFFF) kind = "FFFF prefix + entry";
-            else if (w >= 0xFFEF) { snprintf(rec, sizeof(rec), "running record %04X", w); kind = rec; }
+            else if (w >= XA(0xFFEF, 0xFFEF)) { snprintf(rec, sizeof(rec), "running record %04X", w); kind = rec; }
             else kind = "plain entry";
             break;
         }
@@ -2039,14 +2040,14 @@ std::string lists_first_difference(Bit8u *live, Bit8u *tables, int firstT) {
 std::string lists_chunks_that_differ(Bit8u *live, Bit8u *tables) {
     std::string u; char c[40];
     int shown = 0;
-    for (int i = 0x2000; i < 0xA000 && shown < 6; i += 0x80) {
+    for (int i = 0x2000; i < XA(0xA000, 0xE000) && shown < 6; i += 0x80) {
         if (!memcmp(g_tb + i, tables + i, 0x80)) continue;
         shown++;
         snprintf(c, sizeof(c), " | chunk %04X N:", i); u += c;
         for (int k = 0; k < 0x30; k++) { snprintf(c, sizeof(c), "%02X", g_tb[i + k]); u += c; if (k % 4 == 3) u += ' '; }
         u += " G:";
         for (int k = 0; k < 0x30; k++) { snprintf(c, sizeof(c), "%02X", tables[i + k]); u += c; if (k % 4 == 3) u += ' '; }
-        for (int r = 0; r < 200; r++) if (host_readw(live + 0x6232 + 2 * r) == i) { snprintf(c, sizeof(c), " row %d", r); u += c; }
+        for (int r = 0; r < 200; r++) if (host_readw(live + XA(0x6232, 0xD3C8) + 2 * r) == i) { snprintf(c, sizeof(c), " row %d", r); u += c; }
     }
     return u;
 }
@@ -2060,20 +2061,20 @@ std::string describe_shape(Shape s, Bit8u *ds) {
     char b[240];
     std::string t;
     if (s == kFlatShape) {
-        const Bit16u first = host_readw(ds + 0x2452), end = host_readw(ds + 0x2454);
+        const Bit16u first = host_readw(ds + XA(0x2452, 0x2F8A)), end = host_readw(ds + XA(0x2454, 0x2F8C));
         snprintf(b, sizeof(b), "flat number %02X colour %02X id-low %02X object %u, %u points (%u in a row, %u in a column), top point %04X:",
-                 host_readw(ds + 0x26E3), ds[0x2447], ds[0x2484], host_readw(ds + 0x2464), host_readw(ds + 0x2472), ds[0x2460], ds[0x2462], host_readw(ds + 0x245A));
+                 host_readw(ds + XA(0x26E3, 0x321B)), ds[XA(0x2447, 0x2F7F)], ds[XA(0x2484, 0x2FBC)], host_readw(ds + XA(0x2464, 0x2F9C)), host_readw(ds + XA(0x2472, 0x2FAA)), ds[XA(0x2460, 0x2F98)], ds[XA(0x2462, 0x2F9A)], host_readw(ds + XA(0x245A, 0x2F92)));
         t = b;
         for (Bit16u p = first; p != end && t.size() < 700; p = (Bit16u)(p + 8)) { t += ' '; t += point_text(ds, p); }
-        snprintf(b, sizeof(b), "; stale lights %04X %04X steps %04X %04X", host_readw(ds + 0x274E), host_readw(ds + 0x2750), host_readw(ds + 0x2752), host_readw(ds + 0x2754));
+        snprintf(b, sizeof(b), "; stale lights %04X %04X steps %04X %04X", host_readw(ds + XA(0x274E, 0x3286)), host_readw(ds + XA(0x2750, 0x3288)), host_readw(ds + XA(0x2752, 0x328A)), host_readw(ds + XA(0x2754, 0x328C)));
         t += b;
     } else if (s == kLineShape) {
-        snprintf(b, sizeof(b), "id %04X flat number %02X, thickness %u, lights %04X %04X, from ", host_readw(ds + 0x274C), host_readw(ds + 0x26E3),
-                 host_readw(ds + 0x2730), host_readw(ds + 0x2738), host_readw(ds + 0x273A));
-        t = b; t += point_text(ds, host_readw(ds + 0x2732)); t += " to "; t += point_text(ds, reg_di);
+        snprintf(b, sizeof(b), "id %04X flat number %02X, thickness %u, lights %04X %04X, from ", host_readw(ds + XA(0x274C, 0x3284)), host_readw(ds + XA(0x26E3, 0x321B)),
+                 host_readw(ds + XA(0x2730, 0x3268)), host_readw(ds + XA(0x2738, 0x3270)), host_readw(ds + XA(0x273A, 0x3272)));
+        t = b; t += point_text(ds, host_readw(ds + XA(0x2732, 0x326A))); t += " to "; t += point_text(ds, reg_di);
     } else {
-        snprintf(b, sizeof(b), "flat number %02X id-low %02X, box x %d..%d y %d..%d (upwards), buffer %04X", host_readw(ds + 0x26E3), ds[0x2484],
-                 (Bit16s)host_readw(ds + 0x48B2), (Bit16s)host_readw(ds + 0x48B6), (Bit16s)host_readw(ds + 0x48B8), (Bit16s)host_readw(ds + 0x48B4), host_readw(ds + 0x48BD));
+        snprintf(b, sizeof(b), "flat number %02X id-low %02X, box x %d..%d y %d..%d (upwards), buffer %04X", host_readw(ds + XA(0x26E3, 0x321B)), ds[XA(0x2484, 0x2FBC)],
+                 (Bit16s)host_readw(ds + XA(0x48B2, 0x5410)), (Bit16s)host_readw(ds + XA(0x48B6, 0x5414)), (Bit16s)host_readw(ds + XA(0x48B8, 0x5416)), (Bit16s)host_readw(ds + XA(0x48B4, 0x5412)), host_readw(ds + XA(0x48BD, 0x541B)));
         t = b;
     }
     return t;
@@ -2094,11 +2095,11 @@ void shape_entry(Bit16u loadSeg, Shape s) {
     g_shapeAx = 0;
     if (s == kFlatShape) g_shapeAx = (Bit16u)tie640_trace_flat_polygon(m, (Bit16u)(reg_ecx >> 16), (Bit16u)(reg_eax >> 16), &g_shapeKind);
     else if (s == kLineShape) {
-        const Bit16u p = host_readw(g_ds + 0x2732), q = reg_di;
+        const Bit16u p = host_readw(g_ds + XA(0x2732, 0x326A)), q = reg_di;
         g_linePoint[0] = p; g_linePoint[1] = q;
         tie640_trace_thick_line(m, q, (Bit16u)(reg_ecx >> 16), &g_shapeKind);
     } else {
-        g_bgAt = (PhysPt)host_readw(g_ds + 0x48BD) << 4;
+        g_bgAt = (PhysPt)host_readw(g_ds + XA(0x48BD, 0x541B)) << 4;
         MEM_BlockRead(g_bgAt, g_bg, 0x10000);
         tie640_trace_sprite_rows(m, g_bg, &g_shapeKind);
     }
@@ -2116,15 +2117,15 @@ void shape_return(Bit16u loadSeg, Shape s) {
     c.kinds[g_shapeKind & 3][0]++;
     int firstT = -1, countT = 0, countD = 0, countB = 0, firstB = -1;
     bool pointDiffers = false;
-    for (int i = 0; i < 0xA000; i++) if (g_tb[i] != tables[i]) { if (firstT < 0) firstT = i; countT++; }
-    for (int i = 0x2000; i < 0x6800; i++) if (g_ds[i] != live[i] && !(i >= 0x6040 && i < 0x6078)) countD++;
+    for (int i = 0; i < XA(0xA000, 0xE000); i++) if (g_tb[i] != tables[i]) { if (firstT < 0) firstT = i; countT++; }
+    for (int i = 0x2000; i < XA(0x6800, 0x6000); i++) if (g_ds[i] != live[i] && !(i >= XA(0x6040, 0xFFFE) && i < XA(0x6078, 0xFFFF))) countD++;
     if (s == kSpriteShape) {
         MEM_BlockRead(g_bgAt, g_bgLive, 0x10000);
         for (int i = 0; i < 0x10000; i++) if (g_bg[i] != g_bgLive[i]) { if (firstB < 0) firstB = i; countB++; }
     }
     if (s == kLineShape) {
         // the line's two points are changed by the routine: they lie outside the part of the data segment compared
-        for (int k = 0; k < 2; k++) for (int i = 0; i < 8; i++) { const Bit16u at = (Bit16u)(g_linePoint[k] + i); if ((at < 0x2000 || at >= 0x6800) && g_ds[at] != live[at]) { countD++; pointDiffers = true; } }
+        for (int k = 0; k < 2; k++) for (int i = 0; i < 8; i++) { const Bit16u at = (Bit16u)(g_linePoint[k] + i); if ((at < 0x2000 || at >= XA(0x6800, 0x6000)) && g_ds[at] != live[at]) { countD++; pointDiffers = true; } }
     }
     const bool axDiffers = s == kFlatShape && g_shapeAx != reg_ax;
     if (!countT && !countD && !countB && !axDiffers) return;
@@ -2135,9 +2136,9 @@ void shape_return(Bit16u loadSeg, Shape s) {
     std::string t;
     char b[96];
     int shown = 0;
-    for (int i = 0x2000; i < 0x6800 && shown < 24; i++) if (g_ds[i] != live[i] && !(i >= 0x6040 && i < 0x6078)) { snprintf(b, sizeof(b), " DS:%04X %02X/%02X", i, g_ds[i], live[i]); t += b; shown++; }
+    for (int i = 0x2000; i < XA(0x6800, 0x6000) && shown < 24; i++) if (g_ds[i] != live[i] && !(i >= XA(0x6040, 0xFFFE) && i < XA(0x6078, 0xFFFF))) { snprintf(b, sizeof(b), " DS:%04X %02X/%02X", i, g_ds[i], live[i]); t += b; shown++; }
     shown = 0;
-    for (int i = 0; i < 0xA000 && shown < 40; i++) if (g_tb[i] != tables[i]) { snprintf(b, sizeof(b), " T:%04X %02X/%02X", i, g_tb[i], tables[i]); t += b; shown++; }
+    for (int i = 0; i < XA(0xA000, 0xE000) && shown < 40; i++) if (g_tb[i] != tables[i]) { snprintf(b, sizeof(b), " T:%04X %02X/%02X", i, g_tb[i], tables[i]); t += b; shown++; }
     if (axDiffers) { snprintf(b, sizeof(b), " AX %04X/%04X", g_shapeAx, reg_ax); t += b; }
     if (pointDiffers) for (int k = 0; k < 2; k++) { t += k ? " Q " : " P "; t += point_text(g_ds, g_linePoint[k]); t += '/'; t += point_text(live, g_linePoint[k]); }
     wclog(1, "T640 trace check: %s call %u (%s) differs (%d bytes of the tables' segment, %d of the data segment, %d of the buffer; native/game):%s",
@@ -2150,7 +2151,7 @@ void shape_return(Bit16u loadSeg, Shape s) {
     }
     if (firstB >= 0) {
         // the row: the buffer's rows are a window's width apart from the first row's offset
-        const Bit16u first = host_readw(M + ((PhysPt)(Bit16u)(loadSeg + kRendPara) << 4) + 0xCFE0), wide = host_readw(live + 0x48C5);
+        const Bit16u first = host_readw(M + ((PhysPt)(Bit16u)(loadSeg + kRendPara) << 4) + XA(0xCFE0, 0xD400)), wide = host_readw(live + XA(0x48C5, 0x5423));
         const int off = (Bit16u)(firstB - first);
         wclog(1, "T640 trace check: ... the buffer first at %04X (native %02X, game %02X, before %02X): row %d x %d", firstB, g_bg[firstB], g_bgLive[firstB],
               0, wide ? off / wide : -1, wide ? off % wide : -1);
@@ -2159,19 +2160,19 @@ void shape_return(Bit16u loadSeg, Shape s) {
 }  // namespace
 
 void tie640_trace_shapes_places(void (*place)(Bit16u, Bit16u)) {
-    static const Bit16u ips[] = { 0x4FF3, 0x0CA1, 0x1F80, 0x2BA5,  0x2BB0, 0x0EC1, 0x20CD, 0x21C0,  0xA132, 0xA0F8 };
+    static const Bit16u ips[] = { XA(0x4FF3, 0x519D), XA(0x0CA1, 0x0D91), XA(0x1F80, 0x20F4), XA(0x2BA5, 0x2D1D),  XA(0x2BB0, 0x2D30), XA(0x0EC1, 0x0FB1), XA(0x20CD, 0x2245), XA(0x21C0, 0x2338),  XA(0xA132, 0xA555), XA(0xA0F8, 0xA51B) };
     for (size_t i = 0; i < sizeof(ips) / sizeof(ips[0]); i++) place(kRendPara, ips[i]);
 }
 
 // a watched place in the renderer's segment: true when it is one of the shapes' and the check has dealt with it
 bool tie640_trace_shapes_hook(Bit16u loadSeg, Bit32u ip) {
     switch (ip) {
-    case 0x4FF3: shape_entry(loadSeg, kFlatShape); return true;
-    case 0x0CA1: case 0x1F80: case 0x2BA5: shape_return(loadSeg, kFlatShape); return true;
-    case 0x2BB0: shape_entry(loadSeg, kLineShape); return true;
-    case 0x0EC1: case 0x20CD: case 0x21C0: shape_return(loadSeg, kLineShape); return true;
-    case 0xA132: shape_entry(loadSeg, kSpriteShape); return true;
-    case 0xA0F8: shape_return(loadSeg, kSpriteShape); return true;
+    case XA(0x4FF3, 0x519D): shape_entry(loadSeg, kFlatShape); return true;
+    case XA(0x0CA1, 0x0D91): case XA(0x1F80, 0x20F4): case XA(0x2BA5, 0x2D1D): shape_return(loadSeg, kFlatShape); return true;
+    case XA(0x2BB0, 0x2D30): shape_entry(loadSeg, kLineShape); return true;
+    case XA(0x0EC1, 0x0FB1): case XA(0x20CD, 0x2245): case XA(0x21C0, 0x2338): shape_return(loadSeg, kLineShape); return true;
+    case XA(0xA132, 0xA555): shape_entry(loadSeg, kSpriteShape); return true;
+    case XA(0xA0F8, 0xA51B): shape_return(loadSeg, kSpriteShape); return true;
     }
     return false;
 }

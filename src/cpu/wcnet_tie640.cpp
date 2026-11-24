@@ -392,7 +392,7 @@ void tie640_watch(Bit16u loadSeg) {
     tie640_fast_places(place_at);   // FAST
     dump_places();      // RESEARCH AID
     if (tie640_trace_check_on()) { place_at(kRendPara, XA(0x53F3, 0x559D)); place_at(kRendPara, XA(0x13DF, 0x14FE)); place_at(kRendPara, XA(0x193D, 0x1A7D)); place_at(kRendPara, XA(0x1A1A, 0x1B5A)); tie640_trace_shapes_places(place_at); }    // TRACE
-    if (tie640_native_on()) { place_at(kRendPara, XA(0x85E9, 0x89A7)); place_at(kRendPara, XA(0xDF00, 0xE190)); place_at(kRendPara, XA(0xD772, 0xDB94)); place_at(kRendPara, XA(0x8510, 0x88B0)); if (getenv("WCNET_T640_CHECK")) { place_at(kRendPara, XA(0x98BF, 0x9CD8)); place_at(kRendPara, XA(0x9724, 0x9B30)); } }    // NATIVE
+    if (tie640_native_on()) { place_at(kRendPara, XA(0x85E9, 0x89A7)); place_at(kRendPara, XA(0xDF00, 0xE190)); place_at(kRendPara, XA(0xD772, 0xDB94)); if (!XA(0, 1)) place_at(kRendPara, XA(0x8510, 0x88B0)); if (getenv("WCNET_T640_CHECK")) { place_at(kRendPara, XA(0x98BF, 0x9CD8)); place_at(kRendPara, XA(0x9724, 0x9B30)); } }    // NATIVE
     if (tie640_onepass_on()) { tie640_onepass_places(place_at); place_at(kFlightPara, XA(0x0B5C, 0x0B1A)); }      // ONE PASS
     tie640_fast_hooked(ips, (int)(sizeof(ips) / sizeof(ips[0])));   // FAST
 }
@@ -695,9 +695,9 @@ static float g_fps = 70; static double g_ratio = 1;       // the picture's rate 
 void tie640_tick(bool flight, Bit16u loadSeg) {
     if (g_wanted < 0) {
         const char *env = getenv("WCNET_TIE640");
-        // (X-Wing: off unless asked for, WCNET_TIE640=1, until its one pass is proved: the quarters by the game's own
-        // code are four times the scene's work)
-        g_wanted = env && env[0] ? (env[0] == '0' ? 0 : 1) : XA(1, 0);
+
+
+        g_wanted = env && env[0] == '0' ? 0 : 1;
     }
     g_load = loadSeg;
     const bool want = g_wanted && flight && vga.mode == M_VGA && code_known();

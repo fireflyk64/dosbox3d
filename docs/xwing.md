@@ -154,11 +154,52 @@ mission by the route's keys and clicks):**
   with the debriefing.
 * Three machines (PLAYERS=3): Red made three craft, each pilot its own, the tables the same on all three.
 
-## 5. Open
+## 5. The flight at 640x400 (src/cpu/wcnet_tie640*.cpp built for BFLIGHT.OVL: wcnet_xw640*.cpp)
 
+The TIE demo's 640x400 flight (docs/tie640.md): the game's scene section run once at twice the scale, every call of the
+renderer's lower half taken down and replayed by hand-written tracers for each quarter of the picture, a hand-written
+scanline pass, the game's 320x200 (cockpit, instruments, text) doubled behind it with the cockpit's edge smoothed.
+
+* **One source, built twice.** X-Wing's renderer is the demo's at other addresses (lined up in a chain over the whole
+  segment: 16,025 instructions paired, 478 variables). `XA(tie, xwing)` gives each build its place or variable
+  (wcnet_t640_game.h); wcnet_xw640*.cpp define T640_XWING and include their twins; the shared names tie640_... are
+  xw640_... there (scripts/t640-names.sh). The VGA's side asks whichever game's picture is on.
+* **What X-Wing's build does another way** (found by listing the aligned instructions whose constants differ, and by
+  the call-by-call check):
+  * the scanline pass's work lists and run tables are in a block it asks for each frame (its segment at DS:4E5B),
+    not a fixed segment; the rows' table is at DS:D3C8, the code segment's row offsets at CS:D400;
+  * a sprite's box is grown by 4 pixels, not 2; 6Fh flat objects at most, not 77h;
+  * a marking's record holds 16 layers (colours' indices 6 bits, tables of 64 at CS:0A0F and 0A6B), the demo's 8;
+    the layers are the top 16 object numbers;
+  * a shaded face cut by the window is not made flat (the demo's 1CCA:5D18 is not there); the edge that closes a
+    cut face is new code with the lights along it (23CF:611D to 6761, 1.3 KB more than the demo's);
+  * the near plane's clip is in two places, not four; the static objects' records are 14 bytes.
+* **Checked** (`WCNET_T640_TRACECHECK=1`, each call of the game's tracer against the hand-written one on a copy of
+  the memory; Tour of Duty I's first mission, a freighter held ahead): the line tracer the same in 68,246 of 68,246
+  calls, the sprites' row pass in 6,616 of 6,616, flat polygons in 3,478 of 3,478, the face tracer in 21,282 of
+  21,646: the 364 are faces cut by the window, whose closing edge is the demo's here (half a pixel off X-Wing's).
+  `WCNET_T640_CHECK=3` (every frame in quarters by the game's own code, then in one pass): the game's state never
+  differs; some 130 pixels a frame of 241,920 do, at the quarters' borders (a shade's step, or a pixel of a cut face's
+  edge), while a craft crosses the middle of the picture.
+* **Sprites** are the game's own art as it draws it at 320, each pixel four (docs/tie640.md: one run of the scaler a
+  sprite; the user: "I like the idea of drawing sprites with 2x2 pixels instead of upres since the original art is
+  meant for lower scale anyway").
+* **Speed, against the host's clock** (the user: "the interesting number is the minimum framerate over 30 seconds of
+  gameplay"; `!wallfps`, and a line every 30 s of flight). On the page (headless Chrome), a freighter held 12,000
+  units ahead under fire, then destroyed: the fewest frames in a second 43, the mean 62, the emulator at 99% of real
+  time; the game's own 320x200 picture in the same scene: 16 at the fewest, the mean 43. Natively 58 at the fewest.
+  Two pages in a room: 56 to 62 at the fewest (30 once, both pages on one machine).
+* **Seen**: the cockpit, the view without it, the look-around views, the in-flight map, fire, a kill, the rescue
+  scenes after a death.
+* `WCNET_TIE640=0` keeps the game's own picture; `WCNET_T640_NATIVE=0` draws the quarters by the game's own code
+  (four times the scene's work: 32 frames a second where the one pass makes 62).
+
+## 6. Open
+
+* The closing edge of a cut face as X-Wing's code makes it (23CF:611D on), for the quarters' borders.
+* Not flown at 640x400 yet: the Death Star's surface, the Y-wing's, A-wing's and B-wing's cockpits, the proving
+  ground's gates.
 * Dockings sent as the TIE sessions send them (the boarding maneuver's place and its fields in this build).
 * The warheads' counts (the craft data's weapon slots in this build).
 * The flight's keys (the arrows' ramp, as the TIE demo has them), the comms prompt.
-* 640x400 (docs/tie640.md's one pass: the renderer is the demo's segment for segment; each hand-written tracer to be
-  proved against this build's code with the call-by-call checker).
 * The mission a guest sees briefed is its own pick, the mission flown the host's.

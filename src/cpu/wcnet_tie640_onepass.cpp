@@ -81,30 +81,30 @@ namespace {
 typedef Bit8u u8; typedef Bit16u u16; typedef Bit32u u32; typedef Bit32s s32;
 
 enum {
-    kRendPara = 0x1CCA, kDataPara = 0x421F, kDrawPara = 0x168C, kTablesSeg = 0xD8A6,
+    kRendPara = XA(0x1CCA, 0x222D), kDataPara = XA(0x421F, 0x3F1C), kDrawPara = XA(0x168C, 0x1D5D), kTablesSeg = XA(0xD8A6, 0xD34A),
     // the renderer's places (1CCA)
-    kDrawObject = 0x0AAB,       // drawpol_drawpolyobject: every polygon object comes through here
-    kDrawObjectOut = 0x0B41,    // ... and leaves here (AX: drawn or not)
-    kTraceFace = 0x53F3, kTraceFlat = 0x4FF3, kTraceLine = 0x2BB0,
-    kMarkings = 0x1CFC, kMarkingsOut = 0x2070,
-    kSprite = 0xA02A, kSpriteRows = 0xA132, kScanlines = 0x85E9,
+    kDrawObject = XA(0x0AAB, 0x0B9B),       // drawpol_drawpolyobject: every polygon object comes through here
+    kDrawObjectOut = XA(0x0B41, 0x0C31),    // ... and leaves here (AX: drawn or not)
+    kTraceFace = XA(0x53F3, 0x559D), kTraceFlat = XA(0x4FF3, 0x519D), kTraceLine = XA(0x2BB0, 0x2D30),
+    kMarkings = XA(0x1CFC, 0x1E5C), kMarkingsOut = XA(0x2070, 0x21E8),
+    kSprite = XA(0xA02A, 0xA44D), kSpriteRows = XA(0xA132, 0xA555), kScanlines = XA(0x85E9, 0x89A7),
     // the data segment: an object being drawn
-    kVertexPoint = 0x213A, kVertexLight = 0x223A, kFaceResult = 0x203A, kObjects = 0x233A,
-    kGouraud = 0x243A, kColour = 0x2447, kObject = 0x2464, kRecordTop = 0x2468, kFaces = 0x246E, kEdges = 0x2470,
-    kFace = 0x2474, kFaceTable = 0x247A, kRecord = 0x247E, kParent = 0x2480, kIdLow = 0x2484,
-    kFaceBody = 0x2486, kFaceSeg = 0x2488, kShadeMode = 0x26DC, kNearFlag = 0x276A, kSpareEdge = 0x2764,
-    kPointA = 0x2AF0, kPointB = 0x2BF0, kAbsDx = 0x3090, kAbsDy = 0x3978, kSignDx = 0x28F0, kSignDy = 0x2970,
-    kFlags = 0x2FF0, kSlopeFrac = 0x2DF0, kSlopeLo = 0x2EF0, kSlopeHi = 0x3B78,
+    kVertexPoint = XA(0x213A, 0x2C72), kVertexLight = XA(0x223A, 0x2D72), kFaceResult = XA(0x203A, 0x2B72), kObjects = XA(0x233A, 0x2E72),
+    kGouraud = XA(0x243A, 0x2F72), kColour = XA(0x2447, 0x2F7F), kObject = XA(0x2464, 0x2F9C), kRecordTop = XA(0x2468, 0x2FA0), kFaces = XA(0x246E, 0x2FA6), kEdges = XA(0x2470, 0x2FA8),
+    kFace = XA(0x2474, 0x2FAC), kFaceTable = XA(0x247A, 0x2FB2), kRecord = XA(0x247E, 0x2FB6), kParent = XA(0x2480, 0x2FB8), kIdLow = XA(0x2484, 0x2FBC),
+    kFaceBody = XA(0x2486, 0x2FBE), kFaceSeg = XA(0x2488, 0x2FC0), kShadeMode = XA(0x26DC, 0x3214), kNearFlag = XA(0x276A, 0x32AA), kSpareEdge = XA(0x2764, 0x32A4),
+    kPointA = XA(0x2AF0, 0x3635), kPointB = XA(0x2BF0, 0x3735), kAbsDx = XA(0x3090, 0x3BD5), kAbsDy = XA(0x3978, 0x44BD), kSignDx = XA(0x28F0, 0x3435), kSignDy = XA(0x2970, 0x34B5),
+    kFlags = XA(0x2FF0, 0x3B35), kSlopeFrac = XA(0x2DF0, 0x3935), kSlopeLo = XA(0x2EF0, 0x3A35), kSlopeHi = XA(0x3B78, 0x46BD),
     // ... flat polygons, lines, markings
-    kRingFirst = 0x2452, kRingEnd = 0x2454, kMinX = 0x2456, kMaxX = 0x2458, kMinY = 0x245A, kMaxY = 0x245C,
-    kSameRow = 0x2460, kSameColumn = 0x2462, kPoints = 0x2472,
-    kFlatNext = 0x26E3, kFlatColour = 0x410C, kFlatComponent = 0x428C, kFlatParent = 0x418C,
-    kFlatX = 0x3E0C, kFlatY = 0x3F0C, kFlatZ = 0x400C,
-    kThick = 0x2730, kLineP = 0x2732, kLightP = 0x2738, kLightQ = 0x273A, kAcrossStep = 0x273E, kId = 0x274C,
-    kMarkPtr = 0x2552, kMarkOf = 0x2652, kMarkCount = 0x26D2,
-    kPool = 0x274A, kRows = 0x6232,
-    kWide = 0x48C5, kDeep = 0x48D1, kBufferSeg = 0x48BD, kBufferOff = 0x48BF,
-    kBox = 0x48B2, kLastRow = 0x48D3, kSpriteMap = 0x48A2, kSpriteX = 0xC448, kSpriteY = 0xC44C, kSpriteZ = 0xC458,
+    kRingFirst = XA(0x2452, 0x2F8A), kRingEnd = XA(0x2454, 0x2F8C), kMinX = XA(0x2456, 0x2F8E), kMaxX = XA(0x2458, 0x2F90), kMinY = XA(0x245A, 0x2F92), kMaxY = XA(0x245C, 0x2F94),
+    kSameRow = XA(0x2460, 0x2F98), kSameColumn = XA(0x2462, 0x2F9A), kPoints = XA(0x2472, 0x2FAA),
+    kFlatNext = XA(0x26E3, 0x321B), kFlatColour = XA(0x410C, 0x4C51), kFlatComponent = XA(0x428C, 0x4DD1), kFlatParent = XA(0x418C, 0x4CD1),
+    kFlatX = XA(0x3E0C, 0x4951), kFlatY = XA(0x3F0C, 0x4A51), kFlatZ = XA(0x400C, 0x4B51),
+    kThick = XA(0x2730, 0x3268), kLineP = XA(0x2732, 0x326A), kLightP = XA(0x2738, 0x3270), kLightQ = XA(0x273A, 0x3272), kAcrossStep = XA(0x273E, 0x3276), kId = XA(0x274C, 0x3284),
+    kMarkPtr = XA(0x2552, 0x308A), kMarkOf = XA(0x2652, 0x318A), kMarkCount = XA(0x26D2, 0x320A),
+    kPool = XA(0x274A, 0x3282), kRows = XA(0x6232, 0xD3C8),
+    kWide = XA(0x48C5, 0x5423), kDeep = XA(0x48D1, 0x5433), kBufferSeg = XA(0x48BD, 0x541B), kBufferOff = XA(0x48BF, 0x541D),
+    kBox = XA(0x48B2, 0x5410), kLastRow = XA(0x48D3, 0x5437), kSpriteMap = XA(0x48A2, 0x5400), kSpriteX = XA(0xC448, 0xC282), kSpriteY = XA(0xC44C, 0xC286), kSpriteZ = XA(0xC458, 0xC28A),
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -157,6 +157,9 @@ struct Event {
 
 // A sprite (or the backdrop) drawn by the game's own scaler, once for each quarter, into that quarter's own copy of
 // the 320x189 buffer; what its row pass (1CCA:A132) was given there, and the buffer as the scaler left it
+// A marking's record (1CCA:1FB0): the demo's has room for 8 layers' colours, a colour's low 5 bits its index (two
+// tables of 32 in the code segment); X-Wing's 16 layers, 6 bits, tables of 64.
+enum { kMarkLayers = XA(8, 16), kMarkTable = XA(32, 64), kMarkIndex = XA(0x1F, 0x3F), kMarkShift = XA(5, 6), kMarkTableA = XA(0x94F, 0xA0F), kMarkTableB = XA(0x99B, 0xA6B) };
 struct SpriteIn {
     bool has[4], pixels[4], stale[4];
     u8 box[4][8];
@@ -175,7 +178,7 @@ struct Capture {
     bool infoDone;          // the object being drawn has its kObjInfo
     bool fromBolt;
     u16 markTop;            // the records' top when the markings of a face began
-    u8 markRaw[10], markTables[64]; bool markSame, markHas;   // the marking's own colours as its data has them (1CCA:1FB0)
+    u8 markRaw[1 + kMarkLayers], markTables[2 * kMarkTable]; bool markSame, markHas;   // the marking's own colours as its data has them (1CCA:1FB0)
     u16 lightP, lightQ;     // the lines' two lights as last seen (they are left over from call to call)
     void clear() { events.clear(); edges.clear(); verts.clear(); bytes.clear(); points.clear(); infoDone = false; fromBolt = false; }
 };
@@ -213,7 +216,7 @@ std::vector<u8> g_scratch; bool g_nativeMap = true;
 bool g_spr1x = true, g_small = false;
 std::vector<u8> g_smallBg;
 struct SmallIn { bool stale; u8 box[8]; u32 at[3]; u16 parent, idLow; u8 map[0x40]; } g_smallIn;
-enum { kRowOffsetsCs = 0xCFE0 };    // (the code segment's: a row's offset in the buffer, words)
+enum { kRowOffsetsCs = XA(0xCFE0, 0xD400) };    // (the code segment's: a row's offset in the buffer, words)
 struct SprSig { u16 w[16]; };      // (the check) x, y, scale, image off/seg, the box at the row pass, 4320, 435C, 435E, 50BC
 std::vector<SprSig> g_sprRef[4], g_sprOne[4]; int g_sprLogs = 0;
 u8 g_quarterScaler[4][0x80];     // DS:430C..438B as the scaler left them in each quarter
@@ -346,7 +349,7 @@ void capture_face(const Live &L) {
     ev.strayCx = (u16)(reg_ecx >> 16);
     ev.n = reg_cx & 0xFF;
     const u16 ret = return_ip();
-    ev.bsp = ret == 0x193D || ret == 0x1A1A;
+    ev.bsp = ret == XA(0x193D, 0x1A7D) || ret == XA(0x1A1A, 0x1B5A);
     const u16 rec = L.d16(kRecord), face = L.d16(kFace);
     ev.colour = L.t8((u16)(rec + 2 * face + 0x65));
     ev.fileIndex = L.t8((u16)(rec + 2 * face + 0x66));
@@ -388,7 +391,7 @@ void capture_face(const Live &L) {
 // drawln2_tracelineedges (1CCA:2BB0) called: DI and [2732] the two points; by whom is told by the return address
 void capture_line(Live &L) {
     const u16 ret = return_ip();
-    const Context context = ret == 0x21C0 ? kOfFace : ret == 0x20CD ? kOfMarking : kOfObject;
+    const Context context = ret == XA(0x21C0, 0x2338) ? kOfFace : ret == XA(0x20CD, 0x2245) ? kOfMarking : kOfObject;
     if (context == kOfFace && !g_cap.infoDone) capture_object(L);
     Event &ev = add(kLineCall);
     ev.context = context;
@@ -428,7 +431,7 @@ void capture_line(Live &L) {
 int capture_flat(Live &L) {
     const u16 ret = return_ip();
     Event &ev = add(kFlatCall);
-    ev.context = ret == 0x1F80 ? kOfMarking : kOfObject;
+    ev.context = ret == XA(0x1F80, 0x20F4) ? kOfMarking : kOfObject;
     ev.strayCx = (u16)(reg_ecx >> 16);
     ev.strayAx = (u16)(reg_eax >> 16);
     ev.ringFirst = L.d16(kRingFirst); ev.ringEnd = L.d16(kRingEnd);
@@ -460,7 +463,7 @@ u8 g_carry[5][0x80];            // [q]: what the tracers left over before quarte
 // what the tracers leave over from call to call in the data segment (their own variables: a later call reads some
 // of them before it writes them): carried from a quarter to the next and back to the game's memory at the end,
 // as the quarters' own passes would leave them
-const u16 kCarry[][2] = { { 0x48B2, 0x48BA }, { 0x243A, 0x243B }, { 0x26DC, 0x26DD }, { 0x245E, 0x245F }, { 0x2466, 0x2468 }, { 0x2726, 0x274A }, { 0x274C, 0x276A }, { 0x28B0, 0x28B4 }, { 0x28D2, 0x28D4 } };
+const u16 kCarry[][2] = { { XA(0x48B2, 0x5410), XA(0x48BA, 0x5418) }, { XA(0x243A, 0x2F72), XA(0x243B, 0x2F73) }, { XA(0x26DC, 0x3214), XA(0x26DD, 0x3215) }, { XA(0x245E, 0x2F96), XA(0x245F, 0x2F97) }, { XA(0x2466, 0x2F9E), XA(0x2468, 0x2FA0) }, { XA(0x2726, 0x325E), XA(0x274A, 0x3282) }, { XA(0x274C, 0x3284), XA(0x276A, 0x32AA) }, { XA(0x28B0, 0x33F5), XA(0x28B4, 0x33F9) }, { XA(0x28D2, 0x3417), XA(0x28D4, 0x3419) } };
 
 // an edge's side of a window wide x deep, as transfm2_classifyedges decides it (1CCA:8116..8203): 04 its rows miss
 // the window (or it is level), 02 its right end is at or left of x 0, 01 its left end is at or right of the
@@ -533,7 +536,7 @@ struct Replay {
         const u16 size = (u16)(0x67 + 2 * faces + 4 * edgeCount);
         object = m.d16(kObject);
         rec = m.d16(kRecordTop);
-        objectOn = shows && object < 0x7F && (u16)(rec + size) < 0x1F00;
+        objectOn = shows && object < 0x7F && (u16)(rec + size) < XA(0x1F00, 0x3F00);
         if (!objectOn) { skippedObjects++; return; }
         memcpy(m.tb + rec, b, 0x27);
         m.D16((u16)(kObjects + 2 * object), rec);
@@ -737,17 +740,17 @@ struct Replay {
                         const u8 c = raw[2 + k];
                         u8 out;
                         if (same || !gouraud) {
-                            const u8 index = same ? raw[10 + (c & 0x1F)] : (u8)(c & 0x1F);
+                            const u8 index = same ? raw[2 + kMarkLayers + (c & kMarkIndex)] : (u8)(c & kMarkIndex);
                             const u16 where = (u16)((u16)(index << 4) - shade);
-                            out = (u8)((u8)(0 - (c >> 5)) + code[(u16)(where + 0x79F)]);
+                            out = (u8)((u8)(0 - (c >> kMarkShift)) + code[(u16)(where + 0x79F)]);
                         } else {
-                            out = (u8)(c + raw[42 + (c & 0x1F)]);
+                            out = (u8)(c + raw[2 + kMarkLayers + kMarkTable + (c & kMarkIndex)]);
                         }
                         m.T8((u16)(at + 2 + k), out);
                     }
-                    for (int k = 0; k < 8; k++) m.T8((u16)(at + 10 + k), 0);
+                    for (int k = 0; k < kMarkLayers; k++) m.T8((u16)(at + 2 + kMarkLayers + k), 0);
                     m.D16((u16)(kMarkPtr + 2 * (markBase + ev.mark)), at);
-                    m.D16(kRecordTop, (u16)(at + 18));
+                    m.D16(kRecordTop, (u16)(at + 2 + 2 * kMarkLayers));
                 }
                 m.D16(kFlatNext, markFlatKept);
                 markOpen = false;
@@ -799,7 +802,7 @@ void small_to_quarters(const Live &L, Bit16u loadSeg) {
         in.at[q][0] = g_smallIn.at[0]; in.at[q][1] = g_smallIn.at[1]; in.at[q][2] = g_smallIn.at[2];
         in.parent[q] = g_smallIn.parent; in.idLow[q] = g_smallIn.idLow;
         memcpy(in.map[q], g_smallIn.map, 0x40);
-        memcpy(g_quarterScaler[q], L.M + L.ds + 0x430C, 0x80);
+        memcpy(g_quarterScaler[q], L.M + L.ds + XA(0x430C, 0x4E51), 0x80);
         if (g_smallIn.stale) { memcpy(in.box[q], kBoxUnset, 8); continue; }
         const int offX = (q & 1) * g_wide, offY = (q >> 1) * g_deep;
         // (the box: x from the left; y UPWARDS from the window's bottom row)
@@ -810,7 +813,7 @@ void small_to_quarters(const Live &L, Bit16u loadSeg) {
         for (int i = 0; i < 4; i++) { in.box[q][2 * i] = (u8)(b[i] & 0xFF); in.box[q][2 * i + 1] = (u8)((u16)b[i] >> 8); }
         // (the 64 bytes taken as the sprite's colour map run over the box itself, DS:48A2 + 0x10: this quarter's there)
         memcpy(in.map[q] + (kBox - kSpriteMap), in.box[q], 8);
-        const int left = b[0] - 2, top = b[1] + 2, right = b[2] + 2, bottom = b[3] - 2;
+        const int left = b[0] - XA(2, 4), top = b[1] + XA(2, 4), right = b[2] + XA(2, 4), bottom = b[3] - XA(2, 4);
         in.pixels[q] = !(left >= g_wide || right < 0 || last - top >= g_deep || last - bottom < 0);
         if (!in.pixels[q]) continue;
         // the quarter's buffer: the box's part of it, from the small buffer
@@ -852,7 +855,7 @@ void small_to_quarters(const Live &L, Bit16u loadSeg) {
 // the scaler has drawn the sprite in quarter g_run.q: that quarter's buffer, the scaler's variables and box kept
 void quarter_drawn(const Live &L, PhysPt buffer) {
     bg_read(buffer, &g_quarterBg[g_run.q][0], kBgBytes);
-    memcpy(g_quarterScaler[g_run.q], L.M + L.ds + 0x430C, 0x80);
+    memcpy(g_quarterScaler[g_run.q], L.M + L.ds + XA(0x430C, 0x4E51), 0x80);
     // (the box as this quarter's pass has it now -- unless the row pass ran on nothing known)
     if (!(g_runStale && !g_quarterBoxKnown[g_run.q])) {
         for (int i = 0; i < 8; i++) g_quarterBox[g_run.q][i] = L.d8((u16)(kBox + i));
@@ -875,8 +878,8 @@ bool resolve_quarter(int q, Bit8u *draw, int pitch, int limitX, int limitY, int 
     // (the scanline pass reads a flat object's component number 80h too far, the game's own bug at 1CCA:9DFD: in the
     // sprite scaler's variables, DS:430C on, which hold what the scaler left when it last ran in THIS quarter's
     // pass -- not what the scene began with)
-    memcpy(&g_image[kDs + 0x430C], g_quarterScaler[q], 0x80);
-    memcpy(&g_image[kDs + 0x430C], M + ((PhysPt)(u16)(g_load + kDataPara) << 4) + 0x430C, 0x14);     // (... the bytes before them: as they are now)
+    memcpy(&g_image[kDs + XA(0x430C, 0x4E51)], g_quarterScaler[q], 0x80);
+    memcpy(&g_image[kDs + XA(0x430C, 0x4E51)], M + ((PhysPt)(u16)(g_load + kDataPara) << 4) + XA(0x430C, 0x4E51), XA(0x14, 0x2D));     // (... the bytes before them: as they are now)
     memcpy(&g_image[kTb], &g_start[0x10000], 0x10000);
     memcpy(&g_image[kBg], &g_start[0x20000], 0x10000);
     memcpy(&g_image[kCs + 0x700], code + 0x700, 0x500);
@@ -924,7 +927,7 @@ bool tie640_onepass_check() { return tie640_onepass_on() && g_check == 1; }
 bool tie640_onepass_no_sprites() { tie640_onepass_on(); return g_noSprites; }
 
 void tie640_onepass_places(void (*place)(Bit16u para, Bit16u ip)) {
-    static const u16 ips[] = { kDrawObject, kDrawObjectOut, kTraceFace, kTraceFlat, kTraceLine, kMarkings, kMarkingsOut, 0x1FB0, kSprite, kSpriteRows, kScanlines };
+    static const u16 ips[] = { kDrawObject, kDrawObjectOut, kTraceFace, kTraceFlat, kTraceLine, kMarkings, kMarkingsOut, XA(0x1FB0, 0x2124), kSprite, kSpriteRows, kScanlines };
     for (size_t i = 0; i < sizeof(ips) / sizeof(ips[0]); i++) place(kRendPara, ips[i]);
 }
 
@@ -945,7 +948,7 @@ void tie640_onepass_begin(Bit16u loadSeg) {
     g_small = false;
     g_run.active = false; g_backdropNext = false;
     for (int q = 0; q < 4; q++) g_quarterBoxKnown[q] = false;
-    for (int q = 0; q < 4; q++) memcpy(g_quarterScaler[q], &g_start[0x430C], 0x80);
+    for (int q = 0; q < 4; q++) memcpy(g_quarterScaler[q], &g_start[XA(0x430C, 0x4E51)], 0x80);
     g_cap.clear();
     g_cap.lightP = L.d16(kLightP); g_cap.lightQ = L.d16(kLightQ);
     g_answers.clear();
@@ -972,11 +975,11 @@ static bool onepass_hook_inner(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch
     Live L;
     L.at(loadSeg);
     switch (ip) {
-    case 0x0775: g_backdropNext = true; return false;      // (the backdrop's place: the mode's own hook doubles it)
-    case 0xDF00: g_backdropNext = false; return false;
+    case XA(0x0775, 0x0775): g_backdropNext = true; return false;      // (the backdrop's place: the mode's own hook doubles it)
+    case XA(0xDF00, 0xE190): g_backdropNext = false; return false;
     case kDrawObject: {
         Event &ev = add(kEnter);
-        ev.fromBolt = return_ip() == 0x070C && return_cs() == (u16)(loadSeg + kDrawPara);
+        ev.fromBolt = return_ip() == XA(0x070C, 0x0770) && return_cs() == (u16)(loadSeg + kDrawPara);
         g_cap.fromBolt = ev.fromBolt;
         g_cap.infoDone = false;
         return true;
@@ -1015,16 +1018,16 @@ static bool onepass_hook_inner(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch
         g_cap.markHas = false;
         return true;
     }
-    case 0x1FB0: {
+    case XA(0x1FB0, 0x2124): {
         // the marking's record about to be written: its colours as the craft's data has them (ES:SI: a count, the
         // bytes), and whether the craft is the one named in DS:C450 (its colours are then taken another way)
         const PhysPt src = SegPhys(es) + reg_si;
         const int n = mem_readb(src);
-        g_cap.markRaw[0] = (u8)(n > 8 ? 8 : n);
+        g_cap.markRaw[0] = (u8)(n > kMarkLayers ? kMarkLayers : n);
         for (int i = 0; i < g_cap.markRaw[0]; i++) g_cap.markRaw[1 + i] = mem_readb(src + 1 + (PhysPt)i);
-        g_cap.markSame = L.d16(0xC450) == L.d16(kParent);
+        g_cap.markSame = L.d16(XA(0xC450, 0xC71E)) == L.d16(kParent);
         // (the two colour tables in the renderer's code segment are the craft's own, written before it is drawn)
-        for (int i = 0; i < 32; i++) { g_cap.markTables[i] = mem_readb(SegPhys(cs) + 0x94F + (PhysPt)i); g_cap.markTables[32 + i] = mem_readb(SegPhys(cs) + 0x99B + (PhysPt)i); }
+        for (int i = 0; i < kMarkTable; i++) { g_cap.markTables[i] = mem_readb(SegPhys(cs) + kMarkTableA + (PhysPt)i); g_cap.markTables[kMarkTable + i] = mem_readb(SegPhys(cs) + kMarkTableB + (PhysPt)i); }
         g_cap.markHas = true;
         return true;
     }
@@ -1036,8 +1039,8 @@ static bool onepass_hook_inner(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch
         if (top > g_cap.markTop && top - g_cap.markTop < 0x100 && g_cap.markHas) {
             ev.n = top - g_cap.markTop;
             g_cap.bytes.push_back(g_cap.markSame ? 1 : 0);
-            for (int i = 0; i < 9; i++) g_cap.bytes.push_back(g_cap.markRaw[i]);
-            for (int i = 0; i < 64; i++) g_cap.bytes.push_back(g_cap.markTables[i]);
+            for (int i = 0; i < 1 + kMarkLayers; i++) g_cap.bytes.push_back(g_cap.markRaw[i]);
+            for (int i = 0; i < 2 * kMarkTable; i++) g_cap.bytes.push_back(g_cap.markTables[i]);
             g_cap.markHas = false;
         }
         return true;
@@ -1155,8 +1158,8 @@ static bool onepass_hook_inner(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch
         const int q = g_run.q;
         in.has[q] = true;
         for (int i = 0; i < 8; i++) in.box[q][i] = L.d8((u16)(kBox + i));
-        if (g_check == 1) { SprSig g; memset(&g, 0, sizeof(g)); g.w[0] = L.d16(0x434A); g.w[1] = L.d16(0x434C); g.w[2] = L.d16(0x5112); g.w[3] = L.d16(0x4360);
-            for (int i = 0; i < 4; i++) g.w[5 + i] = L.d16((u16)(kBox + 2 * i)); g.w[9] = L.d16(0x4320); g.w[10] = L.d16(0x435C); g.w[11] = L.d16(0x435E); g.w[12] = L.d16(0x50BC); g.w[13] = L.d16(0x50D2); g.w[14] = L.d16(0x50D4); g_sprOne[q].push_back(g); }
+        if (g_check == 1) { SprSig g; memset(&g, 0, sizeof(g)); g.w[0] = L.d16(XA(0x434A, 0x4EA8)); g.w[1] = L.d16(XA(0x434C, 0x4EAA)); g.w[2] = L.d16(XA(0x5112, 0x5C6A)); g.w[3] = L.d16(XA(0x4360, 0x4EBE));
+            for (int i = 0; i < 4; i++) g.w[5 + i] = L.d16((u16)(kBox + 2 * i)); g.w[9] = L.d16(XA(0x4320, 0x4E7E)); g.w[10] = L.d16(XA(0x435C, 0x4EBA)); g.w[11] = L.d16(XA(0x435E, 0x4EBC)); g.w[12] = L.d16(XA(0x50BC, 0x5C14)); g.w[13] = L.d16(XA(0x50D2, 0x5C2A)); g.w[14] = L.d16(XA(0x50D4, 0x5C2C)); g_sprOne[q].push_back(g); }
         in.stale[q] = g_runStale = memcmp(in.box[q], kBoxUnset, 8) == 0;
         if (g_runStale) {
             // the scaler drew nothing: the row pass works on the box as it was left in this quarter (by the last
@@ -1176,7 +1179,7 @@ static bool onepass_hook_inner(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch
         in.at[q][0] = L.d32(kSpriteX); in.at[q][1] = L.d32(kSpriteY); in.at[q][2] = L.d32(kSpriteZ);
         in.parent[q] = L.d16(kParent); in.idLow[q] = L.d16(kIdLow);
         for (int i = 0; i < 0x40; i++) in.map[q][i] = L.d8((u16)(kSpriteMap + i));
-        const int left = (Bit16s)L.d16(kBox) - 2, top = (Bit16s)L.d16(kBox + 2) + 2, right = (Bit16s)L.d16(kBox + 4) + 2, bottom = (Bit16s)L.d16(kBox + 6) - 2;
+        const int left = (Bit16s)L.d16(kBox) - XA(2, 4), top = (Bit16s)L.d16(kBox + 2) + XA(2, 4), right = (Bit16s)L.d16(kBox + 4) + XA(2, 4), bottom = (Bit16s)L.d16(kBox + 6) - XA(2, 4);
         const int last = (Bit16s)L.d16(kLastRow);
         in.pixels[q] = !(left >= g_wide || right < 0 || last - top >= g_deep || last - bottom < 0);
         if (in.pixels[q]) {
@@ -1223,12 +1226,17 @@ static bool onepass_hook_inner(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch
             CPU_Push16(SegValue(cs));
             CPU_Push16(kScanlines);
             SegSet16(cs, (u16)(loadSeg + kDrawPara));
-            reg_eip = 0x0798;
+            reg_eip = XA(0x0798, 0x07FA);
             return true;
         }
         // as the quarters' passes leave the tracers' own variables, and the segment registers
         { size_t n = 0; for (size_t r = 0; r < sizeof(kCarry) / sizeof(kCarry[0]); r++) { memcpy(L.M + L.ds + kCarry[r][0], g_carry[4] + n, (size_t)(kCarry[r][1] - kCarry[r][0])); n += kCarry[r][1] - kCarry[r][0]; } }
+        // (FS: the pass's own work segment; X-Wing's is a block it asks for each frame, its segment at DS:4E5B)
+#ifdef T640_XWING
+        if (L.d16(0x4E5B)) SegSet16(fs, L.d16(0x4E5B));
+#else
         SegSet16(fs, (u16)(loadSeg + 0x3598));
+#endif
         SegSet16(es, L.d16(kTablesSeg));
         far_return();
         g_frames++;
@@ -1262,8 +1270,8 @@ void tie640_native_keep(bool on);
 // (the check) the game's own row pass called in the reference's quarter: what it was given, to tell a sprite the game drew differently from quarter to quarter
 void tie640_onepass_ref_sprite(Bit16u loadSeg, int quarter) {
     Live L; L.at(loadSeg);
-    SprSig g; memset(&g, 0, sizeof(g)); g.w[0] = L.d16(0x434A); g.w[1] = L.d16(0x434C); g.w[2] = L.d16(0x5112); g.w[3] = L.d16(0x4360);
-    for (int i = 0; i < 4; i++) g.w[5 + i] = L.d16((u16)(kBox + 2 * i)); g.w[9] = L.d16(0x4320); g.w[10] = L.d16(0x435C); g.w[11] = L.d16(0x435E); g.w[12] = L.d16(0x50BC); g.w[13] = L.d16(0x50D2); g.w[14] = L.d16(0x50D4);
+    SprSig g; memset(&g, 0, sizeof(g)); g.w[0] = L.d16(XA(0x434A, 0x4EA8)); g.w[1] = L.d16(XA(0x434C, 0x4EAA)); g.w[2] = L.d16(XA(0x5112, 0x5C6A)); g.w[3] = L.d16(XA(0x4360, 0x4EBE));
+    for (int i = 0; i < 4; i++) g.w[5 + i] = L.d16((u16)(kBox + 2 * i)); g.w[9] = L.d16(XA(0x4320, 0x4E7E)); g.w[10] = L.d16(XA(0x435C, 0x4EBA)); g.w[11] = L.d16(XA(0x435E, 0x4EBC)); g.w[12] = L.d16(XA(0x50BC, 0x5C14)); g.w[13] = L.d16(XA(0x50D2, 0x5C2A)); g.w[14] = L.d16(XA(0x50D4, 0x5C2C));
     if (quarter >= 0 && quarter < 4) g_sprRef[quarter].push_back(g);
 }
 void tie640_onepass_check_begin() {
@@ -1326,8 +1334,8 @@ void tie640_onepass_check_end(Bit16u loadSeg, const Bit8u *draw, int wide, int d
     const Bit8u *M = GetMemBase();
     const PhysPt ds = (PhysPt)(Bit16u)(loadSeg + kDataPara) << 4;
     bool news = false;
-    for (Bit32u o = 0x67CA; o < 0xBF00; o++) {
-        if (o == 0x8FAA) o = 0x9436;
+    for (Bit32u o = XA(0x67CA, 0x7046); o < XA(0xBF00, 0xBE96); o++) {
+        if (o == XA(0x8FAA, 0xFFFE)) o = XA(0x9436, 0xFFFE);
         if (M[ds + o] == g_checkAfter[ds + o] || g_stateDiff.count(o)) continue;
         g_stateDiff.insert(o);
         news = true;
