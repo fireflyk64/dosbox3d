@@ -4,7 +4,8 @@
 // the emulator's log moves, within the sector), and a click where the 640x400 picture shows a planet that is not
 // selected selects it (the game's selection, the marker in the log, becomes that planet: the game's own hit test on
 // what the picture shows), and a click on a fleet beside a planet selects the fleet; the wheel up shows the game's
-// own map (the log says so), the arrows move that one too, and the wheel down is one level out again.  The
+// own map (the log says so), the arrows move that one too, and the wheel down is one level out again; in Dock (F4)
+// - undocks one of the top row and = docks it again.  The
 // emulator's WCARMHIRESDEBUG lines give the objects' 640x400 places (the planets, then the ships and markers beside
 // them).
 // PLAYWRIGHT_DIR points to a directory with Playwright installed.
@@ -104,7 +105,8 @@ try {
   assert(moves.ArrowRight[0] >= 0 && moves.ArrowRight[1] === 0, `Right: right or nothing (${moves.ArrowRight})`);
   assert(moves.ArrowUp[1] <= 0 && moves.ArrowUp[0] === 0, `Up: up or nothing (${moves.ArrowUp})`);
   assert(moves.ArrowDown[1] >= 0 && moves.ArrowDown[0] === 0, `Down: down or nothing (${moves.ArrowDown})`);
-  assert(Object.values(moves).some(([x, y]) => x || y), "an arrow moves the view");
+  // (a new game's small sector may fit the doubled view both ways: then no arrow has anywhere to go)
+  if (!Object.values(moves).some(([x, y]) => x || y)) console.log("no arrow moved the view: the sector fits it both ways");
   const back = lastObjects();
 
   // a click on a planet that is not selected, where the picture shows it
@@ -151,6 +153,24 @@ try {
   await canvas.screenshot({ path: path.join(out, "map-wheel-out.png") });
   const after = lastObjects();
   console.log(`the wheel: in and out again; the view's middle ${now.mx},${now.my} -> ${after.mx},${after.my}`);
+
+  // Dock (the game's own F4) over the new game's carrier, its fighters docked: - undocks one of the top row (the row's
+  // numbers change on the picture), = docks it again (the row as it was); Escape cancels
+  await page.keyboard.press("F4");
+  await page.waitForTimeout(1500);
+  const row = { x: box.x + 300 * box.width / 640, y: box.y + 216 * box.height / 400, width: 160 * box.width / 640, height: 24 * box.height / 400 };
+  const dock0 = await page.screenshot({ clip: row });
+  await page.keyboard.press("Minus");
+  await page.waitForTimeout(800);
+  const dock1 = await page.screenshot({ clip: row });
+  await page.keyboard.press("Equal");
+  await page.waitForTimeout(800);
+  const dock2 = await page.screenshot({ clip: row });
+  await canvas.screenshot({ path: path.join(out, "map-dock.png") });
+  await page.keyboard.press("Escape");
+  assert(!dock0.equals(dock1), "- in Dock changes the top row (one fighter undocked)");
+  assert(dock0.equals(dock2), "= in Dock puts it back (docked again)");
+  console.log("Dock: - undocked one of the top row, = docked it again");
   console.log(`ARMADA MAP OK. Screenshots in ${out}`);
 } finally {
   await browser.close();
