@@ -853,7 +853,7 @@ public:
     Bit8u stk[0x100];           // SS:[sp0-90h, sp0+18h): its frame, pushes and arguments, kept as it writes them
     PhysRange keep[48];         // where its spans must not write (its stack, ss:[D..R], its code, the page tables)
     int nKeep;
-    PhysPt pageLin[4], pagePhys[4];     // destination pages looked up (and found clear of keep)
+    PhysPt pageLin[4];          // destination pages looked up and found clear of keep
     int nPage;
     unsigned pixels, spans;
     Bit16u leftAt;              // (where it left the game the state: an offset from the entry; 0: it did not)
@@ -1018,8 +1018,16 @@ public:
         return true;
     }
 
-    // A span's pixels (ES:DI on, len of them, DI wrapping in its segment) clear of what the routine keeps
+    // A span's pixels (ES:DI on, len of them, DI wrapping in its segment) clear of what the routine keeps (looked at
+    // again whenever a page table met on the way is added to it)
     bool dest_ok(PhysPt esb, Bit16u di, unsigned len) {
+        for (;;) {
+            const int had = nKeep;
+            if (!dest_scan(esb, di, len)) return false;
+            if (nKeep == had) return true;
+        }
+    }
+    bool dest_scan(PhysPt esb, Bit16u di, unsigned len) {
         while (len) {
             const unsigned part = std::min(len, 0x10000u - di);
             PhysPt lin = esb + di;
@@ -1035,9 +1043,7 @@ public:
                     if (kept(phys, phys + 4096)) {
                         if (kept(phys + (lin & 0xFFF), phys + (lin & 0xFFF) + piece)) return false;
                     } else if (nPage < 4) {
-                        pageLin[nPage] = page;
-                        pagePhys[nPage] = phys;
-                        nPage++;
+                        pageLin[nPage++] = page;
                     }
                 }
                 lin += piece;
