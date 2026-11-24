@@ -80,6 +80,7 @@ u.searchParams.set("hall", "PRVHALL-" + Math.random().toString(36).slice(2, 6).t
 u.searchParams.set("callsign", "PRIVTEST");
 if (process.env.ROOM) u.searchParams.set("room", process.env.ROOM);
 if (process.env.CLASSIC) u.searchParams.set("privclassic", "1");
+if (process.env.RENDERER) u.searchParams.set("renderer", process.env.RENDERER);     // (?renderer=software: 2D canvas)
 u.searchParams.set("env.WCNET_KEYSCRIPT", route);
 u.searchParams.set("env.WCNET_KEYSCRIPT_FROM", "boot");
 u.searchParams.set("env.WCNET_LOG", "3");

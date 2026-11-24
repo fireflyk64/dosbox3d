@@ -625,8 +625,23 @@ async function initSources() {
   for (const ev of ["dragleave", "drop"]) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); });
   // (files the pilot brings are a pick, as the menu's are)
   const brought = (f) => { if (f) void handleFile(f).then(() => { if (source) rememberPick(source.game.id); }); };
-  drop.addEventListener("drop", (e) => brought(e.dataTransfer.files && e.dataTransfer.files[0]));
-  $("gamefile").addEventListener("change", (e) => brought(e.target.files && e.target.files[0]));
+  // A file dragged over the page lights the box; dropped anywhere on the page (the box too) it is taken as the box
+  // takes it -- a drop that missed the box would have the browser open the file in the page's place.  Not once the
+  // game runs (the box's input is disabled then: the drop is only kept from the browser).
+  const hasFiles = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+  let dragDepth = 0;
+  const dragEnd = () => { dragDepth = 0; document.body.classList.remove("dragfile"); drop.classList.remove("over"); };
+  window.addEventListener("dragenter", (e) => { if (hasFiles(e)) { dragDepth++; document.body.classList.add("dragfile"); } });
+  window.addEventListener("dragleave", (e) => { if (hasFiles(e) && --dragDepth <= 0) dragEnd(); });
+  window.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener("drop", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragEnd();
+    if (!$("gamefile").disabled) brought(e.dataTransfer.files && e.dataTransfer.files[0]);
+  });
+  $("gamefileButton").addEventListener("click", () => $("gamefile").click());
+  $("gamefile").addEventListener("change", (e) => { brought(e.target.files && e.target.files[0]); e.target.value = ""; });
 
   $("useServer").addEventListener("click", async () => {
     try {
@@ -2307,6 +2322,11 @@ try { $("privHiresCockpit").checked = localStorage.getItem(PRIV_HIRES_COCKPIT_KE
 // ?privclassic=1: Privateer exactly as it was before that work (the user, 2026-11-22: "is there a way on the website to
 // run privateer without high res code loaded at all in case it causes an issue?"): the boxes greyed out, WCPRIVCLASSIC
 const PRIV_CLASSIC = new URLSearchParams(location.search).get("privclassic") === "1";
+// ?renderer=software: the emulator's picture put on the canvas through its 2D context instead of WebGL (SDL's own
+// renderers: auto, opengl, software).  The user, 2026-11-23, testing on a Mac: white flashes in full screen only; the
+// emulator's own frames have none (measured, every frame of a 250 s flight), so the browser's full-screen WebGL is
+// the suspect, and this is the other way to show the same frames.
+const RENDERER = ["software", "opengl"].includes(query.get("renderer")) ? query.get("renderer") : "";
 if (PRIV_CLASSIC) {
   $("privHires").disabled = true;
   $("privHires").checked = false;
@@ -2563,7 +2583,7 @@ async function start(fromGesture) {
   $("fly").disabled = true;
   renderTopAction();
   renderMission();  // (the mission and the frame rate are set for this flight)
-  for (const el of ["gamefile", "exePicker", "callsign", "firstname", "lastname", "verbose", "hint"]) $(el).disabled = true;
+  for (const el of ["gamefile", "gamefileButton", "exePicker", "callsign", "firstname", "lastname", "verbose", "hint"]) $(el).disabled = true;
   sourceButtons(false);
   try {
     const cfg = {
@@ -2740,7 +2760,8 @@ async function start(fromGesture) {
     const game = gameInfo();
     const ipx = together && game && game.ipx;
     const conf = (game && game.dosbox || "") + (ipx ? "[ipx]\nipx=true\n" : "")
-      + (joystickPort ? "[joystick]\njoysticktype=none\ntimed=false\n" : "");
+      + (joystickPort ? "[joystick]\njoysticktype=none\ntimed=false\n" : "")
+      + (RENDERER ? `[sdl]\nrenderer=${RENDERER}\n` : "");
     if (conf) { Module.FS.writeFile("/game.conf", conf); args.unshift("-conf", "/game.conf"); }
     if (ipx && game.netCommand) args.push("-c", game.netCommand);
     Module.callMain([...args, "-c", cmd]);

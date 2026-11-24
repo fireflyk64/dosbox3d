@@ -1262,3 +1262,156 @@ carries the middle column, the Gothri's right), so the parts are now gathered in
 (a part that is not -- a band of colours, a picture -- the game's blocks there); a line along a middle column is drawn
 in both its fine columns (the one way it mirrors itself).  Measured: every ship's drawing has each pixel's mirror of its
 colour, except where the game's own art has none (the Broadsword's one pixel, the Tarsus's offset cockpit).
+
+**The user's notes on every ship (2026-11-23).**  "Paradign should have every pod be rounded / Gothri outside wings
+should be rounded / Stilettos back engines should be flat and the front bright wing stabilizers should be at high res
+too / Tarsis front cockpit should connect through the 2 weapon pods. There shouldn't be gaps / ... dralthi outer hull
+should be smooth too and rounded".  Made, first in a scratch prototype on the dumped pictures (wire2.py), then here:
+- no part is judged a picture any more: the Stiletto's stabilisers, the Dralthi's, Gladius's and Kamekh's bands are
+  lines now;
+- a piece of four pixels or fewer touching a solid part (orthogonally) is solid too: the Stiletto's engines, a yellow
+  block with an orange row at its end, are flat blocks;
+- a pod is a ring: for each colour, a region of other pixels (4-connected) that touches no edge, of 200 pixels at
+  most; its loop the colour's pixels about it (a solid part's not counted); refused if two corners of the loop's
+  bounding box are its own (a box: the Tarsus's cells stay square) or if it runs along a part kept as blocks; an
+  upright ellipse fitted (least squares about the box's middle) with radii of 1.5 to 14 pixels and every loop pixel
+  within 0.8 of it is drawn instead, its pixels no chain's;
+- a line's end (a pixel with no more than one link of its colour) reaches half-way to each touching pixel of another
+  colour (a diagonal one only where no corner pixel of a third colour comes between): the Tarsus's cockpit bar meets
+  its weapon pods.
+Curves through the Gothri's and the Dralthi's hull corners were tried (a bulge test, Catmull-Rom through the points)
+and taken out: "the gothri and dralthi were acceptable before and this edit made it way worse, please revert".  The
+Talon's front (its canopy and engines, one part of 94 pixels) stays the game's blocks: "I rather liked the blocky front
+of the talon", "a special exemption for talon is fine--everything else is ok".  A part is known by its frame and its
+lit pixels, not their colours (those are its damage): kWireBlockParts holds that part's FNV-1a hash (C7EFE729, the
+same in both Talons).  Measured with ship1.sh, all sixteen: no game errors; every drawing's pixels have their mirror of
+the colour (but the Broadsword's 4 and the Tarsus's offset cockpit, as the game's art); the thirteen ships the user saw
+and passed are pixel for pixel as they saw them.  (The rig's lock sometimes takes another object -- a cargo pod at
+4.9 km -- instead of the spawned Paradigm: its own picture with the resolution off shows the same; it is retried.)
+
+**The letters a row higher, and the cockpits' lettering that is art (2026-11-23).**  The user: "A couple more displays
+in the cockpit need the new font like AUTO and E for fuel.... ideally KPS would be shifted up by one pixel so it doesn't
+get below the bevel / not sure hwo the other ship cockpits look--they may have their own quirks"; then "Can you shift
+the font I provided up by the equivalent pixels then. That way it's a data change", "It was an accident I made them
+lower".  The font's metrics say `"shift_up": 1` (scripts/privfont/font-replacement-metrics.json); privfont.py writes it
+as kPrivGlyphShiftUp and every letter is drawn that many 2x rows above the game's letter's top (in the Tarsus's KPS box
+a black row above the letters and one below, where the game's letters, and the user's at the game's place, met its
+bevel; SET one above and three below).
+
+AUTO and the gauges' letters are no text: each is part of a picture of its own, drawn by root code -- AUTO by 130E,
+the energy gauge (its E) by 131A, the Centurion's fuel gauge (its F) by 1356 -- and its letters are the art's own, each
+cockpit's different: the Tarsus's AUTO 16 x 4 (a round A and O), the Centurion's 20 x 4 (square letters), the Orion's
+21 x 5, the Galaxy's 25 x 5 between red dashes; the E 3 x 5 in the Tarsus, Orion and Galaxy, 4 x 5 in the Centurion,
+two blues (its corners the darker).  kArtWords lists them: the code, the letters' exact pattern ('#' the letters, of
+one or two colours; '.' the panel, one colour; no letter colour just round it), the text, and the user's glyph row for
+each fine row.  Found in a picture from that code, the pattern's pixels are drawn as the panel and the user's glyphs
+over them, side by side with the font's two-pixel gaps, centred on the art's letters, in the colour of the art's
+letter's stem; not found (another picture, a cockpit not seen), the game's blocks.  In a five-row letter the user's
+eight-row capitals are centred (the A's slant kept whole), but for the E, whose two stems are drawn a row longer each.
+AUTO, E and F are drawn in the space-alone level as the game's (hires_cockpit).  Measured with a scratch rig
+(cockpit.sh: the Tarsus of a new game, the user's Centurion from OXFORD01.SAV, an Orion and a Galaxy bought at
+Achilles as privtests/ships.sh buys them): every AUTO, E and F in the user's letters, the panel's red marks and dashes
+as they were, no game errors.  (The Orion's and Galaxy's own-ship display, overlay code, stays the game's blocks.)
+
+**Two floods cut short (2026-11-23).**  The ring finder grew each region of other pixels only to 201 and the small
+pieces only to five, leaving the rest of a big region (the background) or of a long line unmarked; later starts inside
+them made pieces of their own, so chance holes got rings (the Broadsword's side pods, a ring round the Centurion's
+canopy) and chance bits of a line became solid blocks (canopies of the Gothri, Stiletto, Centurion), and a change
+anywhere in a picture moved them: leaving the Centurion's nose pixels out took the ring off its canopy.  Both now grow
+the whole region or piece (at most the picture) before judging it.  Thirteen ships drew differently (thin lines where
+the chance blocks were); the user, shown them side by side with the live ones: "Take the fixes".  The Python prototype
+(scratch wire2.py) had the same cut.
+
+**The Centurion's nose (2026-11-23).**  The user: "centurion should have a smoother curve towards the front part of the
+cockpit not a harsh triangle", "centurion just needs to pull the nose triangle towards the center so it's more sloped",
+"so the slope starts at the wings I believe", "maybe as two slopes--one to the lower horizontal bar, then another one
+to the corner of the wing that touches the body".  kWireEdits: a part (by its mask hash, as kWireBlockParts) drawn with
+runs of its pixels left out (the left side's, mirrored about the art's middle) and the table's own straight lines in
+their place, each side's in the colour of its own pixel at a sample place (one left out: its damage shows), drawn
+before the mirror's copy.  The Centurion's middle part (92E829FB, 82 pixels: the nose and its tip) loses each side's
+column 25 from row 25 to 34 and the steps below it to the tip, and gets two slopes: from the wing's corner (25, 24) to
+the lower bar's end (27, 40), and from there to the tip (29, 46).  Shown with and without (scratch cent-nose2.png), the
+user: "Yes, ship it".  With the floods whole, the edit changes the nose and nothing else.
+
+**The Talon's front, hand-drawn (2026-11-23).**  The user: "Everyone sees the talon the [most]. Can you have custom
+drawing code for the front ... keyed off the actual sprite map edges?"; of the choices shown (Scale2x keyed off the
+sprite's edges, a hand-drawn 2x front, the blocks): a hand-drawn front, then "Thinner outline", "Make sure it is
+symmetrical".  scripts/privtalon.py writes src/cpu/wcnet_priv_talon.h (kPrivPartArt): per part, its mask hash, the
+game pixels it stands for ('x' drawn by the art, 'b' the game's block, '.' none of the part), three sample pixels for
+its inks and the art at 2x.  The Talon's front: the bulb's outline a smooth curve (Catmull-Rom through the game
+outline's middles: its flat top, out to the game's widest row, back into the engines; below them a U to the tip) and
+the canopy's, each one fine pixel wide, laid half a pixel outward of the game pixels' middles so the shapes keep their
+size, drawn on the left half and mirrored pixel for pixel; the canopy filled; the engines and exhausts the game's
+blocks.  In wire_make, after the solid parts' blocks: when the part's pixels are exactly the pattern, its 'x' blocks
+are cleared and the art drawn in the colours of the sprite's own pixels at (22, 29), (24, 32), (25, 34) (the bulb's
+outline, the canopy's, its fill: damage shows); otherwise the blocks stay.  Measured (scratch ship1.sh): both Talons
+drawn with every pixel mirrored, only the front differs from before, the Centurion and Gothri unchanged, no game
+errors.
+Then the user: "The top of the talon cockpit is one pixel too high which means the wings poke through ... Also the
+bottom two pixels I believe are one too low and should be moved up by one pixel so they are next to their neighbors".
+The wings' struts end at the middle of the bar's end pixel (fine row 59) and the bar had been laid half a pixel
+outward, on row 58: the struts' last pixel sat inside the bulb.  The bulb's upper curve now moves outward only across
+(and never rises above the top row's middles: the spline overshoots), so the bar is on row 59; the tip's lowest two
+pixels are moved up to their neighbours' row (a flat bottom of four).
+
+**The reticle and the radar exactly symmetric, the rings whole (2026-11-23; section 26's rings).**  The user: "The
+centurion aiming reticle is not symmetric. Prefer the left side to the right. Also the radar bright circle has dots
+instead of a line all round. Please make the circle connected at least with diagonals ... Make sure reticle are
+symmetric".  The game's reticle art (27 x 27, the same in all four cockpits) is a mirror image of itself both ways;
+the drawing was not, by a fine pixel: lines run between the game pixels' "middles", 2u + 1, the right and lower of each
+block's two fine pixels.  Now the crosshair's and the radar's drawings (shape_lines, shape_radar: their rings and lines,
+not the radar's ground blocks) are caught in a canvas of their own (plot() writes there while g_cap is on) and shown by
+capture_show: the art's axis found (u + u' = S near its middle, the most pixels agreeing, colours too: the radar's rings
+are centred at 30 of 56), a line on an axis through a column's middle drawn in both its fine columns (the ticks' stems,
+two pixels: the one symmetric way), then the right half's pixels the left's mirrored (fine x and 2S + 1 - x) wherever
+the art's 3 x 3 about the pixel is the same as about its mirror, then the bottom from the top likewise; a mark only on
+one side (the radar's gauges, its corner marks) keeps its own drawing.  The dots: rings_draw dropped the corner of each
+L of three judged against the ellipse's next point, so two corners in a row left a gap that the gap-filling did not
+see; now judged against the pixels kept.  Measured (scratch cockpit.sh, symbox.py): all four cockpits' reticles 0
+unmatched pixels across and up-down; the radars' rings whole, the pixels left unmatched only the art's one-sided marks.
+Then the user: "the middle reticle is way better as long as you can mirror the one side to the other...the right one
+is too thick ... The original reticle wasn't two pixels wide so we need to have it be 1 pixel wide (and that may mean
+it's offset by half a pixel)".  The mirror is now about the middles the lines are drawn through (fine x and 2S + 2 - x:
+2u + 1 and 2(S - u) + 1 are each other's), the axis column kept as drawn: every line one pixel wide, the drawing half a
+game pixel right of (and below) the blocks.  And of the Centurion's radar: "the radar exterior is too complex. we need
+those very simple quarter circles at different lengths--it drew a bunch of loops and unnecessary sketchy details that
+doesn't make sense. Instead it should be 4 quarter circle pie slices with different radii and stopping at the inner
+circle.  tarsus looks good".  Its art's exterior is two radii, 16 (top, bottom) and 19 (sides), meeting on the X's
+diagonals in pixel loops.  kRadarArt (by the art's hash): the exterior colour's pixels between 12.5 and 21 from the
+centre become the ground (the corner marks lie beyond 22), and four arcs between the diagonals (16, 19, 16, 19) and
+four spokes on the diagonals from the bright circle (11) out to 19 are drawn instead (arc_fine: one pixel, an L's
+corner dropped against the kept pixels), then mirrored with the rest.  Measured: all four cockpits' reticles 0
+unmatched both ways, one pixel wide (the top tick's bars 9, 5, 9 about a one-pixel stem); the Centurion's radar four
+slices; the others' radars as before.
+
+**The mirror's cost (2026-11-23).**  The user, after the reticle and radar mirror went live: "I get lots more damage on
+my hull when I upres than when I don't upres.... the game feels choppier too", "ya the damage is way higher with high
+res--- probably somehow proportional to frame time", "I suspect they're all related to the same thing: lower framerate".
+Measured with temporary per-part timers (native, a dogfight with five pirates in the user's Centurion): capture_show
+cost 20-49 ms a second of play, more than the frame's whole composition (15-21): every frame it searched both axes over
+17 candidates and compared the art's 3 x 3 with its mirror's for each of some 15,000 canvas pixels, for art that never
+changes.  Now worked out once a picture and kept by its hash (8 kept): its axes and, for each of its pixels and a
+margin of two, whether the art's 3 x 3 is the same as its mirror's; each frame only the copy with a lookup.  The same
+dogfight: the mirror 4-6 ms a second, all the hooks 31 (from 75); the reticles pixel for pixel as before, the radars
+too (the runs differ only where a blip is).
+Then the user: "can we render those displays (radar, reticle) to an offscreen buffer and just blit them on instead of
+drawing from scratch every time", "we won't need the mirror cache in that case right?".  So: the reticle's and the
+radar's drawing (their rings, lines, the Centurion's pie slices, the mirror) is made once a picture into its canvas
+and kept by the picture's hash (8 kept: the canvas's lit pixels, each (y << 16) | (x << 8) | colour); every frame
+copies them (blit_cached), clipped as it copies -- while the canvas is drawn plot() writes into it unclipped.  The
+drawing moves with the picture's place by whole fine pixels, so one canvas serves every place.  The mirror's own cache
+is gone again (the mirror runs once a picture now).  The same dogfight: all the hooks 15 ms a second (75 with the
+mirror every frame, 31 with its cache), the reticle and radar about nothing; the pictures pixel for pixel as before
+(the runs differ only where a blip is).
+
+**A damaged screen's static (2026-11-23).**  The user: "The black and white static when the vidscreen is broken also
+doesn't work", "the VDU static only worked at raw 320x200", "the static resolution should probably be at the 320x200
+level even with higher rez systems", "we don't want to up-rez the static"; then a save with the comm system damaged:
+"Just hit t and it flashes".  With it, T in flight shows the static on the left screen for a few frames; at both
+high-resolution levels it was missing.  A code trace with one screen pixel watched (scratch, dev only) found it: the
+span copy (seg205) carries it from the flight's buffer, where seg201+A writes it -- a routine of the graphics library
+none of the kPlaces was: (target, passes, colour), the target's clip filled with the colour or black by the bits of the
+BIOS's ROM from a random place (an LCG at ss:4242), so H never had it.  Now it is a place (OP_SNOW): its rectangle is
+noted (on the flight's buffer, 8 a frame) and at the span copy, the static in the buffer by then, those rectangles go
+into H as the game's own pixels, 2 x 2.  Measured with the user's save (scratch dmg13, dmg14): the static at both
+levels, 1,750-1,820 white pixels in its frames where the "NO TARGET" screen has 40-65, blocks of 2 x 2.

@@ -97,13 +97,16 @@
   .details-row details[open] { flex-basis: 100%; }
 
   /* game files */
-  #dropzone { padding: 7px 10px; border: 1px dashed var(--green2); background: #04100a; font: 12px/1.45 system-ui, sans-serif; }
-  #dropzone.over { background: #0b2a1a; border-color: var(--green); }
-  #dropzone .pick { display: inline; color: var(--amber); cursor: pointer; text-decoration: underline; }
+  /* The box a game file is dropped on (the user, 2026-11-23: "make it more obvious in the web page where to drag and
+     drop the gog file.  Is there a click to browse upload button too"): its title, a Choose file button, what it takes.
+     A file dragged over the page lights it (body.dragfile); dropped anywhere on the page, it is taken as here. */
+  #dropzone { margin-top: 8px; padding: 8px 10px; border: 2px dashed var(--green2); background: #04100a; font: 12px/1.45 system-ui, sans-serif; }
+  #dropzone .dzrow { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; }
+  #dropzone .dztitle { color: var(--amber); font: 700 12px/1.3 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  #dropzone .dzwhat { margin-top: 5px; color: var(--muted); font-size: 11.5px; }
   #dropzone input[type=file] { display: none; }
-  /* (With a game loaded the invitation is a line: the details are a tooltip.) */
-  #source.loaded #dropzone { padding: 4px 10px; }
-  #source.loaded #dropzone .fresh, #source:not(.loaded) #dropzone .loaded { display: none; }
+  #dropzone #gamefileButton { padding: 6px 12px; }
+  #dropzone.over, body.dragfile #dropzone { border-color: var(--amber); background: #1a1405; }
   #sourceStatus { margin: 6px 0; color: var(--green); font-size: 12px; }
   #sourceStatus:empty { display: none; }
   #sourceButtons { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 6px; }
@@ -290,12 +293,11 @@
         <span id="gameList" title="Every game this page plays together"></span>
         <span id="savedList"></span>
       </div>
-      <div id="dropzone" tabindex="0">
-        <span class="fresh"><strong>Bring your own game.</strong> Drop a <b>.zip</b> of your game folder or a supported GOG installer. Wing Commander and Wing Commander II accept the GOG installer
-        (<code>setup_wing_commander_*.exe</code>: the
-        <a href="https://www.gog.com/en/game/wing_commander_35th_anniversary_edition" target="_blank" rel="noopener">35th Anniversary Edition</a>'s or the Legacy Edition's). Drop your file here or</span><span class="loaded">Drop a <b>.zip</b> of your game folder or a supported GOG installer to add it to the Game menu, or</span>
-        <label class="pick"><input type="file" id="gamefile" accept=".zip,.exe,application/zip,application/octet-stream"> choose a file</label>.
-        <span class="fresh">Nothing is uploaded: the files are unpacked and kept in this browser only.</span>
+      <div id="dropzone" tabindex="-1">
+        <div class="dzrow"><span class="dztitle">Drop your GOG installer or game .zip here</span>
+          <input type="file" id="gamefile" accept=".zip,.exe,application/zip,application/octet-stream">
+          <button type="button" class="secondary" id="gamefileButton" title="Pick the file on your computer: a GOG installer (.exe) as you downloaded it, or a .zip of your game's folder">Choose file&hellip;</button></div>
+        <div class="dzwhat">Wing Commander I and II, Privateer, Armada, TIE Fighter, the full Raptor and Terminal Velocity: GOG's installer (<code>setup_&hellip;.exe</code>) as you downloaded it, or a <b>.zip</b> of the game's folder. Drag it anywhere onto this page, or choose it. Nothing is uploaded: the files are unpacked and kept in this browser only.</div>
       </div>
       <div id="sourceStatus">No game files yet.</div>
       <details id="demos">

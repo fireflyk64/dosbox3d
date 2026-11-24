@@ -31,6 +31,7 @@
 #include "dos_inc.h"
 #include "wcnet_priv_hires.h"
 #include "wcnet_priv_font.h"
+#include "wcnet_priv_talon.h"
 #include "wcnet_priv.h"
 #include "wcnet_game.h"
 #include "wcnet_log.h"
@@ -62,7 +63,7 @@ enum {
 };
 
 enum Op { OP_FILL, OP_CLEAR, OP_COPY, OP_ELLIPSE, OP_LINE, OP_PIXEL, OP_RECT, OP_SILHOUETTE, OP_SHAPE, OP_SCALE,
-          OP_SCALE_HAZE, OP_TURN, OP_POLY, OP_PRESENT, OP_CORNER_X, OP_CORNER_Y };
+          OP_SCALE_HAZE, OP_TURN, OP_POLY, OP_PRESENT, OP_CORNER_X, OP_CORNER_Y, OP_SNOW };
 
 struct Place { Bit16u para, ip; Op op; Bit8u code[3]; };
 const Place kPlaces[] = {
@@ -82,6 +83,12 @@ const Place kPlaces[] = {
     { 0x5D17, 0x0002, OP_PRESENT,    { 0xC8, 0x06, 0x00 } },    // seg205
     { 0x3771, 0x05D7, OP_CORNER_X,   { 0x8B, 0x46, 0xE7 } },    // seg091: a laser's corner, before it is rounded
     { 0x3771, 0x0621, OP_CORNER_Y,   { 0x8B, 0x46, 0xD3 } },
+    // seg201+A: a damaged screen's static (the user, 2026-11-23: "The black and white static when the vidscreen is
+    // broken also doesn't work", "the static resolution should probably be at the 320x200 level even with higher rez
+    // systems", "we don't want to up-rez the static"): (target, passes, colour), the target's whole clip filled with
+    // the colour or black by the bits of the BIOS's ROM at a random place -- found with a damaged comm system's save
+    // (T pressed), a pixel of the screen watched through a code trace
+    { 0x5B35, 0x000A, OP_SNOW,       { 0x55, 0x8B, 0xEC } },
 };
 enum { kPlaceCount = sizeof(kPlaces) / sizeof(kPlaces[0]) };
 enum {
@@ -106,6 +113,12 @@ struct Shape {
 
 struct Exact { int xi, yi; double x, y; };
 
+// The static drawn this frame (seg201's targets on the flight's buffer, 8 at most): at the span copy, when it is in
+// the buffer, these are put into H as the game's own pixels, 2 x 2 -- the static is never drawn at the high
+// resolution.
+struct Snow { int x0, y0, x1, y1; };
+Snow g_snow[8];
+int g_snowCount = 0;
 Bit8u g_hi[HW * HH];                // H, being drawn
 Bit8u g_shownHi[HW * HH];           // H as it was at the last span copy
 Bit8u g_shownLow[LW * LH];          // ... and what that copy put on the screen
@@ -240,7 +253,17 @@ void fill(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
     for (int y = y0; y <= y1; y++) block_row(x0, x1, y, c);
 }
 
+// A drawing caught in a canvas of its own instead of the picture, to be made a mirror image of itself before it is
+// shown (capture_show): the reticle's and the radar's.
+struct Capture { bool on; int X0, Y0, W, H; std::vector<Bit16s> px; };
+Capture g_cap = { false, 0, 0, 0, 0, std::vector<Bit16s>() };
+
 inline void plot(const Target &t, int X, int Y, Bit8u c) {
+    if (g_cap.on) {                     // (caught: into the canvas, unclipped -- the copy to the picture is clipped)
+        const int x = X - g_cap.X0, y = Y - g_cap.Y0;
+        if (x >= 0 && y >= 0 && x < g_cap.W && y < g_cap.H) g_cap.px[y * g_cap.W + x] = c;
+        return;
+    }
     if (X < 2 * t.x0 || X >= 2 * (t.x1 + 1) || Y < g_rowFrom[t.y0] || Y >= g_rowFrom[t.y1 + 1]) return;
     g_hi[Y * HW + X] = c;
 }
@@ -602,13 +625,23 @@ void rings_draw(const Target &t, const Shape &s, const Rings &r, int left, int t
         px.clear();
         py.clear();
         auto flush = [&]() {
+            // (the corner of an L of three dropped -- judged against the pixels kept, not the ellipse's next point:
+            //  two corners in a row had left a gap, the ring dotted on its steep arcs; the gaps then stepped across)
+            std::vector<int> kx, ky;
             for (size_t i = 0; i < px.size(); i++) {
-                const bool corner = i > 0 && i + 1 < px.size() && abs(px[i + 1] - px[i - 1]) == 1 && abs(py[i + 1] - py[i - 1]) == 1;
-                if (corner) continue;
-                if (i > 0 && (abs(px[i] - px[i - 1]) > 1 || abs(py[i] - py[i - 1]) > 1)) {
-                    line_fine(t, px[i - 1], py[i - 1], px[i], py[i], (Bit8u)g.colour);
+                const size_t n = kx.size();
+                if (n >= 2 && abs(px[i] - kx[n - 2]) == 1 && abs(py[i] - ky[n - 2]) == 1) {
+                    kx.pop_back();
+                    ky.pop_back();
                 }
-                plot(t, px[i], py[i], (Bit8u)g.colour);
+                kx.push_back(px[i]);
+                ky.push_back(py[i]);
+            }
+            for (size_t i = 0; i < kx.size(); i++) {
+                if (i > 0 && (abs(kx[i] - kx[i - 1]) > 1 || abs(ky[i] - ky[i - 1]) > 1)) {
+                    line_fine(t, kx[i - 1], ky[i - 1], kx[i], ky[i], (Bit8u)g.colour);
+                }
+                plot(t, kx[i], ky[i], (Bit8u)g.colour);
             }
             px.clear();
             py.clear();
@@ -661,13 +694,155 @@ bool letter(const Target &t, const Shape &s, int x, int y, int index, Bit8u c) {
         }
         if (bits != g->src[v]) return false;
     }
-    const int X0 = 2 * x, Y0 = 2 * (y - 3);      // (the capitals' top: the anchor is the baseline's row)
+    const int X0 = 2 * x, Y0 = 2 * (y - 3) - kPrivGlyphShiftUp;  // (the capitals' top: the anchor is the baseline's row)
     for (int r = 0; r < 10; r++) {
         for (int u = 0; u < g->w; u++) {
             if (g->rows[r] & (1 << u)) plot(t, X0 + u, Y0 + r, c);
         }
     }
     return true;
+}
+
+// ---- the cockpit's lettering that is art, in the user's font ------------------------------------------------------
+//
+// The user, 2026-11-23: "A couple more displays in the cockpit need the new font like AUTO and E for fuel".  Those are
+// no text: AUTO is a picture of its own (28 x 4, drawn by root code 130E: two red marks each side, the letters in the
+// middle), the E the top of the energy gauge's (11 x 23, root code 131A), and their letters are the art's own (a round
+// A, U and O; an E five rows tall).  A table of them: the code that draws the picture, the letters' exact pattern ('#'
+// the letters, '.' the panel about them, one colour; the pixels round the pattern none of the letters' colours), the
+// text, and for each fine row of the letters the user's glyphs' row (their capitals, eight rows; a taller letter's stems
+// drawn a row longer).  The pattern is looked for in the picture; where it is, the letters' pixels are the panel's and
+// the user's glyphs are drawn there in the colour of the art's letter at (inkU, inkV), side by side with the user's
+// two-pixel gaps, centred on the art's letters.  Any other picture, or the pattern not found: the game's blocks.
+struct ArtWord {
+    Bit16u caller;
+    int w, h;
+    const char *rows[6];
+    const char *text;
+    int inkU, inkV;
+    signed char glyphRow[12];       // per fine row of the 2h: the glyphs' row (-1 none)
+};
+// (each found in the four cockpits the player flies, scratch cockpit.sh: AUTO from 130E, the energy gauge's E from
+//  131A, the Centurion's fuel gauge's F from 1356.  An eight-row glyph in a five-row letter: centred (the A's slant
+//  kept whole), but the E, whose stems are drawn a row longer each to fill it.)
+const ArtWord kArtWords[] = {
+    { 0x130E, 16, 4, { ".#..#..#.###..#.",               // the Tarsus's AUTO: a round A and O
+                       "#.#.#..#..#..#.#",
+                       "###.#..#..#..#.#",
+                       "#.#..##...#...#." }, "AUTO", 0, 1, { 0, 1, 2, 3, 4, 5, 6, 7 } },
+    { 0x130E, 20, 4, { "####.#..#.#####.####",           // the Centurion's: square letters
+                       "#..#.#..#...#...#..#",
+                       "####.#..#...#...#..#",
+                       "#..#.####...#...####" }, "AUTO", 0, 1, { 0, 1, 2, 3, 4, 5, 6, 7 } },
+    { 0x130E, 21, 5, { ".##...#..#..###...##.",          // the Orion's: five rows
+                       "#..#..#..#...#...#..#",
+                       "####..#..#...#...#..#",
+                       "#..#..#..#...#...#..#",
+                       "#..#...##....#....##." }, "AUTO", 0, 1, { -1, 0, 1, 2, 3, 4, 5, 6, 7, -1 } },
+    { 0x130E, 25, 5, { ".##...#...#..#####...###.",      // the Galaxy's: five rows, wide
+                       "#..#..#...#....#....#...#",
+                       "####..#...#....#....#...#",
+                       "#..#..#...#....#....#...#",
+                       "#..#...###.....#.....###." }, "AUTO", 0, 1, { -1, 0, 1, 2, 3, 4, 5, 6, 7, -1 } },
+    { 0x131A, 3, 5, { "###",                            // the energy gauge's E: the Tarsus's, Orion's, Galaxy's
+                      "#..",
+                      "##.",
+                      "#..",
+                      "###" }, "E", 0, 1, { 0, 1, 2, 2, 3, 4, 5, 6, 6, 7 } },
+    { 0x131A, 4, 5, { "####",                           // the Centurion's
+                      "#...",
+                      "###.",
+                      "#...",
+                      "####" }, "E", 0, 1, { 0, 1, 2, 2, 3, 4, 5, 6, 6, 7 } },
+    { 0x1356, 3, 4, { "###",                            // the Centurion's fuel gauge's F
+                      "#..",
+                      "##.",
+                      "#.." }, "F", 0, 1, { 0, 1, 2, 3, 4, 5, 6, 7 } },
+};
+
+const PrivGlyph *user_glyph(char ch) {
+    for (int i = 0; i < kPrivGlyphCount; i++) {
+        if (kPrivGlyphs[i].ch == (unsigned char)ch) return &kPrivGlyphs[i];
+    }
+    return NULL;
+}
+
+void shape_blocks(const Target &t, const Shape &s, int x, int y, int colour);
+
+bool art_word(const Target &t, Bit16u caller, const Shape &s, int x, int y) {
+    for (size_t e = 0; e < sizeof(kArtWords) / sizeof(kArtWords[0]); e++) {
+        const ArtWord &a = kArtWords[e];
+        if (a.caller != caller || s.w < a.w || s.h < a.h) continue;
+        const PrivGlyph *g[8];
+        const int n = (int)strlen(a.text);
+        int inkW = 0;
+        bool have = n <= 8;
+        for (int i = 0; i < n && have; i++) {
+            g[i] = user_glyph(a.text[i]);
+            have = g[i] != NULL;
+            if (have) inkW += g[i]->w;
+        }
+        const int fineW = inkW + 2 * (n - 1);
+        if (!have || fineW > 2 * a.w + 2) continue;
+        auto px = [&](int u, int v) { return u >= 0 && v >= 0 && u < s.w && v < s.h ? (int)s.px[v * s.w + u] : -1; };
+        for (int pv = 0; pv + a.h <= s.h; pv++) {
+            for (int pu = 0; pu + a.w <= s.w; pu++) {
+                int bg = -2, ink[2] = { -2, -2 };
+                for (int v = 0; v < a.h && bg == -2; v++) {     // (the panel's colour: the pattern's first '.')
+                    for (int u = 0; u < a.w && bg == -2; u++) {
+                        if (a.rows[v][u] == '.') bg = px(pu + u, pv + v);
+                    }
+                }
+                bool ok = bg != -2;
+                for (int v = 0; v < a.h && ok; v++) {
+                    for (int u = 0; u < a.w && ok; u++) {
+                        const int c = px(pu + u, pv + v);
+                        if (a.rows[v][u] == '.') {
+                            ok = c == bg;
+                        } else {                                // (a letter: of one or two colours, not the panel's)
+                            ok = c >= 0 && c != bg;
+                            if (!ok) break;
+                            if (ink[0] == -2) ink[0] = c;
+                            else if (c != ink[0]) {
+                                if (ink[1] == -2) ink[1] = c;
+                                ok = c == ink[1];
+                            }
+                        }
+                    }
+                }
+                for (int v = -1; v <= a.h && ok; v++) {         // (no letter pixel of its colours just outside)
+                    for (int u = -1; u <= a.w && ok; u++) {
+                        if (u >= 0 && v >= 0 && u < a.w && v < a.h) continue;
+                        const int c = px(pu + u, pv + v);
+                        ok = c < 0 || (c != ink[0] && c != ink[1]);
+                    }
+                }
+                if (!ok) continue;
+                const int colour = px(pu + a.inkU, pv + a.inkV);
+                Shape plain = s;
+                for (int v = 0; v < a.h; v++) {
+                    for (int u = 0; u < a.w; u++) {
+                        if (a.rows[v][u] == '#') plain.px[(pv + v) * s.w + pu + u] = (Bit16s)bg;
+                    }
+                }
+                shape_blocks(t, plain, x, y, -1);
+                int X = 2 * (x - s.left + pu) + (2 * a.w - fineW) / 2;
+                const int Y0 = 2 * (y - s.top + pv);
+                for (int i = 0; i < n; i++) {
+                    for (int r = 0; r < 2 * a.h && r < 12; r++) {
+                        const int gr = a.glyphRow[r];
+                        if (gr < 0 || gr > 9) continue;
+                        for (int u = 0; u < g[i]->w; u++) {
+                            if (g[i]->rows[gr] & (1 << u)) plot(t, X + u, Y0 + r, (Bit8u)colour);
+                        }
+                    }
+                    X += g[i]->w + 2;
+                }
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // ---- the target display's ship: straight lines, mirrored exactly ---------------------------------------------------
@@ -687,41 +862,38 @@ bool letter(const Target &t, const Shape &s, int x, int y, int index, Bit8u c) {
 // pixels' outline 60 in 100 the same about one column or the line between two: the shields' arcs, one side's to its
 // state, differ), wherever the art is the same as its mirror about a pixel the canvas's left half is copied onto its
 // right, pixel for pixel, each copy taking its colour from the art's right half there (a side's damage shows) -- so
-// the hull is drawn exactly symmetric whatever the line's rounding did, and a side's own state stays its own.  Worked out once a shape (its hash), 8 kept;
-// shapes over 64 x 64, and pictures (line_art), stay the game's blocks.
+// the hull is drawn exactly symmetric whatever the line's rounding did, and a side's own state stays its own.
+// 2026-11-23, the user's notes on every ship ("Paradign should have every pod be rounded", "Stilettos back engines
+// should be flat", "Tarsis front cockpit should connect through the 2 weapon pods"): a piece of four pixels or fewer
+// touching a solid part is solid; a colour's loop round a small hole that fits an upright ellipse is drawn as one; a
+// line's end reaches half-way to a touching pixel of another colour; every part is drawn so (no part judged a picture),
+// except the parts on kWireBlockParts ("I rather liked the blocky front of the talon").  Curves through the hulls'
+// corners were tried and taken out ("the gothri and dralthi were acceptable before and this edit made it way worse").
+// Worked out once a shape (its hash), 8 kept; shapes over 96 x 96 stay the game's blocks.
 
-// Line art, not a picture: at most 30 in 100 of its pixels in a square of four lit pixels (a face on the comm screen
-// is nearly all such squares; a ship's wireframe a few, at its joints and small solid parts).  Kept for 32 shapes.
-bool line_art(const Shape &s) {
-    static Bit32u hashes[32];
-    static bool answers[32];
-    static int used = 0, next = 0;
-    const Bit32u h = shape_hash(s);
-    for (int i = 0; i < used; i++) {
-        if (hashes[i] == h) return answers[i];
-    }
-    int lit = 0, solid = 0;
-    auto on = [&](int u, int v) { return u >= 0 && v >= 0 && u < s.w && v < s.h && s.px[v * s.w + u] >= 0; };
-    for (int v = 0; v < s.h; v++) {
-        for (int u = 0; u < s.w; u++) {
-            if (!on(u, v)) continue;
-            lit++;
-            bool in = false;
-            for (int dv = -1; dv <= 0 && !in; dv++) {
-                for (int du = -1; du <= 0 && !in; du++) {
-                    in = on(u + du, v + dv) && on(u + du + 1, v + dv) && on(u + du, v + dv + 1) && on(u + du + 1, v + dv + 1);
-                }
-            }
-            solid += in;
-        }
-    }
-    const bool answer = lit > 0 && solid * 100 <= lit * 30;
-    hashes[next] = h;
-    answers[next] = answer;
-    next = (next + 1) % 32;
-    if (used < 32) used++;
-    return answer;
-}
+// A part on this list is drawn with some of its pixels left out (runs down a column, the left side's, and their
+// mirror images about the art's middle: u + u' = mirror) and the table's own straight lines in their place (the left
+// side's, and their mirror images), each side's in the colour of its own pixel at (sampleU, sampleV) -- one of those
+// left out: its damage shows.  The Centurion's nose (the user: "centurion should have a smoother curve towards the
+// front part of the cockpit not a harsh triangle", "just needs to pull the nose triangle towards the center so it's
+// more sloped", "so the slope starts at the wings", "maybe as two slopes--one to the lower horizontal bar, then
+// another one to the corner of the wing that touches the body"): its middle part (82 pixels, the nose and its tip)
+// has each side straight down column 25 from the wing's corner (row 24) to row 34 and then one slope to the tip
+// (29, 46); drawn instead from the wing's corner (25, 24) to the lower bar's end (27, 40), and from there to the tip.
+struct WireRun { signed char u, v0, v1; };
+struct WireEdit {
+    Bit32u part;
+    int mirror, sampleU, sampleV;
+    WireRun drop[8];
+    int drops;
+    signed char lineU[6], lineV[6];
+    int points;
+};
+const WireEdit kWireEdits[] = {
+    { 0x92E829FBu, 59, 25, 30, { { 25, 25, 34 }, { 26, 35, 38 }, { 27, 39, 39 }, { 27, 41, 42 }, { 28, 43, 45 } }, 5,
+      { 25, 27, 29 }, { 24, 40, 46 }, 3 },
+};
+enum { kWireEditCount = sizeof(kWireEdits) / sizeof(kWireEdits[0]) };
 
 struct Wireframe {
     Bit32u hash;
@@ -760,7 +932,7 @@ void simplify(const std::vector<int> &cu, const std::vector<int> &cv, double tol
     }
 }
 
-void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
+void wire_make(const Shape &s, const std::vector<char> &block, int edit, int colL, int colR, int art, Wireframe &out) {
     const int w = s.w, h = s.h, W = 2 * w, H = 2 * h;
     out.w = w;
     out.h = h;
@@ -781,6 +953,7 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
             if (e2 <= dx) { err += dx; Y += sy; }
         }
     };
+    static const int kDu8[8] = { 1, 1, 0, -1, -1, -1, 0, 1 }, kDv8[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
     // solid parts: a pixel in a square of four of its colour, the game's block
     std::vector<char> solid(w * h, 0);
     for (int v = 0; v < h; v++) {
@@ -797,11 +970,186 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
                     }
                 }
             }
-            if (solid[v * w + u]) {
-                put(2 * u, 2 * v, c);
-                put(2 * u + 1, 2 * v, c);
-                put(2 * u, 2 * v + 1, c);
-                put(2 * u + 1, 2 * v + 1, c);
+        }
+    }
+    // A piece of four pixels or fewer of a colour touching a solid part is solid too (the Stiletto's engines: a yellow
+    // block and the orange row at its end -- the user: "Stilettos back engines should be flat")
+    {
+        std::vector<char> seen(w * h, 0);
+        std::vector<int> piece;
+        for (int v = 0; v < h; v++) {
+            for (int u = 0; u < w; u++) {
+                const int c = col(u, v);
+                if (c < 0 || solid[v * w + u] || seen[v * w + u]) continue;
+                piece.assign(1, v * w + u);
+                seen[v * w + u] = 1;
+                // (the piece grown whole, at most the picture: one cut short at five left its rest unmarked, and
+                //  each bit of a long line then counted as a small piece of its own: chance blocks)
+                for (size_t i = 0; i < piece.size() && piece.size() <= (size_t)(w * h); i++) {
+                    const int pu = piece[i] % w, pv = piece[i] / w;
+                    for (int k = 0; k < 8; k++) {
+                        const int nu = pu + kDu8[k], nv = pv + kDv8[k];
+                        if (col(nu, nv) == c && !solid[nv * w + nu] && !seen[nv * w + nu]) {
+                            seen[nv * w + nu] = 1;
+                            piece.push_back(nv * w + nu);
+                        }
+                    }
+                }
+                if (piece.size() > 4) continue;
+                bool touches = false;
+                for (size_t i = 0; i < piece.size() && !touches; i++) {
+                    const int pu = piece[i] % w, pv = piece[i] / w;
+                    for (int k = 0; k < 8 && !touches; k += 2) {        // (the four orthogonal neighbours)
+                        const int nu = pu + kDu8[k], nv = pv + kDv8[k];
+                        touches = nu >= 0 && nv >= 0 && nu < w && nv < h && solid[nv * w + nu] == 1;
+                    }
+                }
+                if (touches) {
+                    for (size_t i = 0; i < piece.size(); i++) solid[piece[i]] = 2;
+                }
+            }
+        }
+    }
+    for (int v = 0; v < h; v++) {
+        for (int u = 0; u < w; u++) {
+            if (!solid[v * w + u]) continue;
+            const int c = col(u, v);
+            put(2 * u, 2 * v, c);
+            put(2 * u + 1, 2 * v, c);
+            put(2 * u, 2 * v + 1, c);
+            put(2 * u + 1, 2 * v + 1, c);
+        }
+    }
+    // A part's hand-made art (kPrivPartArt, scripts/privtalon.py: the Talon's front), when the part's pixels are
+    // exactly the art's pattern: its 'x' pixels' blocks out, the art in, each of its three inks the colour of the
+    // sprite's own pixel (its damage shows); its 'b' pixels stay the game's blocks.  Anything else: the blocks.
+    if (art >= 0 && art < kPrivPartArtCount) {
+        const PrivPartArt &a = kPrivPartArt[art];
+        auto isPart = [&](int u, int v) {
+            return u >= 0 && v >= 0 && u < w && v < h && col(u, v) >= 0 && (size_t)(v * w + u) < block.size() && block[v * w + u];
+        };
+        bool exact = a.w > 0 && a.h > 0 && a.w <= 24 && a.h <= 24 && 2 * a.h <= 48;
+        for (int gv = 0; gv < a.h && exact; gv++) {
+            for (int gu = 0; gu < a.w && exact; gu++) exact = (a.game[gv][gu] != '.') == isPart(a.u0 + gu, a.v0 + gv);
+        }
+        int ink[3] = { -1, -1, -1 };
+        for (int k = 0; k < 3 && exact; k++) {
+            ink[k] = col(a.sample[k][0], a.sample[k][1]);
+            exact = ink[k] >= 0;
+        }
+        if (exact) {
+            for (int gv = 0; gv < a.h; gv++) {
+                for (int gu = 0; gu < a.w; gu++) {
+                    if (a.game[gv][gu] != 'x') continue;
+                    for (int k = 0; k < 4; k++) {
+                        const int X = 2 * (a.u0 + gu) + (k & 1), Y = 2 * (a.v0 + gv) + (k >> 1);
+                        if (X < W && Y < H) out.fine[Y * W + X] = (Bit16s)-1;
+                    }
+                }
+            }
+            for (int Y = 0; Y < 2 * a.h; Y++) {
+                const char *row = a.fine[Y];
+                for (int X = 0; X < 2 * a.w && row[X]; X++) {
+                    const char r = row[X];
+                    const int c = r == 'o' ? ink[0] : r == 'k' ? ink[1] : r == 'f' ? ink[2] : -1;
+                    if (c >= 0) put(2 * a.u0 + X, 2 * a.v0 + Y, c);
+                }
+            }
+        }
+    }
+    // A colour's loop round a hole that is an ellipse is drawn as one (the Paradigm's pods: the user, "Paradign should
+    // have every pod be rounded"): for each colour, a region of other pixels (4-connected) that touches no edge, of 200
+    // pixels at most; its loop, the colour's pixels about it; not a box (two corners of its bounding box its own
+    // pixels: the Tarsus's cells stay square), an upright ellipse fitted (least squares) with radii of 1.5 to 14 pixels
+    // and every pixel of the loop within 0.8 of it.  Its pixels are then the ellipse's: no chain's; a chain reaching one
+    // ends at its middle.
+    std::vector<int> ring(w * h, 0);
+    {
+        std::vector<int> region(w * h, 0), stamp(w * h, 0), comp, loop;
+        int stampNo = 0, rings = 0;
+        std::vector<int> colours;
+        for (int i = 0; i < w * h; i++) {
+            if (s.px[i] >= 0 && std::find(colours.begin(), colours.end(), (int)s.px[i]) == colours.end() && colours.size() < 32) {
+                colours.push_back(s.px[i]);
+            }
+        }
+        for (size_t ci = 0; ci < colours.size() && rings < 64; ci++) {
+            const int c = colours[ci];
+            std::fill(region.begin(), region.end(), 0);
+            for (int start = 0; start < w * h && rings < 64; start++) {
+                if (region[start] || col(start % w, start / w) == c) continue;
+                comp.assign(1, start);
+                region[start] = 1;
+                bool edge = false;
+                // (the region flooded whole, at most the picture: one cut short left its rest unmarked, each piece of
+                //  it then taken for a hole of its own -- chance rings, moved by a change anywhere in the picture)
+                for (size_t i = 0; i < comp.size() && comp.size() <= (size_t)(w * h); i++) {
+                    const int pu = comp[i] % w, pv = comp[i] / w;
+                    if (pu == 0 || pv == 0 || pu == w - 1 || pv == h - 1) edge = true;
+                    for (int k = 0; k < 8; k += 2) {
+                        const int nu = pu + kDu8[k], nv = pv + kDv8[k];
+                        if (nu < 0 || nv < 0 || nu >= w || nv >= h || region[nv * w + nu] || col(nu, nv) == c) continue;
+                        region[nv * w + nu] = 1;
+                        comp.push_back(nv * w + nu);
+                    }
+                }
+                if (edge || comp.size() > 200) continue;
+                stampNo++;
+                loop.clear();
+                bool line = true;                       // (a loop along a part kept as blocks is no ring: the Talon's)
+                for (size_t i = 0; i < comp.size() && line; i++) {
+                    const int pu = comp[i] % w, pv = comp[i] / w;
+                    for (int k = 0; k < 8 && line; k++) {
+                        const int nu = pu + kDu8[k], nv = pv + kDv8[k];
+                        if (col(nu, nv) == c && (size_t)(nv * w + nu) < block.size() && block[nv * w + nu]) line = false;
+                        if (col(nu, nv) != c || solid[nv * w + nu] || stamp[nv * w + nu] == stampNo) continue;
+                        stamp[nv * w + nu] = stampNo;
+                        loop.push_back(nv * w + nu);
+                    }
+                }
+                if (!line || loop.size() < 6) continue;
+                int u0 = w, u1 = -1, v0 = h, v1 = -1;
+                for (size_t i = 0; i < loop.size(); i++) {
+                    const int pu = loop[i] % w, pv = loop[i] / w;
+                    u0 = std::min(u0, pu); u1 = std::max(u1, pu); v0 = std::min(v0, pv); v1 = std::max(v1, pv);
+                }
+                const int corners = (stamp[v0 * w + u0] == stampNo) + (stamp[v0 * w + u1] == stampNo) +
+                                    (stamp[v1 * w + u0] == stampNo) + (stamp[v1 * w + u1] == stampNo);
+                if (corners >= 2) continue;
+                const double cx = (u0 + u1) / 2.0, cy = (v0 + v1) / 2.0;
+                double M[4][5] = { { 0 } };
+                for (size_t i = 0; i < loop.size(); i++) {
+                    const double du = loop[i] % w - cx, dv = loop[i] / w - cy, f[4] = { du * du, dv * dv, du, dv };
+                    for (int a = 0; a < 4; a++) {
+                        M[a][4] += f[a];
+                        for (int b = 0; b < 4; b++) M[a][b] += f[a] * f[b];
+                    }
+                }
+                double sol[4];
+                if (!solve4(M, sol) || sol[0] <= 0 || sol[1] <= 0) continue;
+                const double ex = cx - sol[2] / (2 * sol[0]), ey = cy - sol[3] / (2 * sol[1]);
+                const double K = 1 + sol[2] * sol[2] / (4 * sol[0]) + sol[3] * sol[3] / (4 * sol[1]);
+                if (K <= 0) continue;
+                const double ea = sqrt(K / sol[0]), eb = sqrt(K / sol[1]);
+                if (ea < 1.5 || eb < 1.5 || ea > 14 || eb > 14) continue;
+                bool fits = true;
+                for (size_t i = 0; i < loop.size() && fits; i++) {
+                    const double du = loop[i] % w - ex, dv = loop[i] / w - ey;
+                    const double rho = sqrt((du / ea) * (du / ea) + (dv / eb) * (dv / eb));
+                    fits = rho > 1e-9 && sqrt(du * du + dv * dv) * fabs(1 - 1 / rho) <= 0.8;
+                }
+                if (!fits) continue;
+                rings++;
+                for (size_t i = 0; i < loop.size(); i++) ring[loop[i]] = rings;
+                const int n = 16 + (int)(16 * std::max(ea, eb));
+                double px0 = 2 * (ex + ea) + 1, py0 = 2 * ey + 1;
+                for (int i = 1; i <= n; i++) {
+                    const double th = i * 6.283185307179586 / n;
+                    const double px1 = 2 * (ex + ea * cos(th)) + 1, py1 = 2 * (ey + eb * sin(th)) + 1;
+                    drawf(px0, py0, px1, py1, c);
+                    px0 = px1;
+                    py0 = py1;
+                }
             }
         }
     }
@@ -811,7 +1159,7 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
     for (int v = 0; v < h; v++) {
         for (int u = 0; u < w; u++) {
             const int c = col(u, v);
-            if (c < 0 || solid[v * w + u]) continue;
+            if (c < 0 || solid[v * w + u] || ring[v * w + u]) continue;
             for (int k = 0; k < 8; k++) {
                 const int nu = u + kDu[k], nv = v + kDv[k];
                 if (col(nu, nv) != c) continue;
@@ -839,7 +1187,7 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
             c.v.push_back(nv);
             u = nu;
             v = nv;
-            if (solid[v * w + u] || degree[v * w + u] != 2) break;
+            if (solid[v * w + u] || ring[v * w + u] || degree[v * w + u] != 2) break;
             int next = -1;
             for (int j = 0; j < 8 && next < 0; j++) {
                 if ((link[v * w + u] & (1 << j)) && !(used[v * w + u] & (1 << j))) next = j;
@@ -853,7 +1201,7 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
         for (int v = 0; v < h; v++) {
             for (int u = 0; u < w; u++) {
                 const int i = v * w + u;
-                if (col(u, v) < 0 || solid[i] || (pass == 0 && degree[i] == 2)) continue;
+                if (col(u, v) < 0 || solid[i] || ring[i] || (pass == 0 && degree[i] == 2)) continue;
                 for (int k = 0; k < 8; k++) {
                     if ((link[i] & (1 << k)) && !(used[i] & (1 << k))) walk(u, v, k);
                 }
@@ -968,9 +1316,34 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
         }
         for (size_t i = 0; i < p.chain->u.size(); i++) inChain[p.chain->v[i] * w + p.chain->u[i]] = 1;
     }
-    for (int v = 0; v < h; v++) {                   // (a pixel in no chain, nor solid: its middle)
+    for (int v = 0; v < h; v++) {                   // (a pixel in no chain, nor solid, nor a ring's: its middle)
         for (int u = 0; u < w; u++) {
-            if (col(u, v) >= 0 && !solid[v * w + u] && !inChain[v * w + u]) put(2 * u + 1, 2 * v + 1, col(u, v));
+            if (col(u, v) >= 0 && !solid[v * w + u] && !ring[v * w + u] && !inChain[v * w + u]) put(2 * u + 1, 2 * v + 1, col(u, v));
+        }
+    }
+    // A line's end reaches half-way to a pixel of another colour that touches it (a diagonal one only where no corner
+    // pixel of another colour comes between): the colours meet as the game's pixels do (the Tarsus's cockpit bar and its
+    // weapon pods: the user, "Tarsis front cockpit should connect through the 2 weapon pods. There shouldn't be gaps")
+    for (int v = 0; v < h; v++) {
+        for (int u = 0; u < w; u++) {
+            const int i = v * w + u, c = col(u, v);
+            if (c < 0 || solid[i] || ring[i] || degree[i] > 1) continue;
+            for (int k = 0; k < 8; k++) {
+                const int nu = u + kDu[k], nv = v + kDv[k], nc = col(nu, nv);
+                if (nc < 0 || nc == c) continue;
+                if (kDu[k] && kDv[k]) {
+                    const int a = col(nu, v), b = col(u, nv);
+                    if ((a >= 0 && a != c) || (b >= 0 && b != c)) continue;
+                }
+                drawf(2 * u + 1, 2 * v + 1, u + nu + 1, v + nv + 1, c);      // (to the middle between the two)
+            }
+        }
+    }
+    if (edit >= 0 && edit < kWireEditCount) {     // (a part's own lines, both sides: before the mirror's copy)
+        const WireEdit &e = kWireEdits[edit];
+        for (int i = 0; i + 1 < e.points && i + 1 < 6; i++) {
+            drawf(2 * e.lineU[i] + 1, 2 * e.lineV[i] + 1, 2 * e.lineU[i + 1] + 1, 2 * e.lineV[i + 1] + 1, colL);
+            drawf(2 * (e.mirror - e.lineU[i]) + 1, 2 * e.lineV[i] + 1, 2 * (e.mirror - e.lineU[i + 1]) + 1, 2 * e.lineV[i + 1] + 1, colR);
         }
     }
     // a mirror image?  The axis (u + u' of a mirrored pair) near the middle that most of the outline agrees with
@@ -1020,6 +1393,14 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
                 continue;
             }
             const int u = X >> 1, v = Y >> 1;
+            bool same = true;                           // (the art's colours a mirror image here too: the copy's own)
+            for (int dv = -1; dv <= 1 && same; dv++) {
+                for (int du = -1; du <= 1 && same; du++) same = col(u + du, v + dv) == col(best - u - du, v + dv);
+            }
+            if (same) {
+                out.fine[Y * W + X] = c;
+                continue;
+            }
             int pick = -1, any = -1;
             for (int k = -1; k < 8 && pick < 0; k++) {
                 const int qu = k < 0 ? u : u + kDu[k], qv = k < 0 ? v : v + kDv[k];
@@ -1052,18 +1433,53 @@ bool target_art_call() {
 // one after another) are gathered into one picture as the game lays them, and that is drawn when anything else is
 // drawn next (or the frame is shown): so its lines run on across the parts, and its mirror image is the whole ship's
 // (the halves are not each other's mirrors: the drone's left half has the middle column's pixels, the Gothri's right).
+//
+// A part on this list stays the game's blocks: the Talon's front (its canopy and engines, 94 pixels; the user: "I rather
+// liked the blocky front of the talon", "a special exemption for talon is fine").  A part is known by its frame and
+// which of its pixels are lit (not their colours: those change with its damage): FNV-1a of w, h, left, top, then lit.
+const Bit32u kWireBlockParts[] = { 0xC7EFE729u };
+
+Bit32u part_mask_hash(const Shape &s) {
+    Bit32u h = 2166136261u;
+    const int head[4] = { s.w, s.h, s.left, s.top };
+    for (int i = 0; i < 4; i++) h = (h ^ (Bit32u)head[i]) * 16777619u;
+    for (size_t i = 0; i < s.px.size(); i++) h = (h ^ (Bit32u)(s.px[i] >= 0 ? 1 : 0)) * 16777619u;
+    return h;
+}
+
 Shape g_wireComp;
-std::vector<char> g_wireBlock;      // per pixel of it: from a part that is no line art (a picture, a band): the game's block
+std::vector<char> g_wireBlock;      // per pixel of it: from a part on the list above, drawn as the game's blocks
+int g_wireEdit = -1;                // the composite's part on kWireEdits (above wire_make), if one is
+int g_wireArt = -1;                 // the composite's part with hand-made art (kPrivPartArt), if one is
 bool g_wirePending = false;
 Target g_wireT;
 int g_wireX = 0, g_wireY = 0;
 
-void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y);
+void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y, int edit, int colL, int colR, int art);
 
 void wire_flush() {
     if (!g_wirePending) return;
     g_wirePending = false;
-    shape_wire(g_wireT, g_wireComp, g_wireBlock, g_wireX, g_wireY);
+    if (g_wireEdit >= 0 && g_wireEdit < kWireEditCount) {
+        const WireEdit &e = kWireEdits[g_wireEdit];
+        Shape cut = g_wireComp;
+        const int w = cut.w, h = cut.h, ru = e.mirror - e.sampleU;
+        auto at = [&](int u, int v) { return u >= 0 && v >= 0 && u < w && v < h ? (int)cut.px[v * w + u] : -1; };
+        const int colL = at(e.sampleU, e.sampleV), colR = at(ru, e.sampleV);
+        if (colL >= 0 && colR >= 0) {
+            for (int i = 0; i < e.drops && i < 8; i++) {
+                for (int v = e.drop[i].v0; v <= e.drop[i].v1; v++) {
+                    const int us[2] = { e.drop[i].u, e.mirror - e.drop[i].u };
+                    for (int k = 0; k < 2; k++) {
+                        if (us[k] >= 0 && v >= 0 && us[k] < w && v < h) cut.px[v * w + us[k]] = (Bit16s)-1;
+                    }
+                }
+            }
+            shape_wire(g_wireT, cut, g_wireBlock, g_wireX, g_wireY, g_wireEdit, colL, colR, g_wireArt);
+            return;
+        }
+    }
+    shape_wire(g_wireT, g_wireComp, g_wireBlock, g_wireX, g_wireY, -1, -1, -1, g_wireArt);
 }
 
 void wire_gather(const Target &t, const Shape &s, int x, int y) {
@@ -1079,25 +1495,37 @@ void wire_gather(const Target &t, const Shape &s, int x, int y) {
         g_wireComp.stamp = 0;
         g_wireComp.px.assign(s.w * s.h, (Bit16s)-1);
         g_wireBlock.assign(s.w * s.h, 0);
+        g_wireEdit = -1;
+        g_wireArt = -1;
         g_wireT = t;
         g_wireX = x;
         g_wireY = y;
         g_wirePending = true;
     }
-    const char art = line_art(s) ? 0 : 1;        // (each part judged on its own: a band of colours, a picture)
+    const Bit32u part = part_mask_hash(s);
+    char keep = 0;
+    for (size_t i = 0; i < sizeof(kWireBlockParts) / sizeof(kWireBlockParts[0]); i++) keep |= kWireBlockParts[i] == part;
+    for (int i = 0; i < kWireEditCount; i++) {
+        if (kWireEdits[i].part == part) g_wireEdit = i;
+    }
+    for (int i = 0; i < kPrivPartArtCount; i++) {
+        if (kPrivPartArt[i].part == part) g_wireArt = i;
+    }
     for (size_t i = 0; i < s.px.size() && i < g_wireComp.px.size(); i++) {
         if (s.px[i] >= 0) {
             g_wireComp.px[i] = s.px[i];
-            g_wireBlock[i] = art;
+            g_wireBlock[i] = keep;
         }
     }
 }
 
-void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y) {
+void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y, int edit, int colL, int colR, int art) {
     static Wireframe cache[kWireCache];
     static int used = 0, next = 0;
     Bit32u hash = shape_hash(s);
     for (size_t i = 0; i < block.size(); i++) hash = (hash ^ (Bit32u)block[i]) * 16777619u;
+    hash = (((hash ^ (Bit32u)(edit + 1)) * 16777619u ^ (Bit32u)(colL + 1)) * 16777619u ^ (Bit32u)(colR + 1)) * 16777619u;
+    hash = (hash ^ (Bit32u)(art + 1)) * 16777619u;
     const Wireframe *wf = NULL;
     for (int i = 0; i < used && !wf; i++) {
         if (cache[i].hash == hash && cache[i].w == s.w && cache[i].h == s.h) wf = &cache[i];
@@ -1107,7 +1535,7 @@ void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block,
         next = (next + 1) % kWireCache;
         if (used < kWireCache) used++;
         made.hash = hash;
-        wire_make(s, block, made);
+        wire_make(s, block, edit, colL, colR, art, made);
         wf = &made;
     }
     const int X0 = 2 * (x - s.left), Y0 = 2 * (y - s.top), W = 2 * wf->w, H = 2 * wf->h;
@@ -1120,10 +1548,113 @@ void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block,
 }
 
 // Line art of one pixel's width: each pixel joined to its neighbours' middles, its rings drawn round.
+// The caught drawing of a shape (at fine 2 left, 2 top) shown as a mirror image of itself where the art is one: the
+// user, 2026-11-23: "The centurion aiming reticle is not symmetric. Prefer the left side to the right", "Make sure
+// reticle are symmetric".  The art's own axis (u + u' = S, near its middle, that most of its pixels agree with, colour
+// and all: the radar's rings are centred at 30 of 56) found as the wireframe's is; the right half's fine pixels are then
+// the left's mirrored about the middles the lines are drawn through (2u + 1: fine x and 2S + 2 - x, from the shape's
+// left; the axis column S + 1 kept as drawn, one pixel wide, the drawing half a game pixel right of the blocks -- the
+// user: "The original reticle wasn't two pixels wide so we need to have it be 1 pixel wide (and that may mean it's
+// offset by half a pixel)") wherever the art's 3 x 3 about the pixel is the same as about its mirror, colours too (a
+// mark only on one side keeps its own drawing); then the bottom from the top likewise (v + v' = T).
+// The finished canvases, kept by the picture's hash (8 kept): its lit pixels, each (y << 16) | (x << 8) | colour, x and y
+// from the canvas's corner (fine 2 left - 4, 2 top - 4).  The drawing moves with the picture's place by whole fine
+// pixels (its lines and rings are laid from 2 left + 1 and 2 top + 1), so one canvas serves every place.
+struct Blit { Bit32u key; int w, h; std::vector<Bit32u> px; };
+Blit g_blit[8];
+int g_blitUsed = 0, g_blitNext = 0;
+
+bool blit_cached(const Target &t, const Shape &s, Bit32u key, int left, int top) {
+    for (int i = 0; i < g_blitUsed; i++) {
+        const Blit &b = g_blit[i];
+        if (b.key != key || b.w != s.w || b.h != s.h) continue;
+        const int X0 = 2 * left - 4, Y0 = 2 * top - 4;
+        for (size_t k = 0; k < b.px.size(); k++) {
+            const Bit32u v = b.px[k];
+            plot(t, X0 + (int)((v >> 8) & 0xFF), Y0 + (int)(v >> 16), (Bit8u)(v & 0xFF));
+        }
+        return true;
+    }
+    return false;
+}
+
+void capture_begin(const Shape &s, int left, int top) {
+    const int M = 4;
+    g_cap.X0 = 2 * left - M;
+    g_cap.Y0 = 2 * top - M;
+    g_cap.W = 2 * s.w + 2 * M;
+    g_cap.H = 2 * s.h + 2 * M;
+    g_cap.px.assign((size_t)g_cap.W * g_cap.H, (Bit16s)-1);
+    g_cap.on = true;
+}
+
+void capture_show(const Target &t, const Shape &s, int left, int top, Bit32u key) {
+    g_cap.on = false;
+    const int w = s.w, h = s.h, W = g_cap.W, H = g_cap.H;
+    auto col = [&](int u, int v) { return u >= 0 && v >= 0 && u < w && v < h ? (int)s.px[v * w + u] : -1; };
+    int lit = 0;
+    for (int i = 0; i < w * h; i++) lit += s.px[i] >= 0;
+    for (int pass = 0; pass < 2 && lit > 0; pass++) {
+        const bool across = pass == 0;
+        const int n = across ? w : h;
+        int best = -1, bestAgree = -1;
+        for (int S = n - 9; S <= n + 7; S++) {
+            int agree = 0;
+            for (int v = 0; v < h; v++) {
+                for (int u = 0; u < w; u++) {
+                    const int c = col(u, v);
+                    if (c >= 0 && c == (across ? col(S - u, v) : col(u, S - v))) agree++;
+                }
+            }
+            if (agree > bestAgree) { bestAgree = agree; best = S; }
+        }
+        if (bestAgree * 100 < lit * 60) continue;
+        auto same = [&](int u, int v) {             // (the art's 3 x 3 about (u, v) the same as about its mirror)
+            for (int dv = -1; dv <= 1; dv++) {
+                for (int du = -1; du <= 1; du++) {
+                    const int m = across ? col(best - u - du, v + dv) : col(u + du, best - v - dv);
+                    if (col(u + du, v + dv) != m) return false;
+                }
+            }
+            return true;
+        };
+        const int off = 4;                          // (the canvas's margin: fine x from the shape's left is x - off)
+        for (int y = 0; y < H; y++) {
+            for (int x = 0; x < W; x++) {
+                const int fx = x - off, fy = y - off;   // (from the shape's corner, fine)
+                const int f = across ? fx : fy, m = 2 * best + 2 - f;
+                if (f <= best + 1) continue;        // (the left or top half: the source; best + 1 the axis itself)
+                const int mx = across ? m + off : x, my = across ? y : m + off;
+                if (mx < 0 || my < 0 || mx >= W || my >= H) continue;
+                const int u = fx >= 0 ? fx / 2 : -1 - (-fx - 1) / 2, v = fy >= 0 ? fy / 2 : -1 - (-fy - 1) / 2;
+                if (!same(u, v)) continue;
+                g_cap.px[y * W + x] = g_cap.px[my * W + mx];
+            }
+        }
+    }
+    Blit &b = g_blit[g_blitNext];               // (kept, then shown as every later frame is)
+    g_blitNext = (g_blitNext + 1) % 8;
+    if (g_blitUsed < 8) g_blitUsed++;
+    b.key = key;
+    b.w = w;
+    b.h = h;
+    b.px.clear();
+    for (int y = 0; y < H && y < 256; y++) {
+        for (int x = 0; x < W && x < 256; x++) {
+            const Bit16s c = g_cap.px[y * W + x];
+            if (c >= 0) b.px.push_back(((Bit32u)y << 16) | ((Bit32u)x << 8) | (Bit8u)c);
+        }
+    }
+    blit_cached(t, s, key, left, top);
+}
+
 void shape_lines(const Target &t, const Shape &s, int x, int y) {
     static const int kDx[4] = { 1, 0, 1, -1 }, kDy[4] = { 0, 1, 1, 1 };
     const int left = x - s.left, top = y - s.top;
+    const Bit32u key = shape_hash(s);
+    if (blit_cached(t, s, key, left, top)) return;
     const Rings &r = rings_of(s, -1);
+    capture_begin(s, left, top);
     rings_draw(t, s, r, left, top, -1);
     for (int v = 0; v < s.h; v++) {
         for (int u = 0; u < s.w; u++) {
@@ -1140,6 +1671,51 @@ void shape_lines(const Target &t, const Shape &s, int x, int y) {
             }
         }
     }
+    capture_show(t, s, left, top, key);
+}
+
+// A radar's exterior drawn by hand (the user, 2026-11-23, of the Centurion's: "the radar exterior is too complex. we
+// need those very simple quarter circles at different lengths--it drew a bunch of loops and unnecessary sketchy
+// details that doesn't make sense. Instead it should be 4 quarter circle pie slices with different radii and stopping
+// at the inner circle.  tarsus looks good"): for the art with this hash, its pixels of the exterior's colour (that of
+// the sample pixel) between two distances from the centre are the ground's, and four arcs between the diagonals (each
+// its own radius) and four spokes along the diagonals (from the bright circle out to the longer arc) are drawn instead,
+// one fine pixel wide through the middles, in that colour.  The Centurion's (56 x 43, centre (30, 21)): its art's arcs
+// at 16 (top, bottom: rows 5 and 37) and 19 (sides: columns 11 and 49), its X exact diagonals from the small ring out,
+// the bright circle at 11; its corner marks lie beyond 22 and stay.
+struct RadarArc { double r, a0, a1; };          // (degrees, y down: 270 up)
+struct RadarArt {
+    Bit32u hash;
+    int cu, cv, sampleU, sampleV;
+    double band0, band1;
+    RadarArc arc[4];
+    double spokeR0, spokeR1;
+};
+const RadarArt kRadarArt[] = {
+    { 0x4E3164A7u, 30, 21, 30, 5, 12.5, 21.0,
+      { { 16, 225, 315 }, { 19, 315, 405 }, { 16, 45, 135 }, { 19, 135, 225 } }, 11, 19 },
+};
+
+// An arc one fine pixel wide (its fine pixels in order, an L's corner dropped against the kept ones, gaps stepped).
+void arc_fine(const Target &t, double fcx, double fcy, double R, double a0, double a1, Bit8u c) {
+    std::vector<int> kx, ky;
+    const int n = 16 + (int)(4 * R * (a1 - a0) / 90.0);
+    for (int i = 0; i <= n; i++) {
+        const double th = (a0 + (a1 - a0) * i / n) * 3.141592653589793 / 180.0;
+        const int X = (int)floor(fcx + R * cos(th) + 0.5), Y = (int)floor(fcy + R * sin(th) + 0.5);
+        if (!kx.empty() && X == kx.back() && Y == ky.back()) continue;
+        const size_t k = kx.size();
+        if (k >= 2 && abs(X - kx[k - 2]) == 1 && abs(Y - ky[k - 2]) == 1) {
+            kx.pop_back();
+            ky.pop_back();
+        }
+        kx.push_back(X);
+        ky.push_back(Y);
+    }
+    for (size_t i = 0; i < kx.size(); i++) {
+        if (i > 0 && (abs(kx[i] - kx[i - 1]) > 1 || abs(ky[i] - ky[i - 1]) > 1)) line_fine(t, kx[i - 1], ky[i - 1], kx[i], ky[i], c);
+        else plot(t, kx[i], ky[i], c);
+    }
 }
 
 // The radar's art, redrawn each frame under its blips: its most common colour (the screen's ground) in blocks, each
@@ -1147,20 +1723,43 @@ void shape_lines(const Target &t, const Shape &s, int x, int y) {
 // ring of its own colour (joining any colours made a mesh of the two-tone rings; thinning the bitmap, combs).  A pixel
 // in no chain of its colour (fewer than two such neighbours: a two-tone bar's, a line's end) reaches halfway to each
 // neighbour of another ink, so the side gauge's two-tone bar is a line and not dots.
-void shape_radar(const Target &t, const Shape &s, int x, int y) {
+void shape_radar(const Target &t, const Shape &art, int x, int y) {
     static const int kDx[4] = { 1, 0, 1, -1 }, kDy[4] = { 0, 1, 1, 1 };
     static const int kAx[8] = { 1, -1, 0, 0, 1, -1, 1, -1 }, kAy[8] = { 0, 0, 1, -1, 1, 1, -1, -1 };
-    const int left = x - s.left, top = y - s.top;
+    const int left = x - art.left, top = y - art.top;
     int count[256] = { 0 };
-    for (int i = 0; i < s.w * s.h; i++) {
-        if (s.px[i] >= 0) count[s.px[i] & 0xFF]++;
+    for (int i = 0; i < art.w * art.h; i++) {
+        if (art.px[i] >= 0) count[art.px[i] & 0xFF]++;
     }
     int ground = 0;
     for (int c = 1; c < 256; c++) {
         if (count[c] > count[ground]) ground = c;
     }
+    // (a hand-drawn exterior: its pixels the ground's, its arcs and spokes drawn after the rest)
+    const RadarArt *hand = NULL;
+    int handColour = -1;
+    Shape cut;
+    const Bit32u artHash = shape_hash(art);
+    for (size_t i = 0; i < sizeof(kRadarArt) / sizeof(kRadarArt[0]) && !hand; i++) {
+        const RadarArt &r = kRadarArt[i];
+        if (r.hash != artHash || r.sampleU >= art.w || r.sampleV >= art.h) continue;
+        handColour = art.px[r.sampleV * art.w + r.sampleU];
+        if (handColour < 0 || handColour == ground) continue;
+        hand = &r;
+        cut = art;
+        for (int v = 0; v < art.h; v++) {
+            for (int u = 0; u < art.w; u++) {
+                const double d = hypot(u - r.cu, v - r.cv);
+                if (cut.px[v * art.w + u] == handColour && d > r.band0 && d < r.band1) cut.px[v * art.w + u] = (Bit16s)ground;
+            }
+        }
+    }
+    const Shape &s = hand ? cut : art;
+    const Bit32u key = artHash ^ 0x52414452u;   // ("RADR": the radar's canvases apart from the reticle's)
     shape_blocks(t, s, x, y, ground);
+    if (blit_cached(t, s, key, left, top)) return;
     const Rings &r = rings_of(s, ground);
+    capture_begin(s, left, top);
     rings_draw(t, s, r, left, top, ground);
     auto same = [&](int u, int v, int c) { return u >= 0 && u < s.w && v >= 0 && v < s.h && s.px[v * s.w + u] == c; };
     auto ink = [&](int u, int v) {
@@ -1191,6 +1790,16 @@ void shape_radar(const Target &t, const Shape &s, int x, int y) {
             }
         }
     }
+    if (hand) {
+        const double fcx = 2 * (left + hand->cu) + 1, fcy = 2 * (top + hand->cv) + 1;
+        for (int k = 0; k < 4; k++) arc_fine(t, fcx, fcy, 2 * hand->arc[k].r, hand->arc[k].a0, hand->arc[k].a1, (Bit8u)handColour);
+        for (int k = 0; k < 4; k++) {
+            const double th = (45 + 90 * k) * 3.141592653589793 / 180.0;
+            line_fine(t, (int)floor(fcx + 2 * hand->spokeR0 * cos(th) + 0.5), (int)floor(fcy + 2 * hand->spokeR0 * sin(th) + 0.5),
+                      (int)floor(fcx + 2 * hand->spokeR1 * cos(th) + 0.5), (int)floor(fcy + 2 * hand->spokeR1 * sin(th) + 0.5), (Bit8u)handColour);
+        }
+    }
+    capture_show(t, s, left, top, key);
 }
 
 // ---- the landing and takeoff scenes' bases (the plan's step 7) --------------------------------------------------------
@@ -1592,8 +2201,20 @@ void present() {
     g_drewThis = hires_wanted();        // (drawn from here to the next copy only while it is shown)
     if (!known || !drew || !g_drewThis) {   // (a buffer just learnt or a flip: the picture is ours from the next frame)
         g_haveFrame = false;
+        g_snowCount = 0;
         return;
     }
+    for (int k = 0; k < g_snowCount; k++) {     // (this frame's static, the game's own pixels: see g_snow)
+        const Snow &w = g_snow[k];
+        for (int y = w.y0; y <= w.y1 && y < LH; y++) {
+            if (y < 0) continue;
+            const PhysPt row = PhysMake(src.seg, 0) + (Bit16u)row_of(src, y);
+            for (int x = w.x0; x <= w.x1 && x < LW; x++) {
+                if (x >= 0) block(x, y, rd8(row + (Bit16u)x));
+            }
+        }
+    }
+    g_snowCount = 0;
     PhysPt p = PhysMake((Bit16u)arg16(3), (Bit16u)arg16(2)) + 12;
     Bit32u stamp = 2166136261u;
     int spans = 0;
@@ -1655,6 +2276,9 @@ void call(const Place &p) {
     if (p.op == OP_POLY && caller == kFillerSelf) return;
     if (!read_target((Bit16u)arg16(p.op == OP_COPY ? 1 : 0), t) || !flights_buffer(t)) return;
     switch (p.op) {
+    case OP_SNOW:
+        if (g_snowCount < 8 && t.x0 <= t.x1 && t.y0 <= t.y1) g_snow[g_snowCount++] = { t.x0, t.y0, t.x1, t.y1 };
+        break;
     case OP_CLEAR:
         fill(t, t.x0, t.y0, t.x1, t.y1, (Bit8u)arg16(1));
         break;
@@ -1737,6 +2361,8 @@ void call(const Place &p) {
             if (hires_cockpit() && target_art_call() && s->w <= kWireMax && s->h <= kWireMax) {
                 wire_gather(t, *s, x, y);
             } else if (caller == kCrosshairCaller && hires_cockpit()) shape_lines(t, *s, x, y);
+            else if (hires_cockpit() && art_word(t, caller, *s, x, y)) {
+            }
             else if (caller == kRadarCaller && hires_cockpit()) shape_radar(t, *s, x, y);
             else shape_blocks(t, *s, x, y, -1);
         } else if (p.op == OP_SCALE_HAZE) {
