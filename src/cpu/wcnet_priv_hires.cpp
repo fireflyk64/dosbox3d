@@ -95,6 +95,7 @@ enum {
     kCrosshairCaller = 0x2897,      // seg060: the crosshair's shape, drawn as one-pixel lines
     kRadarCaller = 0x13AE,          // the radar's: its art (one shape a frame, under the blips), drawn as line art
     kBracketCaller = 0x2903,        // the target's box (its lines): one pixel wide in space alone too
+    kStarCaller = 0x47E5,           // the star field's: a star of one pixel is one fine pixel (the larger ones are pictures)
     kFontCaller = 0x6108,           // the text's: each letter a silhouette of the game's font: the user's letters instead
     kFillerSelf = 0x47A2,           // seg116 calls itself once, to align its stack
 };
@@ -2359,7 +2360,12 @@ void call(const Place &p) {
                 shape_blocks(t, *s, x, y, (Bit8u)arg16(6));
             }
         } else if (p.op == OP_SHAPE) {
-            if (hires_cockpit() && target_art_call() && s->w <= kWireMax && s->h <= kWireMax) {
+            if (caller == kStarCaller && s->w == 1 && s->h == 1) {
+                // (the user, 2026-11-23: "the stars are 2x2 and is there any way they could be drawn equivalently as
+                // single pixels": the middle of the game's pixel, as the lines' ends are)
+                const int px = x - s->left, py = y - s->top;
+                if (s->px[0] >= 0 && px >= t.x0 && px <= t.x1 && py >= t.y0 && py <= t.y1) plot(t, fine_x(px), fine_y(py), (Bit8u)s->px[0]);
+            } else if (hires_cockpit() && target_art_call() && s->w <= kWireMax && s->h <= kWireMax) {
                 wire_gather(t, *s, x, y);
             } else if (caller == kCrosshairCaller && hires_cockpit()) shape_lines(t, *s, x, y);
             else if (hires_cockpit() && art_word(t, caller, *s, x, y)) {
