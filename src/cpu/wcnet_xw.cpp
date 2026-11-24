@@ -126,6 +126,7 @@ void frame_top() {
         g_rateFrames = 0;
     }
     xw640_wall_frame(false);
+    xw_controls_frame();
     xw_session_frame();
 }
 
@@ -477,9 +478,9 @@ bool xw_check_hooks(Bit32u ip) {
 
 // Esc while our launch is held for a host already flying: flown alone.  Every other key is the game's.
 bool xw_key(int key, bool pressed) {
-    if (!g_found || !g_holding) return false;
-    if (key == KBD_esc && pressed && xw_session_fly_alone()) return true;
-    return false;
+    if (!g_found) return false;
+    if (g_holding) return key == KBD_esc && pressed && xw_session_fly_alone();
+    return xw_controls_key(key, pressed);
 }
 
 bool xw_script_item(const std::string &item, double t) {
@@ -523,6 +524,7 @@ bool xw_script_item(const std::string &item, double t) {
         wclog(1, "key script %.1fs: X-Wing: DS:%04X byte set to %02X", t, off, v);
         return true;
     }
+    if (item.compare(0, 9, "!xwsteer=") == 0) { xw_controls_steer(item.substr(9)); return true; }
     if (item == "!xwcraft") {
         // every craft logged: its slot, identity, flight group, type, place, speed, hull, shields, death
         if (!g_found || !xw_flight_loaded()) {
