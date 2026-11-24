@@ -155,6 +155,24 @@ try {
   const after = lastObjects();
   console.log(`the wheel: in and out again; the view's middle ${now.mx},${now.my} -> ${after.mx},${after.my}`);
 
+  // Dock (the game's own F4) over the new game's carrier, its fighters docked: - undocks one of the top row (the row's
+  // numbers change on the picture), = docks it again (the row as it was); Escape cancels
+  await page.keyboard.press("F4");
+  await page.waitForTimeout(1500);
+  const row = { x: box.x + 300 * box.width / 640, y: box.y + 216 * box.height / 400, width: 160 * box.width / 640, height: 24 * box.height / 400 };
+  const dock0 = await page.screenshot({ clip: row });
+  await page.keyboard.press("Minus");
+  await page.waitForTimeout(800);
+  const dock1 = await page.screenshot({ clip: row });
+  await page.keyboard.press("Equal");
+  await page.waitForTimeout(800);
+  const dock2 = await page.screenshot({ clip: row });
+  await canvas.screenshot({ path: path.join(out, "map-dock.png") });
+  await page.keyboard.press("Escape");
+  assert(!dock0.equals(dock1), "- in Dock changes the top row (one fighter undocked)");
+  assert(dock0.equals(dock2), "= in Dock puts it back (docked again)");
+  console.log("Dock: - undocked one of the top row, = docked it again");
+
   // the wheel down again: further out (three of the game's panels across in the picture of two); a click on a planet
   // there where the picture shows it; the wheel up, one level out again
   const mark7 = logs.length;
@@ -181,23 +199,6 @@ try {
   await page.mouse.wheel(0, -120);
   assert(await waitLog(/Armada map: one level out/, mark10, 5000), "the wheel up from further out is one level out");
 
-  // Dock (the game's own F4) over the new game's carrier, its fighters docked: - undocks one of the top row (the row's
-  // numbers change on the picture), = docks it again (the row as it was); Escape cancels
-  await page.keyboard.press("F4");
-  await page.waitForTimeout(1500);
-  const row = { x: box.x + 300 * box.width / 640, y: box.y + 216 * box.height / 400, width: 160 * box.width / 640, height: 24 * box.height / 400 };
-  const dock0 = await page.screenshot({ clip: row });
-  await page.keyboard.press("Minus");
-  await page.waitForTimeout(800);
-  const dock1 = await page.screenshot({ clip: row });
-  await page.keyboard.press("Equal");
-  await page.waitForTimeout(800);
-  const dock2 = await page.screenshot({ clip: row });
-  await canvas.screenshot({ path: path.join(out, "map-dock.png") });
-  await page.keyboard.press("Escape");
-  assert(!dock0.equals(dock1), "- in Dock changes the top row (one fighter undocked)");
-  assert(dock0.equals(dock2), "= in Dock puts it back (docked again)");
-  console.log("Dock: - undocked one of the top row, = docked it again");
   console.log(`ARMADA MAP OK. Screenshots in ${out}`);
 } finally {
   await browser.close();
