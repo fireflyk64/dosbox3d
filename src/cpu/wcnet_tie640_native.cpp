@@ -1022,7 +1022,7 @@ unsigned g_nativeRuns = 0, g_nativeSorts = 0;
 bool tie640_native_on() {
     if (g_nativeOn < 0) {
         const char *e = getenv("WCNET_T640_NATIVE");
-        g_nativeOn = e && e[0] ? atoi(e) : XA(2, 0);
+        g_nativeOn = e && e[0] ? atoi(e) : 2;
         if (XA(0, 1) && g_nativeOn == 1) g_nativeOn = 2;    // (X-Wing: no quarters with this pass: its lists' segment is not a fixed one)   // (X-Wing: the quarters by the game's own code until its tracers are proved)
              // (the default: 2, the scene in one pass; 1 the quarters with this pass; 0 the quarters by the game's own)
         if (g_nativeOn) wclog(1, T640_GAME " 640: the scanline pass is native (WCNET_T640_NATIVE=%d)", g_nativeOn);

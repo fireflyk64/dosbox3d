@@ -695,9 +695,9 @@ static float g_fps = 70; static double g_ratio = 1;       // the picture's rate 
 void tie640_tick(bool flight, Bit16u loadSeg) {
     if (g_wanted < 0) {
         const char *env = getenv("WCNET_TIE640");
-        // (X-Wing: off unless asked for, WCNET_TIE640=1, until its one pass is proved: the quarters by the game's own
-        // code are four times the scene's work)
-        g_wanted = env && env[0] ? (env[0] == '0' ? 0 : 1) : XA(1, 0);
+
+
+        g_wanted = env && env[0] == '0' ? 0 : 1;
     }
     g_load = loadSeg;
     const bool want = g_wanted && flight && vga.mode == M_VGA && code_known();

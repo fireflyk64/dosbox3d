@@ -905,7 +905,7 @@ bool resolve_quarter(int q, Bit8u *draw, int pitch, int limitX, int limitY, int 
 bool tie640_onepass_on() {
     if (g_on < 0) {
         const char *e = getenv("WCNET_T640_NATIVE");
-        g_on = (e && e[0]) ? (e[0] == '2' ? 1 : 0) : XA(1, 0);      // (the default; X-Wing: off until proved)
+        g_on = !e || !e[0] || e[0] == '2' ? 1 : 0;      // (the default)
         e = getenv("WCNET_T640_CHECK");
         g_check = g_on && e && e[0] == '3' ? 1 : 0;
         e = getenv("WCNET_T640_NOSPRITES");
