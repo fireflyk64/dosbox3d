@@ -60,6 +60,7 @@ const Place kDamage = { 0x0E65, 0x1C52, 8, { 0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x14,
 const Place kAfterCreate = { 0x0920, 0x019F, 5, { 0x9A, 0x1A, 0x08, 0xC4, 0x18 } };
 const Bit16u kCreateAgain = 0x0193, kSecondCreateReturn = 0x019C;
 const Bit16u kSceneFlag = 0xE62E;       // (a byte: the jump's scene is being flown)
+const Place kFlightOver = { 0x0920, 0x04B8, 7, { 0x80, 0x3E, 0x5A, 0x6F, 0x0A, 0x72, 0x0F } };   // the frames over, the status not yet looked at
 const Place kUpdateKills = { 0x0E65, 0x2C16, 8, { 0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x08, 0x57, 0x56 } };      // collide_updatekills
 enum {
     kDgroupPara = 0x3F1C,
@@ -80,6 +81,11 @@ bool g_holding = false, g_released = false;
 bool g_real = false;            // the mission being made is the one flown (the second making)
 Bit16u g_pathAt = 0;            // the mission path's place in DS (create_createmission's argument), at the launch
 unsigned g_shotsMade, g_ourShots;
+// (the aid !xwahead=<object>:<units>[:<seconds>]: that object held so far ahead of our craft's nose, every frame before
+// the moves)
+int g_aheadObj = -1;
+Bit32s g_aheadUnits = 0;
+double g_aheadUntil = 0;
 
 inline PhysPt dsa(Bit16u off) { return ((PhysPt)g_ds << 4) + off; }
 inline Bit16u r16(Bit16u off) { return mem_readw(dsa(off)); }
@@ -206,6 +212,13 @@ void at_move_objects() {
         return;
     }
     xw_session_before_move();
+    if (g_aheadObj >= 0 && PIC_FullIndex() < g_aheadUntil && xw_player_object() >= 0) {
+        const PhysPt me = xw_obj(xw_player_object()), it = xw_obj(g_aheadObj);
+        for (int a = 0; a < 3; a++) {
+            const Bit32s d = (Bit32s)(((Bit64s)g_aheadUnits * (Bit16s)mem_readw(me + xw::kOAxes + 2 * a)) / 32767);
+            mem_writed(it + xw::kOPos + 4 * a, (Bit32u)((Bit32s)mem_readd(me + xw::kOPos + 4 * a) + d));
+        }
+    }
     if (!g_calls.empty()) {
         save_state();
         start_next_call();
@@ -382,6 +395,7 @@ void xw_watch_list(void (*watch)(Bit16u ip)) {
     watch_at(seg_of(kCreateMission), kCreateMission.off);
     watch_at(seg_of(kMissionRead), kMissionRead.off);
     watch_at(seg_of(kAfterCreate), kAfterCreate.off);
+    watch_at(seg_of(kFlightOver), kFlightOver.off);
     watch_at(seg_of(kDoFrame), kDoFrame.off);
     watch_at(seg_of(kMoveObjects), kMoveObjects.off);
     watch_at(seg_of(kCreateProjectile), kCreateProjectile.off);
@@ -422,6 +436,13 @@ bool xw_check_hooks(Bit32u ip) {
         g_real = false;
         return true;
     }
+    if (at(kFlightOver, ip)) {
+        if (bytes_at(kFlightOver)) {
+            wclog(1, "X-Wing: the flight's frames are over (status %u, end flag %u)", mem_readb(dsa(xw::kMissionStatus)), mem_readb(dsa(xw::kMissionEnd)));
+            xw_session_flight_over();
+        }
+        return true;
+    }
     if (at(kCreateProjectile, ip)) {
         if (!bytes_at(kCreateProjectile)) return true;
         g_shotsMade++;
@@ -452,6 +473,16 @@ bool xw_script_item(const std::string &item, double t) {
         // (test aid) !xwkill=<object>: collide_damagecraft(object, -1, -1, 0) forty times: it blows up
         const int o = atoi(item.c_str() + 8);
         for (int k = 0; k < 40; k++) xw_queue_call(XW_DAMAGE, 4, (Bit16u)o, 0xFFFF, 0xFFFF, 0, NULL, NULL, o);
+        return true;
+    }
+    if (item.compare(0, 9, "!xwahead=") == 0) {
+        int o = -1, units = 0;
+        double secs = 3600;
+        sscanf(item.c_str() + 9, "%d:%d:%lf", &o, &units, &secs);
+        g_aheadObj = o;
+        g_aheadUnits = units;
+        g_aheadUntil = PIC_FullIndex() + secs * 1000;
+        wclog(1, "key script %.1fs: X-Wing: object %d held %d units ahead of our nose for %.0f s", t, o, units, secs);
         return true;
     }
     if (item.compare(0, 5, "!xwr=") == 0) {

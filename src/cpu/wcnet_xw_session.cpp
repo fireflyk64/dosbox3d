@@ -137,6 +137,8 @@ struct Net {
     Bit32u launchSerial, flownGo;
     Bit32u hostSeed, hostSeed2, pilots;
     std::string hostMission;
+    std::string hostGoals;          // the host's flight groups' status, its latest (fg_table)
+    double goalsSentAt;
     bool hostFlew;                  // the host's frames seen this flight (its flight over then ends ours)
     int gen[kCraftSlots], genType[kCraftSlots], genCat[kCraftSlots], genFg[kCraftSlots];    // (the slots' objects told apart: slot_id)
     bool alone;                     // this flight flown alone (nobody came)
@@ -179,7 +181,7 @@ struct Net {
         damageSkipped, kills, credited, localAiNow, localAiStarts, localAiEnds, localShots, farReports, nearBlends, hitsShown, phantoms;
     double farErrSum, farErrMax;
     Net() : host(false), self(-1), seats(2), listener(NULL), atLaunch(false), launchSince(0), launchSerial(0), flownGo(0),
-            hostSeed(0), hostSeed2(0), pilots(1), hostFlew(false), alone(false), roomEnded(false), soloNext(false), lateSaid(false), frame(0),
+            hostSeed(0), hostSeed2(0), pilots(1), goalsSentAt(-1e9), hostFlew(false), alone(false), roomEnded(false), soloNext(false), lateSaid(false), frame(0),
             lastReliableAt(0), endAt(0), decidedAt(-1e9), ownersSentAt(-1e9), farCursor(0), hitsInNext(0), hitSerial(0), lastHitBolt(-1), lastHitTarget(-1) {
         for (int o = 0; o < kCraftSlots; o++) gen[o] = genType[o] = genCat[o] = genFg[o] = 0;
         zero_counts();
@@ -405,6 +407,16 @@ int others() {
     return n;
 }
 
+// The flight groups' status as this game has it (DS:C80E, 20 bytes a group: what each group's craft have done and had
+// done to them, which the mission's goals are judged by when the flight is over, 18C4:2754).
+std::string fg_table() {
+    std::string t;
+    if (!xw_flight_loaded()) return t;
+    const int n = std::min((int)kFgMax, (int)ds16(kNumFgs));
+    for (int i = 0; i < n * kFgStatusSize; i++) t += (char)mem_readb(xw_ds((Bit16u)(kFgStatus + i)));
+    return t;
+}
+
 void send_state(bool reliable) {
     NetworkMessage msg;
     TdmState *st = msg.mutable_tdm_state();
@@ -418,6 +430,7 @@ void send_state(bool reliable) {
         st->set_mission_name(g_net->hostMission);
         st->set_pilots(g_net->pilots);
     }
+    if (g_net->host && g_net->flownGo && !g_net->atLaunch) st->set_rec(fg_table());
     send_all(msg, !reliable);
     g_stateAt = PIC_FullIndex();
 }
@@ -427,6 +440,7 @@ void take_state(const TdmState &st, int seat) {
     Remote &r = g_net->remotes[seat];
     r.known = true;
     r.at = PIC_FullIndex();
+    if (!g_net->host && seat == 0 && st.has_rec() && !st.rec().empty()) g_net->hostGoals = st.rec();
     const bool wasAtLaunch = r.atLaunch, wasInFlight = r.inFlight;
     r.atLaunch = st.at_launch();
     r.inFlight = st.in_flight();
@@ -1482,6 +1496,7 @@ bool xw_session_launch_hold() {
         g_net->hostSeed2 = h.seed2;
         g_net->hostMission = h.mission;
         g_net->pilots = h.pilots;
+        g_net->hostGoals.clear();
         xw_set_mission_path(h.mission);
         return false;
     }
@@ -1547,6 +1562,10 @@ void xw_session_frame() {
     const double now = PIC_FullIndex();
     decide_owners(now);
     g_net->owner[own] = g_net->self;
+    if (g_net->host && now - g_net->goalsSentAt >= 2000) {
+        g_net->goalsSentAt = now;
+        send_state(true);       // (the flight groups' status, for the guests' judging)
+    }
     NetworkMessage msg;
     TieFrame *f = msg.mutable_tie_frame();
     f->set_player((Bit32u)g_net->self);
@@ -1746,6 +1765,31 @@ void xw_session_damage() {
         g_net->damageSkipped++;
         xw_skip_call(0);
     }
+}
+
+// The flight's frames over, its goals not yet judged (0920:04B8).  The host says so with its flight groups' status; a
+// guest's game is given the host's: what was done in the mission is what the host's game saw done (a boarding runs
+// only where the boarder's AI does), so every pilot of the room is told the same result.
+void xw_session_flight_over() {
+    if (!g_net || g_net->self < 0 || g_net->alone || !g_net->flownGo) return;
+    if (g_net->host) {
+        send_state(true);
+        return;
+    }
+    poll_peers();
+    if (!g_net) return;
+    const int n = std::min((int)kFgMax, (int)ds16(kNumFgs));
+    if (!g_net->hostFlew || (int)g_net->hostGoals.size() != n * kFgStatusSize) {
+        wclog(1, "X-Wing: the flight over: no status of the host's flight groups to judge it by (%d bytes for %d groups)", (int)g_net->hostGoals.size(), n);
+        return;
+    }
+    int changed = 0;
+    for (int i = 0; i < n * kFgStatusSize; i++) {
+        const PhysPt a = xw_ds((Bit16u)(kFgStatus + i));
+        if (mem_readb(a) != (Bit8u)g_net->hostGoals[(size_t)i]) changed++;
+        mem_writeb(a, (Bit8u)g_net->hostGoals[(size_t)i]);
+    }
+    wclog(1, "X-Wing: the flight over: judged by the host's flight groups' status (%d of %d bytes were not the same here)", changed, n * kFgStatusSize);
 }
 
 void xw_session_flight_ended() {

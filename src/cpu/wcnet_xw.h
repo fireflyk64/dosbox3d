@@ -87,6 +87,8 @@ enum {
     kFgPlayerCraft = 0x82,      // the player's craft in it (a word, 1-based; 0 none)
     kFgOrder = 0x86,
     kFgMax = 32,
+    kFgStatus = 0xC80E,         // each flight group's status, 20 bytes: what the goals are judged by
+    kFgStatusSize = 0x14,
     // a craft's data (0x170 bytes)
     kCraftFg = 0x05,            // its flight group (a byte)
     kCraftLeader = 0x06,
@@ -136,6 +138,7 @@ void xw_session_before_move();          // move_moveobjects's entry: the others'
 void xw_session_shot();                 // laser_createprojectile's entry
 void xw_session_laser_hit();            // collide_laserhitcraft's entry
 void xw_session_damage();               // collide_damagecraft's entry
+void xw_session_flight_over();           // the flight's frames over, its goals not yet judged
 void xw_session_flight_ended();
 unsigned xw_session_ident(int obj);     // a craft slot's identity in the room (the aids')
 bool xw_session_fly_alone();            // a guest's launch held for a host already flying: fly alone (Esc)
