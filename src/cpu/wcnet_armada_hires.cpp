@@ -43,6 +43,7 @@
 #include <map>
 #include <algorithm>
 #include <chrono>
+#include <unordered_map>
 #include "wcnet_armada_hires.h"
 #include "wcnet_armada_art.h"
 #include "wcnet_game.h"
@@ -54,6 +55,7 @@
 #include "vga.h"
 #include "render.h"
 #include "cpu.h"
+#include "lazyflags.h"
 #include "keyboard.h"
 
 namespace wc {
@@ -644,6 +646,7 @@ bool g_stopHeld;                // (a test aid: two pilots flying at each other 
 std::vector<std::pair<PhysPt, Bit8u> > g_texCheck;      // (check: what the span is to write, and its count's end)
 int g_texCheckEnd;
 bool g_texChecking;
+bool g_polyChecking;            // (WCARMHIRESPOLY=check: the game's routine running, its spans its own)
 
 bool tex_code_here() {
     const PhysPt j = ((PhysPt)(Bit16u)(g_load + g_b->texSeg) << 4) + g_b->texJump;
@@ -675,7 +678,7 @@ void tex_span() {
         const char *env = getenv("WCARMHIRESTEX");
         g_texOn = !env || !env[0] ? 1 : env[0] == '0' ? 0 : !strcmp(env, "check") ? 2 : !strcmp(env, "alt") ? 3 : 1;
     }
-    if (!g_texOn || g_hostOff || (g_texOn == 3 && ((long)(PIC_FullIndex() / 2000) & 1))) return;     // (alt: every other 2 s)
+    if (!g_texOn || g_hostOff || g_polyChecking || (g_texOn == 3 && ((long)(PIC_FullIndex() / 2000) & 1))) return;     // (alt: every other 2 s)
     if (g_texOk < 0) {
         g_texOk = tex_code_here();
         wclog(1, "Armada: the texture mapper's span %s", g_texOk ? "is done here" : "is not as known: the game's own");
@@ -726,6 +729,961 @@ void tex_span() {
     reg_eip = (Bit16u)(g_b->texJump + kTexDone);
 }
 
+// ----- the textured polygon, done here: its edges, its rows' setup and its spans ----------------------------------
+
+// The span's twin left the rest of the routine to the emulated CPU: for each polygon its corners' clip codes and top
+// corner, each edge's three slopes (idivs), and for each row its span's ends, clip and step table (two idivs): about
+// a ninth of a close-up frame's work.  Here the whole routine (seg30DD:0EA2, PG 0EA8: bitmap record, count, corners far (16h
+// bytes each: x, y, .., u at +6, v at +8), texture offset, segment and row length, shading table far or 0) is done as
+// the emulated CPU does it, instruction by instruction: the same 32-bit registers, the same flags, every byte it writes
+// on its stack (its frame, its pushes) and in ss:[D], [T], [R], in the same order, and every pixel; the game goes on
+// at its return.  Its bytes are known by a hash (the four builds: one routine, its words for D, T, R and its loops'
+// places apart, those checked against the span's).
+//
+// Nothing is guessed.  Before anything is written, every page it reads or writes (its stack, ss:[D..R], the record,
+// the row table, the corners) is looked up in the page tables as the CPU would at user level (no accessed or dirty bit
+// set, no TLB entry made), and if one would fault, if the corners wrap their segment, if there are none, or if the
+// stack is not dword-aligned (the routine copies its arguments and calls itself then), the game's own routine does it.
+// On the way, at anything the CPU would fault on (an idiv's overflow), a walk round the corners that would never end,
+// a span whose pixels would land on what the routine keeps (its stack, ss:[D..R], its code, the page tables), or a
+// texel or pixel that is not reachable: the emulated CPU is given the state exactly there (registers, flags, that
+// instruction) and goes on from it.  WCARMHIRESPOLY=0: the game's routine (the span still ours); =check: each polygon
+// worked out aside, then the game's routine run (interrupts held off meanwhile, so none of their frames land on its
+// stack) and the two compared at its retf: registers, flags, every byte of the bitmap's segment, of the stack and of
+// ss:[D..R]; =alt: ours every other 2 s (test aids)
+const Bit32u kPolyHash = 0x259261B4;    // FNV-1a of its 734h bytes, the words below as 0
+const int kPolyLen = 0x734, kPolyJ = 0x4E5, kPolyRet = 0x57F;     // from its entry: the span's jmp, its retf
+const int kPolyWord[12] = { 0x39B, 0x3AB, 0x3AE, 0x3B2, 0x475, 0x47C, 0x483, 0x48A, 0x4E8, 0x4F4, 0x50C, 0x530 };
+int g_polyOk = -1;
+int g_polyOn = -1;              // 0 off, 1 on, 2 check, 3 alt
+unsigned long g_polyDone, g_polyGame, g_polyLeft, g_polyChecked, g_polyWrong;
+unsigned long g_polyWhy[8], g_polyPixels;     // (why the game's: V86, ESP, SP, aligned, its own places, apart, record, corners)
+
+void tex_known() {
+    if (g_texOk >= 0) return;
+    g_texOk = tex_code_here();
+    wclog(1, "Armada: the texture mapper's span %s", g_texOk ? "is done here" : "is not as known: the game's own");
+}
+
+bool poly_code_here() {
+    const Bit16u e = g_b->texEntry, J = g_b->texJump;
+    if ((Bit16u)(e + kPolyJ) != J || g_texOk != 1) return false;
+    const PhysPt c = ((PhysPt)(Bit16u)(g_load + g_b->texSeg) << 4) + e;
+    Bit32u h = 0x811C9DC5u;
+    for (int i = 0; i < kPolyLen; i++) {
+        Bit8u v = mem_readb(c + i);
+        for (int k = 0; k < 12; k++) if (i == kPolyWord[k] || i == kPolyWord[k] + 1) v = 0;
+        h = (h ^ v) * 0x01000193u;
+    }
+    if (h != kPolyHash) return false;
+    const Bit16u want[12] = { (Bit16u)(J + 0x31), g_texR, (Bit16u)(J + 5), g_texD, g_texT, (Bit16u)(g_texT + 2),
+                              (Bit16u)(g_texT + 4), (Bit16u)(g_texT + 6), g_texD, g_texR, g_texT, g_texT };
+    for (int k = 0; k < 12; k++) if (mem_readw(c + kPolyWord[k]) != want[k]) return false;
+    return true;
+}
+
+// (16 and 32-bit two's complement, written out: nothing left to the compiler)
+inline int s16(Bit16u v) { return v < 0x8000 ? (int)v : (int)v - 0x10000; }
+inline Bit64s s32(Bit32u v) { return v < 0x80000000u ? (Bit64s)v : (Bit64s)v - 0x100000000LL; }
+inline Bit16u lo16(Bit32u r) { return (Bit16u)r; }
+inline void set16(Bit32u &r, int v) { r = (r & 0xFFFF0000u) | (Bit16u)v; }
+inline Bit32u sar16(Bit32u v) { return (v >> 16) | ((v & 0x80000000u) ? 0xFFFF0000u : 0); }
+
+// idiv r/m32 as the core does it (false: its divide error)
+bool idiv32(Bit32u &eax, Bit32u &edx, Bit32u by) {
+    const Bit64s d = s32(by);
+    if (d == 0) return false;
+    const Bit64u u = ((Bit64u)edx << 32) | eax;
+    const Bit64s num = u < 0x8000000000000000ull ? (Bit64s)u : -(Bit64s)(~u) - 1;
+    if (d == -1 && num == -(Bit64s)0x7FFFFFFFFFFFFFFFLL - 1) return false;
+    const Bit64s q = num / d, r = num % d;
+    if (q < -0x80000000LL || q > 0x7FFFFFFFLL) return false;
+    eax = (Bit32u)(Bit64u)q;
+    edx = (Bit32u)(Bit64u)r;
+    return true;
+}
+
+// imul r/m32 (one operand): EDX:EAX
+void imul32(Bit32u &eax, Bit32u &edx, Bit32u by) {
+    const Bit64u p = (Bit64u)(s32(eax) * s32(by));
+    eax = (Bit32u)p;
+    edx = (Bit32u)(p >> 32);
+}
+
+// A linear address as the emulated CPU reaches it at user level, from the page tables themselves (nothing set in them,
+// no TLB entry made): false if the access would fault, or if the TLB holds another page for it.  pt: its page table's
+// page (0: paging off)
+bool lin_phys(PhysPt lin, bool write, PhysPt &phys, PhysPt &pt) {
+    pt = 0;
+    const Bit64u mem = (Bit64u)MEM_TotalPages() * 4096;
+    if (!paging.enabled) {
+        Bitu page = lin >> 12;
+        if (page < LINK_START) page = paging.firstmb[page];
+        phys = (PhysPt)((page << 12) | (lin & 0xFFF));
+    } else {
+        const PhysPt dir = (PhysPt)(paging.base.page << 12) + (lin >> 22) * 4;
+        if ((Bit64u)dir + 4 > mem) return false;
+        const Bit32u pde = phys_readd(dir);
+        if ((pde & 5) != 5 || (write && !(pde & 2))) return false;
+        pt = pde & 0xFFFFF000u;
+        const PhysPt tab = pt + ((lin >> 12) & 0x3FF) * 4;
+        if ((Bit64u)tab + 4 > mem) return false;
+        const Bit32u pte = phys_readd(tab);
+        if ((pte & 5) != 5 || (write && !(pte & 2))) return false;
+        phys = (pte & 0xFFFFF000u) | (lin & 0xFFF);
+    }
+    if (!(get_tlb_readhandler(lin)->flags & PFLAG_INIT) && PAGING_GetPhysicalAddress(lin) != phys) return false;
+    return true;
+}
+
+struct PhysRange { PhysPt s, e; };
+
+class Poly {
+public:
+    bool shadow;                // (check: worked out aside, nothing written)
+    std::unordered_map<PhysPt, Bit8u> over;     // (check: what it writes)
+    Bit32u eax, ebx, ecx, edx, esi, edi, ebp;
+    Bit16u sp, sds, ses, sfs;
+    int fType;                  // the flags as the last instruction to set them left them (the core's lazy kind)
+    Bit32u fV1, fV2, fRes;
+    bool fCf;
+    Bit16u entry, sp0, bp, lo, J, D, T, R, n;
+    PhysPt ssb;
+    Bit16u disp, base, step[4];
+    Bit8u stk[0x100];           // SS:[sp0-90h, sp0+18h): its frame, pushes and arguments, kept as it writes them
+    PhysRange keep[48];         // where its spans must not write (its stack, ss:[D..R], its code, the page tables)
+    int nKeep;
+    PhysPt pageLin[4], pagePhys[4];     // destination pages looked up (and found clear of keep)
+    int nPage;
+    unsigned pixels, spans;
+    Bit16u leftAt;              // (where it left the game the state: an offset from the entry; 0: it did not)
+
+    Bit8u &sb(int off) { return stk[(Bit16u)(off - lo) & 0xFF]; }
+    Bit16u sr16(int off) { return (Bit16u)(sb(off) | (sb(off + 1) << 8)); }
+    Bit32u sr32(int off) { return sr16(off) | ((Bit32u)sr16(off + 2) << 16); }
+    void sw8(int off, Bit8u v) {
+        sb(off) = v;
+        if (shadow) over[ssb + (Bit16u)off] = v; else mem_writeb(ssb + (Bit16u)off, v);
+    }
+    void sw16(int off, int v) {
+        sb(off) = (Bit8u)v;
+        sb(off + 1) = (Bit8u)(v >> 8);
+        if (shadow) {
+            over[ssb + (Bit16u)off] = (Bit8u)v;
+            over[ssb + (Bit16u)(off + 1)] = (Bit8u)(v >> 8);
+        } else {
+            mem_writew(ssb + (Bit16u)off, (Bit16u)v);
+        }
+    }
+    void sw32(int off, Bit32u v) { sw16(off, (Bit16u)v); sw16(off + 2, (Bit16u)(v >> 16)); }
+    void push16(int v) { sp = (Bit16u)(sp - 2); sw16(sp, v); }
+    void push32(Bit32u v) { sp = (Bit16u)(sp - 4); sw32(sp, v); }
+    Bit16u pop16() { const Bit16u v = sr16(sp); sp = (Bit16u)(sp + 2); return v; }
+    Bit32u pop32() { const Bit32u v = sr32(sp); sp = (Bit16u)(sp + 4); return v; }
+    void gw16(Bit16u off, Bit16u v) {           // ss:[D], [T], [R]
+        if (shadow) {
+            over[ssb + off] = (Bit8u)v;
+            over[ssb + (Bit16u)(off + 1)] = (Bit8u)(v >> 8);
+        } else {
+            mem_writew(ssb + off, v);
+        }
+    }
+    Bit8u shadow_read(PhysPt a) {
+        const std::unordered_map<PhysPt, Bit8u>::const_iterator it = over.find(a);
+        if (it != over.end()) return it->second;
+        Bit8u v = 0;
+        mem_readb_checked(a, &v);
+        return v;
+    }
+    Bit16u dr16(Bit16u seg, int off) {          // the record, its row table, the corners (their pages looked up)
+        const PhysPt a = ((PhysPt)seg << 4) + (Bit16u)off;
+        if (!shadow) return mem_readw(a);
+        return (Bit16u)(shadow_read(a) | (shadow_read(a + 1) << 8));
+    }
+    bool px_read(PhysPt a, Bit8u &v) {
+        if (shadow) {
+            const std::unordered_map<PhysPt, Bit8u>::const_iterator it = over.find(a);
+            if (it != over.end()) { v = it->second; return true; }
+        }
+        return tex_read(a, v);
+    }
+    bool px_write(PhysPt a, Bit8u v) {
+        if (shadow) { over[a] = v; return true; }
+        return tex_write(a, v);
+    }
+    void flags(int type, Bit32u v1, Bit32u v2, Bit32u res, bool cf = false) {
+        fType = type; fV1 = v1; fV2 = v2; fRes = res; fCf = cf;
+    }
+
+    // The lazy flags as the core would leave them after that instruction
+    void lazy() const {
+        switch (fType) {
+        case t_ORb: lf_var1b = (Bit8u)fV1; lf_var2b = (Bit8u)fV2; lf_resb = (Bit8u)fRes; break;
+        case t_XORw: case t_CMPw: case t_SUBw: lf_var1w = (Bit16u)fV1; lf_var2w = (Bit16u)fV2; lf_resw = (Bit16u)fRes; break;
+        case t_DECw: SETFLAGBIT(CF, fCf); lf_var1w = (Bit16u)fV1; lf_resw = (Bit16u)fRes; break;
+        case t_SARd: lf_var2b = (Bit8u)fV2; lf_var1d = fV1; lf_resd = fRes; break;
+        }
+        lflags.type = fType;
+    }
+
+    // The emulated CPU given the state: at an instruction of the routine (at: from its entry), or at its retf's return
+    void put_state() const {
+        reg_eax = eax; reg_ebx = ebx; reg_ecx = ecx; reg_edx = edx;
+        reg_esi = esi; reg_edi = edi; reg_ebp = ebp;
+        reg_esp = sp;
+        SegSet16(ds, sds); SegSet16(es, ses); SegSet16(fs, sfs);
+        SETFLAGBIT(DF, false);  // (its cld)
+        cpu.direction = 1;
+        lazy();
+    }
+    void leave_at(int at) {
+        leftAt = (Bit16u)at;
+        if (shadow) return;
+        put_state();
+        reg_eip = (Bit16u)(entry + at);
+    }
+
+    // sar edx, 10h; idiv by (at: the idiv's place)
+    bool divide(Bit32u by, int at) {
+        const Bit32u pre = edx;
+        edx = sar16(edx);
+        flags(t_SARd, pre, 16, edx);
+        if (idiv32(eax, edx, by)) return true;
+        leave_at(at);
+        return false;
+    }
+
+    // An edge's slopes, from its corner (BX) to the next (SI): x, then u and v, into [bp-x], [bp-u], [bp-v]
+    // (ECX its height << 16; at: the first idiv's place, the others 22h and 44h on)
+    bool edge(int at, int x, int u, int v) {
+        const Bit16u from = lo16(ebx), to = lo16(esi);
+        set16(edx, dr16(sds, to) - dr16(sds, from));
+        edx <<= 16;
+        set16(eax, lo16(edx));
+        eax <<= 16;
+        if (!divide(ecx, at)) return false;
+        sw32(bp - x, eax);
+        for (int k = 1; k <= 2; k++) {
+            edx = dr16(sds, to + 4 + 2 * k);
+            eax = dr16(sds, from + 4 + 2 * k);
+            edx -= eax;
+            edx <<= 8;
+            set16(eax, lo16(edx));
+            eax <<= 16;
+            if (!divide(ecx, at + 0x22 * k)) return false;
+            sw32(bp - (k == 1 ? u : v), eax);
+        }
+        return true;
+    }
+
+    // (clip at the top: [bp-dst] += [bp-src] * CX, ECX = CX << 16: imul ecx; shrd eax, edx, 10h)
+    void clip_add(int src, int dst) {
+        eax = sr32(bp - src);
+        imul32(eax, edx, ecx);
+        eax = (eax >> 16) | (edx << 16);
+        sw32(bp - dst, sr32(bp - dst) + eax);
+    }
+
+    bool keep_add(PhysPt s, PhysPt e, bool table = false) {
+        if (table) for (int i = 0; i < nKeep; i++) if (keep[i].s == s && keep[i].e == e) return true;
+        if (nKeep >= (int)(sizeof(keep) / sizeof(keep[0]))) return false;
+        keep[nKeep].s = s;
+        keep[nKeep].e = e;
+        nKeep++;
+        nPage = 0;              // (the pages found clear: looked at again)
+        return true;
+    }
+    bool kept(PhysPt s, PhysPt e) const {
+        for (int i = 0; i < nKeep; i++) if (s < keep[i].e && keep[i].s < e) return true;
+        return false;
+    }
+    bool pt_keep(PhysPt pt) { return !pt || keep_add(pt, pt + 4096, true); }
+    bool kept_apart() const {   // (no two of its own places on one byte: a page mapped twice, a stack in a page table)
+        for (int i = 0; i < nKeep; i++) {
+            for (int j = i + 1; j < nKeep; j++) if (keep[i].s < keep[j].e && keep[j].s < keep[i].e) return false;
+        }
+        return true;
+    }
+
+    // A linear range's pages looked up (write: as written); keep: its bytes added to what the spans must not write
+    bool range_ok(PhysPt lin, unsigned len, bool write, bool keepIt) {
+        while (len) {
+            const unsigned part = std::min(len, 4096u - (lin & 0xFFF));
+            PhysPt phys, pt;
+            if (!lin_phys(lin, write, phys, pt) || !pt_keep(pt)) return false;
+            if (keepIt && !keep_add(phys, phys + part)) return false;
+            lin += part;
+            len -= part;
+        }
+        return true;
+    }
+
+    // A span's pixels (ES:DI on, len of them, DI wrapping in its segment) clear of what the routine keeps
+    bool dest_ok(PhysPt esb, Bit16u di, unsigned len) {
+        while (len) {
+            const unsigned part = std::min(len, 0x10000u - di);
+            PhysPt lin = esb + di;
+            unsigned left = part;
+            while (left) {
+                const unsigned piece = std::min(left, 4096u - (lin & 0xFFF));
+                const PhysPt page = lin & ~0xFFFu;
+                int i = 0;
+                while (i < nPage && pageLin[i] != page) i++;
+                if (i == nPage) {
+                    PhysPt phys, pt;
+                    if (!lin_phys(page, true, phys, pt) || !pt_keep(pt)) return false;
+                    if (kept(phys, phys + 4096)) {
+                        if (kept(phys + (lin & 0xFFF), phys + (lin & 0xFFF) + piece)) return false;
+                    } else if (nPage < 4) {
+                        pageLin[nPage] = page;
+                        pagePhys[nPage] = phys;
+                        nPage++;
+                    }
+                }
+                lin += piece;
+                left -= piece;
+            }
+            di = (Bit16u)(di + part);
+            len -= part;
+        }
+        return true;
+    }
+
+    static bool why(int k) { g_polyWhy[k]++; return false; }
+    bool prepare();
+    int run();
+    bool span();
+};
+
+// The call's places looked up before anything is done (false: the game's own routine, nothing changed)
+bool Poly::prepare() {
+    eax = reg_eax; ebx = reg_ebx; ecx = reg_ecx; edx = reg_edx; esi = reg_esi; edi = reg_edi; ebp = reg_ebp;
+    sds = SegValue(ds); ses = SegValue(es); sfs = SegValue(fs);
+    entry = reg_ip;
+    J = (Bit16u)(entry + kPolyJ);
+    D = g_texD; T = g_texT; R = g_texR;
+    disp = 0; base = 0;
+    for (int k = 0; k < 4; k++) step[k] = 0;
+    nKeep = nPage = 0;
+    pixels = spans = 0;
+    leftAt = 0;
+    fType = t_UNKNOWN; fV1 = fV2 = fRes = 0; fCf = false;
+    if (cpu.pmode && !GETFLAG(VM)) return why(0);       // (real or V86 mode: a segment is its paragraph)
+    if (reg_esp > 0xFFFF) return why(1);
+    sp0 = reg_sp;
+    if (sp0 < 0x100 || sp0 > 0x10000 - 0x18) return why(2);
+    if ((sp0 - 0x70) & 3) return why(3);
+    lo = (Bit16u)(sp0 - 0x90);
+    ssb = SegPhys(ss);
+    // its stack (frame, pushes, arguments, its return), ss:[D..R], its code: read or written, and kept from the spans
+    if (!range_ok(ssb + lo, 0x90, true, true) || !range_ok(ssb + sp0, 0x18, false, true)) return why(4);
+    if (!range_ok(ssb + D, 2, true, true) || !range_ok(ssb + T, 8, true, true) || !range_ok(ssb + R, 2, true, true)) return why(4);
+    if (!range_ok(SegPhys(cs) + entry, kPolyLen, false, true)) return why(4);
+    if (paging.enabled && !pt_keep((PhysPt)(paging.base.page << 12))) return why(4);
+    if (!kept_apart()) return why(5);
+    for (int i = 0; i < 0xA8; i++) stk[i] = mem_readb(ssb + (Bit16u)(lo + i));
+    // the record and its row table (DS), the corners
+    const PhysPt dsb = SegPhys(ds);
+    const Bit16u rec = sr16(sp0 + 4);
+    if (rec > 0x10000 - 12 || !range_ok(dsb + rec, 12, false, false)) return why(6);
+    const Bit16u rows = mem_readw(dsb + rec + 2);
+    if (rows > 0x10000 - 4 || !range_ok(dsb + rows, 4, false, false)) return why(6);
+    n = sr16(sp0 + 6);
+    const Bit16u vofs = sr16(sp0 + 8), vseg = sr16(sp0 + 10);
+    if (n == 0 || n > 0x100 || (unsigned)vofs + n * 0x16u > 0x10000) return why(7);
+    return range_ok(((PhysPt)vseg << 4) + vofs, n * 0x16u, false, false) || why(7);
+}
+
+// The routine from its entry (the places in comments: ARMADA.EXE's): 1 done (the state before its retf), 0 the state
+// left to the game on the way
+int Poly::run() {
+    int guard;
+    Bit16u a;
+    bool cf;
+    sp = sp0;
+    push16(lo16(ebp));                          // 0EA2 enter 68h, 0
+    bp = sp;
+    set16(ebp, bp);
+    sp = (Bit16u)(sp - 0x68);
+    push16(sds); push16(lo16(esi)); push16(lo16(edi));      // push ds, si, di; cld (test sp, 3: taken care of)
+    set16(esi, sr16(bp + 6));                   // 0EDE: the record
+    {
+        const Bit16u rec = lo16(esi);
+        for (int k = 0; k < 4; k++) {           // the clip: left, top, right, bottom
+            set16(eax, dr16(sds, rec + 4 + 2 * k));
+            sw16(bp - 2 - 2 * k, lo16(eax));
+        }
+        set16(ebx, dr16(sds, rec + 2));
+        set16(eax, dr16(sds, lo16(ebx) + 2) - dr16(sds, lo16(ebx)));
+        sw16(bp - 0xA, lo16(eax));
+        ses = dr16(sds, rec);
+        set16(eax, dr16(sds, lo16(ebx)));
+        sw16(bp - 0xC, lo16(eax));
+    }
+    set16(ebx, sr16(bp + 0xA));                 // lds bx, [bp+0Ah]
+    sds = sr16(bp + 0xC);
+    set16(eax, sr16(bp + 8));                   // mov ax, [bp+8]; mov dx, 16h; mul dx; add ax, bx
+    {
+        const Bit32u m = (Bit32u)lo16(eax) * 0x16u;
+        set16(eax, (Bit16u)m);
+        set16(edx, (Bit16u)(m >> 16));
+    }
+    set16(eax, lo16(eax) + lo16(ebx));
+    sw16(bp - 0x10, lo16(ebx));
+    sw16(bp - 0x12, lo16(eax));
+    sw16(bp - 0x2E, 0);
+    set16(esi, 0x7FFF);
+    set16(edi, 0x8000);
+    ecx = (ecx & 0xFFFF00FFu) | 0x0F00;         // mov ch, 0Fh
+    do {                                        // 0F2B: each corner's clip code; the top and bottom
+        const Bit16u bx = lo16(ebx), x = dr16(sds, bx), y = dr16(sds, bx + 2);
+        Bit8u cl = 0;
+        a = (Bit16u)(x - sr16(bp - 2)); cl = (Bit8u)((cl << 1) | (a >> 15));
+        a = (Bit16u)(sr16(bp - 6) - x); cl = (Bit8u)((cl << 1) | (a >> 15));
+        sw8(bp - 0x2E, (Bit8u)(sb(bp - 0x2E) | cl));
+        a = (Bit16u)(y - sr16(bp - 4)); cl = (Bit8u)((cl << 1) | (a >> 15));
+        a = (Bit16u)(sr16(bp - 8) - y); cl = (Bit8u)((cl << 1) | (a >> 15));
+        ecx = (ecx & 0xFFFFFF00u) | cl;
+        set16(eax, y);
+        if (!(s16(y) > s16(lo16(esi)))) { set16(esi, y); set16(edx, bx); }
+        if (!(s16(y) < s16(lo16(edi)))) set16(edi, y);
+        ecx = (ecx & 0xFFFF00FFu) | (ecx & ((Bit32u)cl << 8));      // and ch, cl
+        set16(ebx, bx + 0x16);
+    } while (lo16(ebx) != sr16(bp - 0x12));
+    {
+        const Bit8u ch = (Bit8u)(ecx >> 8);     // or ch, ch: all off one side
+        if (ch) { flags(t_ORb, ch, ch, ch); goto L141D; }
+    }
+    sw16(bp - 0x1A, lo16(edx));                 // 0F77
+    sw16(bp - 0x1C, lo16(edx));
+    sw16(bp - 0x68, sds);
+    sw16(bp - 0x24, lo16(esi));
+    if (lo16(edi) != lo16(esi)) goto L102C;
+    set16(ebx, sr16(bp - 0x1A));                // 0F89: one row; its least x back from the top corner
+L0F8C:
+    set16(esi, lo16(ebx));
+    set16(eax, dr16(sds, lo16(esi)));
+L0F90:
+    if (!(lo16(ebx) > sr16(bp - 0x10))) set16(ebx, sr16(bp - 0x12));
+    set16(ebx, lo16(ebx) - 0x16);
+    if (lo16(ebx) == sr16(bp - 0x1A)) goto L0FA6;
+    if (s16(lo16(eax)) <= s16(dr16(sds, lo16(ebx)))) goto L0F90;
+    goto L0F8C;
+L0FA6:
+    set16(ebx, sr16(bp - 0x1C));                // its greatest, on from it
+L0FA9:
+    set16(edi, lo16(ebx));
+    set16(eax, dr16(sds, lo16(edi)));
+L0FAD:
+    set16(ebx, lo16(ebx) + 0x16);
+    if (!(lo16(ebx) < sr16(bp - 0x12))) set16(ebx, sr16(bp - 0x10));
+    if (lo16(ebx) == sr16(bp - 0x1C)) goto L0FC3;
+    if (s16(lo16(eax)) >= s16(dr16(sds, lo16(ebx)))) goto L0FAD;
+    goto L0FA9;
+L0FC3:
+    edx = (Bit32u)dr16(sds, lo16(esi)) << 16; sw32(bp - 0x2E, edx);
+    edx = (Bit32u)dr16(sds, lo16(esi) + 6) << 8; sw32(bp - 0x36, edx);
+    edx = (Bit32u)dr16(sds, lo16(esi) + 8) << 8; sw32(bp - 0x3E, edx);
+    edx = (Bit32u)dr16(sds, lo16(edi)) << 16; sw32(bp - 0x32, edx);
+    edx = (Bit32u)dr16(sds, lo16(edi) + 6) << 8; sw32(bp - 0x3A, edx);
+    edx = (Bit32u)dr16(sds, lo16(edi) + 8) << 8; sw32(bp - 0x42, edx);
+    eax = 0;
+    sw32(bp - 0x46, 0); sw32(bp - 0x4E, 0); sw32(bp - 0x56, 0);
+    sw32(bp - 0x4A, 0); sw32(bp - 0x52, 0); sw32(bp - 0x5A, 0);
+    sw16(bp - 0x22, 0);
+    goto L1230;
+L102C:
+    guard = 0;
+L102C_again:                                    // the left edge: back from the top corner
+    if (++guard > n + 1) { leave_at(0x102C - 0x0EA2); return 0; }     // (round and round: the game's, as it would)
+    set16(ebx, sr16(bp - 0x1A));
+    sw16(bp - 0x16, lo16(ebx));
+    set16(esi, lo16(ebx));
+    if (!(lo16(esi) > sr16(bp - 0x10))) set16(esi, sr16(bp - 0x12));
+    set16(esi, lo16(esi) - 0x16);
+    sw16(bp - 0x1A, lo16(esi));
+    set16(ecx, dr16(sds, lo16(esi) + 2));
+    set16(edx, dr16(sds, lo16(ebx) + 2));
+    if (s16(lo16(edx)) < s16(sr16(bp - 4)) && s16(lo16(ecx)) <= s16(sr16(bp - 4))) {
+        flags(t_CMPw, lo16(ecx), sr16(bp - 4), (Bit16u)(lo16(ecx) - sr16(bp - 4)));
+        goto L102C_again;
+    }
+    a = lo16(ecx);
+    set16(ecx, a - lo16(edx));
+    if (!lo16(ecx)) { flags(t_SUBw, a, lo16(edx), 0); goto L102C_again; }
+    sw16(bp - 0x1E, lo16(ecx));
+    ecx = (Bit32u)lo16(ecx) << 16;
+    if (!edge(0x106F - 0x0EA2, 0x46, 0x4E, 0x56)) return 0;
+    set16(edx, dr16(sds, lo16(ebx)));           // 10BA
+    sw16(bp - 0x2E, 0x8000);
+    sw16(bp - 0x2C, lo16(edx));
+    edx = (Bit32u)dr16(sds, lo16(ebx) + 6) << 8; sw32(bp - 0x36, edx);
+    edx = (Bit32u)dr16(sds, lo16(ebx) + 8) << 8; sw32(bp - 0x3E, edx);
+    guard = 0;
+L10DE:                                          // the right edge: on from the top corner
+    if (++guard > n + 1) { leave_at(0x10DE - 0x0EA2); return 0; }
+    set16(ebx, sr16(bp - 0x1C));
+    sw16(bp - 0x18, lo16(ebx));
+    set16(esi, lo16(ebx) + 0x16);
+    if (!(lo16(esi) < sr16(bp - 0x12))) set16(esi, sr16(bp - 0x10));
+    sw16(bp - 0x1C, lo16(esi));
+    set16(ecx, dr16(sds, lo16(esi) + 2));
+    set16(edx, dr16(sds, lo16(ebx) + 2));
+    if (s16(lo16(edx)) < s16(sr16(bp - 4)) && s16(lo16(ecx)) <= s16(sr16(bp - 4))) {
+        flags(t_CMPw, lo16(ecx), sr16(bp - 4), (Bit16u)(lo16(ecx) - sr16(bp - 4)));
+        goto L10DE;
+    }
+    a = lo16(ecx);
+    set16(ecx, a - lo16(edx));
+    if (!lo16(ecx)) { flags(t_SUBw, a, lo16(edx), 0); goto L10DE; }
+    sw16(bp - 0x20, lo16(ecx));
+    ecx = (Bit32u)lo16(ecx) << 16;
+    if (!edge(0x1121 - 0x0EA2, 0x4A, 0x52, 0x5A)) return 0;
+    set16(edx, dr16(sds, lo16(ebx)));           // 116C
+    sw16(bp - 0x32, 0x8000);
+    sw16(bp - 0x30, lo16(edx));
+    edx = (Bit32u)dr16(sds, lo16(ebx) + 6) << 8; sw32(bp - 0x3A, edx);
+    edx = (Bit32u)dr16(sds, lo16(ebx) + 8) << 8; sw32(bp - 0x42, edx);
+    set16(eax, sr16(bp - 8) - sr16(bp - 0x24)); // 1190: the rows, to the clip's bottom
+    a = lo16(edi);
+    set16(edi, a - sr16(bp - 8));
+    if (!(s16(a) > s16(sr16(bp - 8)))) set16(eax, lo16(eax) + lo16(edi));
+    sw16(bp - 0x22, lo16(eax));
+    a = sr16(bp - 4);                           // the clip's top
+    set16(eax, a - sr16(bp - 0x24));
+    if (s16(a) <= s16(sr16(bp - 0x24))) goto L1230;
+    sw16(bp - 0x22, sr16(bp - 0x22) - lo16(eax));
+    set16(ecx, sr16(bp - 4));
+    sw16(bp - 0x24, lo16(ecx));
+    set16(ebx, sr16(bp - 0x16));
+    set16(ecx, lo16(ecx) - dr16(sds, lo16(ebx) + 2));
+    sw16(bp - 0x1E, sr16(bp - 0x1E) - lo16(ecx));
+    ecx = (Bit32u)lo16(ecx) << 16;
+    clip_add(0x46, 0x2E); clip_add(0x4E, 0x36); clip_add(0x56, 0x3E);
+    set16(ecx, sr16(bp - 4));
+    set16(ebx, sr16(bp - 0x18));
+    set16(ecx, lo16(ecx) - dr16(sds, lo16(ebx) + 2));
+    sw16(bp - 0x20, sr16(bp - 0x20) - lo16(ecx));
+    ecx = (Bit32u)lo16(ecx) << 16;
+    clip_add(0x4A, 0x32); clip_add(0x52, 0x3A); clip_add(0x5A, 0x42);
+L1230:
+    {
+        const Bit32u m = (Bit32u)sr16(bp - 0x24) * sr16(bp - 0xA);
+        set16(eax, (Bit16u)m);
+        set16(edx, (Bit16u)(m >> 16));
+    }
+    set16(eax, lo16(eax) + sr16(bp - 0xC));
+    sw16(bp - 0x2A, lo16(eax));
+    set16(eax, J + 0x31);
+    if (sr32(bp + 0x14)) {                      // lfs bx, [bp+14h]: the shading table
+        set16(ebx, sr16(bp + 0x14));
+        sfs = sr16(bp + 0x16);
+        gw16(R, lo16(ebx));
+        base = lo16(ebx);
+        set16(eax, J + 5);
+    }
+    gw16(D, lo16(eax));
+    disp = lo16(eax);
+    eax = sr32(bp - 0x2E); ebx = sr32(bp - 0x32); ecx = sr32(bp - 0x36);
+    edx = sr32(bp - 0x3A); esi = sr32(bp - 0x3E); edi = sr32(bp - 0x42);
+    sds = sr16(bp + 0x10);
+L1271:                                          // a row
+    push32(eax); push32(ebx); push32(ecx); push32(edx); push32(esi); push32(edi);
+    if (!(s32(ebx) > s32(eax))) {
+        std::swap(ebx, eax);
+        std::swap(edx, ecx);
+        std::swap(edi, esi);
+    }
+    eax >>= 16;
+    if (s16(lo16(eax)) > s16(sr16(bp - 6))) goto L13DD;
+    ebx >>= 16;
+    if (s16(lo16(ebx)) < s16(sr16(bp - 2))) goto L13DD;
+    sw16(bp - 0x26, lo16(eax));
+    sw16(bp - 0x28, lo16(ebx));
+    sw32(bp - 0x66, ecx);
+    set16(ebx, lo16(ebx) - lo16(eax));
+    if (!lo16(ebx)) goto L1342;
+    ebx <<= 16;
+    edx -= ecx;                                 // u across the span
+    set16(eax, lo16(edx));
+    eax <<= 16;
+    if (!divide(ebx, 0x12C1 - 0x0EA2)) return 0;
+    sw32(bp - 0x5E, eax);
+    edx = (edx << 16) | (eax >> 16);
+    set16(ecx, 1);
+    if (lo16(edx) & 0x8000) {
+        set16(ecx, 0 - lo16(ecx));
+        set16(edx, lo16(edx) + 1 - (lo16(eax) < 1 ? 1 : 0));
+    }
+    set16(ecx, lo16(ecx) + lo16(edx));
+    push16(lo16(ecx));
+    push16(lo16(edx));
+    edi -= esi;                                 // v across it
+    edx = edi;
+    set16(eax, lo16(edx));
+    eax <<= 16;
+    if (!divide(ebx, 0x12F0 - 0x0EA2)) return 0;
+    sw32(bp - 0x62, eax);
+    edx = (edx << 16) | (eax >> 16);
+    set16(ecx, sr16(bp + 0x12));
+    if (lo16(edx) & 0x8000) {
+        set16(ecx, 0 - lo16(ecx));
+        set16(edx, lo16(edx) + 1 - (lo16(eax) < 1 ? 1 : 0));
+    }
+    set16(eax, sr16(bp + 0x12));                // imul dx
+    {
+        const int m = s16(lo16(eax)) * s16(lo16(edx));
+        set16(eax, (Bit16u)m);
+        set16(edx, (Bit16u)((Bit32u)m >> 16));
+    }
+    set16(edx, pop16());
+    set16(ebx, pop16());
+    set16(edx, lo16(edx) + lo16(eax)); gw16(T, lo16(edx)); step[0] = lo16(edx);     // the step table
+    set16(edx, lo16(edx) + lo16(ecx)); gw16((Bit16u)(T + 2), lo16(edx)); step[1] = lo16(edx);
+    set16(ebx, lo16(ebx) + lo16(eax)); gw16((Bit16u)(T + 4), lo16(ebx)); step[2] = lo16(ebx);
+    set16(ebx, lo16(ebx) + lo16(ecx)); gw16((Bit16u)(T + 6), lo16(ebx)); step[3] = lo16(ebx);
+    a = sr16(bp - 2);
+    set16(ecx, a - sr16(bp - 0x26));
+    if (s16(a) > s16(sr16(bp - 0x26))) goto L143D;
+L1338:
+    a = sr16(bp - 0x28);
+    set16(eax, a - sr16(bp - 6));
+    if (s16(a) > s16(sr16(bp - 6))) goto L1466;
+L1342:
+    ecx = esi;
+    esi >>= 16;
+    {
+        const Bit32u m = (Bit32u)lo16(esi) * sr16(bp + 0x12);
+        set16(eax, (Bit16u)m);
+        set16(edx, (Bit16u)(m >> 16));
+    }
+    set16(eax, lo16(eax) + sr16(bp + 0xE));
+    set16(eax, lo16(eax) + sr16(bp - 0x64));
+    set16(esi, lo16(eax));
+    set16(eax, sr16(bp - 0x26));
+    set16(edi, sr16(bp - 0x2A) + lo16(eax));
+    set16(ebx, sr16(bp - 0x28) - lo16(eax));
+    push32(ebp);
+    edx = sr32(bp - 0x66);
+    eax = sr32(bp - 0x5E);
+    if (eax & 0x80000000u) { set16(eax, 0 - lo16(eax)); set16(edx, ~lo16(edx)); }
+    ebp = sr32(bp - 0x62);
+    if (ebp & 0x80000000u) { set16(ebp, 0 - lo16(ebp)); set16(ecx, ~lo16(ecx)); }
+    set16(ebx, lo16(ebx) + 1);
+    push16(lo16(ebx));
+    a = lo16(ebx);
+    set16(ebx, 0);
+    flags(t_XORw, a, a, 0);
+    if (!span()) return 0;                      // J
+    set16(edi, pop16());                        // J+53h: pop di; pop ebp
+    ebp = pop32();
+L13DD:
+    set16(edi, sr16(bp - 0xA));
+    a = sr16(bp - 0x2A);
+    cf = a + lo16(edi) > 0xFFFF;
+    sw16(bp - 0x2A, a + lo16(edi));
+    edi = pop32(); esi = pop32(); edx = pop32(); ecx = pop32(); ebx = pop32(); eax = pop32();
+    a = sr16(bp - 0x22);
+    sw16(bp - 0x22, a - 1);
+    flags(t_DECw, a, 0, (Bit16u)(a - 1), cf);
+    if ((Bit16u)(a - 1) & 0x8000) goto L141D;
+    if (a == 1) goto L1422;
+    a = (Bit16u)(sr16(bp - 0x1E) - 1);
+    sw16(bp - 0x1E, a);
+    if (!a) goto L146C;
+    eax += sr32(bp - 0x46); ecx += sr32(bp - 0x4E); esi += sr32(bp - 0x56);
+L1407:
+    a = (Bit16u)(sr16(bp - 0x20) - 1);
+    sw16(bp - 0x20, a);
+    if (!a) goto L151F;
+    ebx += sr32(bp - 0x4A); edx += sr32(bp - 0x52); edi += sr32(bp - 0x5A);
+    goto L1271;
+L1422:
+    eax += sr32(bp - 0x46); ecx += sr32(bp - 0x4E); esi += sr32(bp - 0x56);
+    ebx += sr32(bp - 0x4A); edx += sr32(bp - 0x52); edi += sr32(bp - 0x5A);
+    goto L1271;
+L143D:                                          // clipped on the left
+    sw16(bp - 0x26, sr16(bp - 0x26) + lo16(ecx));
+    ecx = (Bit32u)lo16(ecx) << 16;
+    eax = sr32(bp - 0x5E);
+    imul32(eax, edx, ecx);
+    eax = (eax >> 16) | (edx << 16);
+    sw32(bp - 0x66, sr32(bp - 0x66) + eax);
+    eax = sr32(bp - 0x62);
+    imul32(eax, edx, ecx);
+    eax = (eax >> 16) | (edx << 16);
+    esi += eax;
+    goto L1338;
+L1466:                                          // on the right
+    sw16(bp - 0x28, sr16(bp - 0x28) - lo16(eax));
+    goto L1342;
+L146C:                                          // the left edge's next corner
+    push32(ebx); push32(edx);
+    sds = sr16(bp - 0x68);
+    set16(ebx, sr16(bp - 0x1A));
+    sw16(bp - 0x16, lo16(ebx));
+    set16(esi, lo16(ebx));
+    if (!(lo16(esi) > sr16(bp - 0x10))) set16(esi, sr16(bp - 0x12));
+    set16(esi, lo16(esi) - 0x16);
+    sw16(bp - 0x1A, lo16(esi));
+    set16(ecx, dr16(sds, lo16(esi) + 2));
+    set16(edx, dr16(sds, lo16(ebx) + 2));
+    set16(ecx, lo16(ecx) - lo16(edx));
+    if (!lo16(ecx)) set16(ecx, 1);              // cmp cx, 1; adc cx, 0
+    sw16(bp - 0x1E, lo16(ecx));
+    ecx = (Bit32u)lo16(ecx) << 16;
+    if (!edge(0x14B0 - 0x0EA2, 0x46, 0x4E, 0x56)) return 0;
+    set16(eax, dr16(sds, lo16(ebx)));
+    eax = (eax << 16) | 0x8000;
+    ecx = (Bit32u)dr16(sds, lo16(ebx) + 6) << 8;
+    esi = (Bit32u)dr16(sds, lo16(ebx) + 8) << 8;
+    sds = sr16(bp + 0x10);
+    edx = pop32(); ebx = pop32();
+    goto L1407;
+L151F:                                          // the right edge's
+    push32(eax); push32(ecx); push32(esi);
+    sds = sr16(bp - 0x68);
+    set16(ebx, sr16(bp - 0x1C));
+    sw16(bp - 0x18, lo16(ebx));
+    set16(esi, lo16(ebx) + 0x16);
+    if (!(lo16(esi) < sr16(bp - 0x12))) set16(esi, sr16(bp - 0x10));
+    sw16(bp - 0x1C, lo16(esi));
+    set16(ecx, dr16(sds, lo16(esi) + 2));
+    set16(edx, dr16(sds, lo16(ebx) + 2));
+    set16(ecx, lo16(ecx) - lo16(edx));
+    if (!lo16(ecx)) set16(ecx, 1);
+    sw16(bp - 0x20, lo16(ecx));
+    ecx = (Bit32u)lo16(ecx) << 16;
+    if (!edge(0x1565 - 0x0EA2, 0x4A, 0x52, 0x5A)) return 0;
+    edx = (Bit32u)dr16(sds, lo16(ebx) + 6) << 8;
+    edi = (Bit32u)dr16(sds, lo16(ebx) + 8) << 8;
+    set16(ebx, dr16(sds, lo16(ebx)));
+    ebx = (ebx << 16) | 0x8000;
+    sds = sr16(bp + 0x10);
+    esi = pop32(); ecx = pop32(); eax = pop32();
+    goto L1271;
+L141D:                                          // pop di, si, ds; leave (its retf: the caller's)
+    set16(edi, pop16());
+    set16(esi, pop16());
+    sds = pop16();
+    sp = bp;
+    set16(ebp, pop16());
+    return 1;
+}
+
+// J: the span, its count pushed and BX 0 (false: left to the game, at J or at its loop's top for the pixel it could
+// not reach)
+bool Poly::span() {
+    const bool shaded = disp == (Bit16u)(J + 5);
+    const PhysPt dsb = (PhysPt)sds << 4, esb = (PhysPt)ses << 4, fsb = (PhysPt)sfs << 4;
+    const int n0 = s16(sr16(sp));
+    if (!shadow && !dest_ok(esb, lo16(edi), n0 > 0 ? (unsigned)n0 : 1u)) { leave_at(kPolyJ); return false; }
+    Bit16u si = lo16(esi), di = lo16(edi), dx = lo16(edx), cx = lo16(ecx), bx = 0;
+    const Bit16u ax = lo16(eax), bpv = lo16(ebp);
+    int n = n0;
+    bool cf = false;
+    do {
+        Bit8u t;
+        bool ok = px_read(dsb + si, t);
+        if (ok && t != 0xFF) {
+            if (shaded) ok = px_read(fsb + (Bit16u)(t + base), t);
+            if (ok) ok = px_write(esb + di, t);
+        }
+        if (!ok) {
+            if (n == n0) { leave_at(kPolyJ); return false; }
+            set16(esi, si); set16(edi, di); set16(edx, dx); set16(ecx, cx); set16(ebx, bx);
+            sw16(sp, n);
+            flags(t_DECw, (Bit16u)(n + 1), 0, (Bit16u)n, cf);
+            leave_at(kPolyJ + (shaded ? 5 : 0x31));
+            return false;
+        }
+        di++;
+        const Bit32u u = (Bit32u)dx + ax, v = (Bit32u)cx + bpv;
+        dx = (Bit16u)u;
+        cx = (Bit16u)v;
+        bx = (Bit16u)((((u >> 16) << 1) | (v >> 16)) << 1);
+        const Bit32u s = (Bit32u)si + step[bx >> 1];
+        si = (Bit16u)s;
+        cf = s > 0xFFFF;
+        n--;
+    } while (n > 0);
+    set16(esi, si); set16(edi, di); set16(edx, dx); set16(ecx, cx); set16(ebx, bx);
+    sw16(sp, n);
+    flags(t_DECw, (Bit16u)(n + 1), 0, (Bit16u)n, cf);
+    pixels += n0 > 0 ? (unsigned)n0 : 1u;
+    spans++;
+    return true;
+}
+
+// (check: a 64K segment's bytes, a page at a time where the TLB has it)
+void seg_read(PhysPt base, std::vector<Bit8u> &v) {
+    v.resize(0x10000);
+    for (unsigned i = 0; i < 0x10000;) {
+        const PhysPt a = base + i;
+        const unsigned part = std::min(0x10000u - i, 4096u - (a & 0xFFF));
+        const HostPt t = get_tlb_read(a);
+        if (t) {
+            memcpy(&v[i], t + a, part);
+        } else {
+            for (unsigned k = 0; k < part; k++) { Bit8u c = 0; tex_read(a + k, c); v[i + k] = c; }
+        }
+        i += part;
+    }
+}
+
+Poly g_poly;
+struct PolyExpect {             // (check: the routine as ours left it, before its retf)
+    bool on, ifWas;
+    Bit16u sp0, ses;
+    Bit32u regs[7], flags;
+    Bit16u segs[3];
+    std::vector<Bit8u> seg;     // the bitmap's segment before
+    PhysPt segBase;
+    Bit8u stack[0xA8], glob[12];
+};
+PolyExpect g_polyExp;
+
+// The core's flags for the lazy state the routine left (the emulated CPU's own put back after)
+Bit32u poly_flags_of(const Poly &p) {
+    const LazyFlags keepL = lflags;
+    const Bitu keepF = reg_flags;
+    p.lazy();
+    FillFlags();
+    const Bit32u v = (Bit32u)(reg_flags & (FLAG_CF | FLAG_PF | FLAG_AF | FLAG_ZF | FLAG_SF | FLAG_OF));
+    lflags = keepL;
+    reg_flags = keepF;
+    return v;
+}
+
+// At the routine's entry in passes 0-3: true if it is done (the CPU at its return) or left to the game on the way
+bool poly_entry() {
+    if (g_polyOn < 0) {
+        const char *env = getenv("WCARMHIRESPOLY");
+        g_polyOn = !env || !env[0] ? 1 : env[0] == '0' ? 0 : !strcmp(env, "check") ? 2 : !strcmp(env, "alt") ? 3 : 1;
+    }
+    if (!g_polyOn || g_hostOff || (g_polyOn == 3 && ((long)(PIC_FullIndex() / 2000) & 1))) return false;
+    tex_known();
+    if (g_polyOk < 0) {
+        g_polyOk = g_texOk == 1 && poly_code_here();
+        wclog(1, "Armada: the textured polygon's routine %s", g_polyOk ? "is done here" : "is not as known: the game's own");
+    }
+    if (g_polyOk != 1) return false;
+    const PhysPt e = SegPhys(cs) + reg_ip;
+    if (mem_readd(e) != 0x000068C8 || mem_readd(e + 4) != 0xFC57561E) return false;     // enter 68h, 0; push ds si di; cld
+    Poly &p = g_poly;
+    p.shadow = g_polyOn == 2;
+    p.over.clear();
+    if (!p.prepare()) {
+        g_polyGame++;
+        return false;
+    }
+    const int r = p.run();
+    g_texSpans += p.spans;
+    g_texPixels += p.pixels;
+    g_texFrame += p.pixels;
+    g_polyPixels += p.pixels;
+    if (p.shadow) {             // (check: what ours did kept, then the game's routine run)
+        PolyExpect &x = g_polyExp;
+        x.on = g_polyChecking = r == 1;
+        if (!x.on) { g_polyLeft++; return false; }
+        x.sp0 = p.sp0;
+        x.ses = p.ses;
+        const Bit32u regs[7] = { p.eax, p.ebx, p.ecx, p.edx, p.esi, p.edi, p.ebp };
+        for (int k = 0; k < 7; k++) x.regs[k] = regs[k];
+        x.segs[0] = p.sds; x.segs[1] = p.ses; x.segs[2] = p.sfs;
+        x.flags = poly_flags_of(p);
+        x.segBase = (PhysPt)p.ses << 4;
+        seg_read(x.segBase, x.seg);
+        for (int i = 0; i < 0xA8; i++) x.stack[i] = mem_readb(p.ssb + (Bit16u)(p.lo + i));
+        const Bit16u g[3] = { p.D, p.T, p.R };
+        const int gl[3] = { 2, 8, 2 };
+        for (int k = 0, o = 0; k < 3; k++) for (int i = 0; i < gl[k]; i++) x.glob[o++] = mem_readb(p.ssb + (Bit16u)(g[k] + i));
+        x.ifWas = GETFLAG(IF) != 0;
+        SETFLAGBIT(IF, false);  // (no interrupt's frame below its stack while the game's routine runs: compared strictly)
+        return false;
+    }
+    if (r == 1) {
+        p.put_state();
+        return_far();
+        g_polyDone++;
+    } else {
+        g_polyLeft++;
+    }
+    return true;
+}
+
+// (check: the game's routine at its retf: as ours left it?)
+void poly_check_done() {
+    PolyExpect &x = g_polyExp;
+    if (!x.on) return;
+    x.on = g_polyChecking = false;
+    SETFLAGBIT(IF, x.ifWas);
+    const Poly &p = g_poly;
+    FillFlags();
+    const Bit32u regs[7] = { reg_eax, reg_ebx, reg_ecx, reg_edx, reg_esi, reg_edi, reg_ebp };
+    const Bit16u segs[3] = { SegValue(ds), SegValue(es), SegValue(fs) };
+    std::string why;
+    char buf[96];
+    if (reg_sp != x.sp0) { snprintf(buf, sizeof(buf), " sp %04X/%04X", reg_sp, x.sp0); why += buf; }
+    for (int k = 0; k < 7; k++) {
+        if (regs[k] != x.regs[k]) { snprintf(buf, sizeof(buf), " reg%d %08X/%08X", k, regs[k], x.regs[k]); why += buf; }
+    }
+    for (int k = 0; k < 3; k++) {
+        if (segs[k] != x.segs[k]) { snprintf(buf, sizeof(buf), " seg%d %04X/%04X", k, segs[k], x.segs[k]); why += buf; }
+    }
+    const Bit32u f = (Bit32u)(reg_flags & (FLAG_CF | FLAG_PF | FLAG_AF | FLAG_ZF | FLAG_SF | FLAG_OF));
+    if (f != x.flags || GETFLAG(DF)) { snprintf(buf, sizeof(buf), " flags %03X/%03X", f, x.flags); why += buf; }
+    unsigned px = 0;
+    std::vector<Bit8u> now;                     // the bitmap's segment: what the game's changed, ours too, and the same
+    seg_read(x.segBase, now);
+    for (unsigned b = 0; b < 0x10000; b += 4096) {
+        if (!memcmp(&now[b], &x.seg[b], 4096)) continue;
+        for (unsigned i = b; i < b + 4096; i++) {
+            if (now[i] == x.seg[i]) continue;
+            const std::unordered_map<PhysPt, Bit8u>::const_iterator it = p.over.find(x.segBase + i);
+            if (it == p.over.end() || it->second != now[i]) {
+                if (px++ < 3) { snprintf(buf, sizeof(buf), " [%04X] %02X/%s", i, now[i], it == p.over.end() ? "-" : "ours"); why += buf; }
+            }
+        }
+    }
+    for (std::unordered_map<PhysPt, Bit8u>::const_iterator it = p.over.begin(); it != p.over.end(); ++it) {
+        if (it->first < x.segBase || it->first >= x.segBase + 0x10000) continue;
+        if (now[it->first - x.segBase] != it->second) {
+            if (px++ < 3) { snprintf(buf, sizeof(buf), " [%04X] %02X/%02X", (unsigned)(it->first - x.segBase), now[it->first - x.segBase], it->second); why += buf; }
+        }
+    }
+    for (int i = 0; i < 0xA8; i++) {            // its stack, every byte (interrupts held off: none of their frames)
+        const PhysPt a = p.ssb + (Bit16u)(p.lo + i);
+        const Bit8u v = mem_readb(a);
+        const std::unordered_map<PhysPt, Bit8u>::const_iterator it = p.over.find(a);
+        if (v != (it != p.over.end() ? it->second : x.stack[i])) {
+            {
+                if (px++ < 6) {
+                    snprintf(buf, sizeof(buf), " ss:[sp0%+d] %02X/%02X (was %02X)", i - 0x90, v, it != p.over.end() ? it->second : 0x100 | x.stack[i], x.stack[i]);
+                    why += buf;
+                }
+            }
+        }
+    }
+    const Bit16u g[3] = { p.D, p.T, p.R };
+    const int gl[3] = { 2, 8, 2 };
+    for (int k = 0, o = 0; k < 3; k++) {
+        for (int i = 0; i < gl[k]; i++, o++) {
+            const PhysPt a = p.ssb + (Bit16u)(g[k] + i);
+            const std::unordered_map<PhysPt, Bit8u>::const_iterator it = p.over.find(a);
+            if (mem_readb(a) != (it != p.over.end() ? it->second : x.glob[o])) {
+                if (px++ < 6) {
+                    snprintf(buf, sizeof(buf), " ss:[%04X] %02X/%02X (was %02X)", (unsigned)(Bit16u)(g[k] + i), mem_readb(a), it != p.over.end() ? it->second : 0x100 | x.glob[o], x.glob[o]);
+                    why += buf;
+                }
+            }
+        }
+    }
+    if (px) { snprintf(buf, sizeof(buf), " (%u bytes)", px); why += buf; }
+    g_polyChecked++;
+    if (!why.empty() && g_polyWrong++ < 8) wclog(1, "Armada: a polygon differs from the game's:%s", why.c_str());
+}
+
 // The game's own pass while the picture is 640x400: its scene is never seen (the 640x400 one is shown, and the cockpit
 // is drawn over the marker), so a textured polygon is stepped over there, the routine's whole work (the user,
 // 2026-11-24: "skipping pixel draw would be good").  It changes nothing but the picture and its own scratch (callers
@@ -737,6 +1695,10 @@ void tex_entry() {
     if (g_ownSkip < 0) {
         const char *env = getenv("WCARMHIRESOWN");
         g_ownSkip = !(env && !strcmp(env, "draw"));
+    }
+    if (g_pass >= 0 && g_pass <= 3) {
+        poly_entry();
+        return;
     }
     if (!g_ownSkip || g_hostOff || g_pass != 4 || g_texOk != 1) return;
     const PhysPt e = SegPhys(cs) + reg_ip;
@@ -1177,8 +2139,9 @@ void time_frame_top() {
               g_sumWork / g_nTime, g_maxWork, g_maxWork * CPU_CycleMax / 1e6, g_sumPass / g_nTime, g_maxPass,
               g_realSum / g_nTime, g_realMax);
         g_realSum = g_realMax = 0;
-        if (g_abN[0] && g_abN[1] && getenv("WCARMHIRESTEX") && !strcmp(getenv("WCARMHIRESTEX"), "alt")) {
-            wclog(1, "Armada time: the game's spans %.1f ms a frame (most %.1f), ours %.1f ms (most %.1f)",
+        const char *altTex = getenv("WCARMHIRESTEX"), *altPoly = getenv("WCARMHIRESPOLY");
+        if (g_abN[0] && g_abN[1] && ((altTex && !strcmp(altTex, "alt")) || (altPoly && !strcmp(altPoly, "alt")))) {
+            wclog(1, "Armada time: A/B: the game's %.1f ms a frame (most %.1f), ours %.1f ms (most %.1f)",
                   g_abWork[0] / g_abN[0], g_abMax[0], g_abWork[1] / g_abN[1], g_abMax[1]);
             g_abWork[0] = g_abWork[1] = g_abMax[0] = g_abMax[1] = 0;
             g_abN[0] = g_abN[1] = 0;
@@ -1193,6 +2156,14 @@ void time_frame_top() {
                   "%lu polygons not drawn in the game's own pass", g_texSpans, g_texPixels, g_texFalls, g_texChecked,
                   g_texWrong, g_ownSkipped);
             g_texSpans = g_texPixels = g_texFalls = g_ownSkipped = 0;
+        }
+        if (g_polyDone || g_polyGame || g_polyLeft || g_polyChecked) {
+            wclog(1, "Armada time: textured polygons done here %lu, %lu pixels (the game's %lu, left to it on the way %lu; checked %lu, "
+                  "%lu differ)", g_polyDone, g_polyPixels, g_polyGame, g_polyLeft, g_polyChecked, g_polyWrong);
+            wclog(1, "Armada time: polygons left to the game: %lu %lu %lu %lu %lu %lu %lu %lu", g_polyWhy[0], g_polyWhy[1],
+                  g_polyWhy[2], g_polyWhy[3], g_polyWhy[4], g_polyWhy[5], g_polyWhy[6], g_polyWhy[7]);
+            g_polyDone = g_polyGame = g_polyLeft = g_polyPixels = 0;
+            for (int k = 0; k < 8; k++) g_polyWhy[k] = 0;
         }
         g_sumPass = g_sumFrame = g_sumWork = g_maxPass = g_maxFrame = g_maxWork = 0;
         g_nTime = 0;
@@ -2255,7 +3226,8 @@ void arm_hires_loaded(const char *exe, Bit16u loadSeg) {
     }
     g_load = loadSeg;
     g_codeOk = false;
-    g_texOk = g_starOk = g_netOk = -1;
+    g_texOk = g_starOk = g_netOk = g_polyOk = -1;
+    g_polyExp.on = g_polyChecking = false;
     g_m = NULL;
     g_mapCodeOk = false;
     g_mapPass = -1;
@@ -2302,6 +3274,7 @@ void arm_hires_watch(void (*watch)(Bit16u ip)) {
     if (getenv("WCARMHIRESSTARS") && !strcmp(getenv("WCARMHIRESSTARS"), "check")) watch((Bit16u)(g_b->starSearch + 0x26));
     if (g_b->netWait) watch(g_b->netWait);
     if (getenv("WCARMHIRESTEX") && !strcmp(getenv("WCARMHIRESTEX"), "check")) watch((Bit16u)(g_b->texJump + kTexDone));
+    if (getenv("WCARMHIRESPOLY") && !strcmp(getenv("WCARMHIRESPOLY"), "check")) watch((Bit16u)(g_b->texEntry + kPolyRet));
     watch(g_b->boomEntry);
     watch(g_b->listCall);
     watch(g_b->lineEntry);
@@ -2391,6 +3364,10 @@ bool arm_hires_hook(Bit32u ip) {
     }
     if (para == g_b->texSeg && ip == (Bit16u)(g_b->texJump + kTexDone)) {
         tex_done();
+        return true;
+    }
+    if (para == g_b->texSeg && ip == (Bit16u)(g_b->texEntry + kPolyRet)) {
+        poly_check_done();
         return true;
     }
     if (para == g_b->turnSeg && ip == g_b->turnEntry) {

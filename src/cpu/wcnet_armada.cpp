@@ -350,6 +350,7 @@ Bitu g_lastStart = ~(Bitu)0;
 std::map<Bit32u, unsigned> g_profAt, g_profVga;
 std::map<Bit16u, unsigned> g_profEs, g_profCs;
 std::map<Bit32u, unsigned> g_profPass[3];      // by the hi-res pass: the quarters, the game's own, the rest
+std::map<Bit32u, unsigned> g_profJemm;
 double g_profEvery = 5000;
 
 std::string top_of(const std::map<Bit32u, unsigned> &m, size_t n) {
@@ -377,6 +378,7 @@ void prof_sample() {
         const int pass = arm_hires_pass();
         g_profPass[pass >= 0 && pass <= 3 ? 0 : pass == 4 ? 1 : 2][(Bit32u)rel << 16]++;
     }
+    if (code == 0x18 && cpu.pmode && !GETFLAG(VM)) g_profJemm[(Bit32u)(ip & 0xFFF0)]++;   // (JEMM's ring 0, by 16 bytes)
     if (SegValue(es) == 0xA000) g_profVga[key]++;
     g_profEs[(Bit16u)(SegValue(es) - g_load)]++;
     g_profSamples++;
@@ -407,6 +409,8 @@ void prof_sample() {
         g_profCs.clear();
     }
     wclog(1, "Armada profile: ES=A000 at:%s", top_of(g_profVga, 20).c_str());
+    wclog(1, "Armada profile: JEMM (18:) by 16 bytes:%s", top_of(g_profJemm, 24).c_str());
+    g_profJemm.clear();
     std::map<Bit32u, unsigned> es;
     for (std::map<Bit16u, unsigned>::const_iterator i = g_profEs.begin(); i != g_profEs.end(); ++i) es[(Bit32u)i->first << 16] = i->second;
     wclog(1, "Armada profile: ES (paragraph from load):%s", top_of(es, 8).c_str());
