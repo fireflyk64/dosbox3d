@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <algorithm>
 #include <map>
 #include <set>
 #include <string>
@@ -32,6 +33,7 @@
 #include "wcnet_t640_game.h"
 #include "wcnet_tie640.h"
 #include "wcnet_log.h"
+#include "wcnet_perf.h"
 #include "regs.h"
 #include "cpu.h"
 #include "mem.h"
@@ -202,6 +204,16 @@ std::vector<u8> g_quarterBg[4];     // each quarter's buffer, as the sprites dra
 struct SpriteRun { bool active, backdrop; int q, sprite; u16 x, y, retIp, retCs; } g_run = { false, false, 0, 0, 0, 0, 0, 0 };
 bool g_backdropNext = false;
 std::vector<u8> g_scratch; bool g_nativeMap = true;
+// The sprites' scaler run ONCE a sprite, at the game's own scale into a buffer of its own, and its pixels put into the
+// four quarters' buffers twice the size (WCNET_T640_SPR1X=0: the scaler run in each quarter at twice the scale, as
+// before).  The user, 2026-11-23, of the one pass in the browser: "unacceptably slow, especially when any kind of
+// explosion renders"; measured there against the host's clock, a crowd with six kills: the scaler's runs inside the
+// hook (four a sprite, each four times the pixels) were 10.1 s of 30, the emulator at 66 to 84% of real time and a
+// second with no frame at all.  The art is the game's 320 art either way.
+bool g_spr1x = true, g_small = false;
+std::vector<u8> g_smallBg;
+struct SmallIn { bool stale; u8 box[8]; u32 at[3]; u16 parent, idLow; u8 map[0x40]; } g_smallIn;
+enum { kRowOffsetsCs = 0xCFE0 };    // (the code segment's: a row's offset in the buffer, words)
 struct SprSig { u16 w[16]; };      // (the check) x, y, scale, image off/seg, the box at the row pass, 4320, 435C, 435E, 50BC
 std::vector<SprSig> g_sprRef[4], g_sprOne[4]; int g_sprLogs = 0;
 u8 g_quarterScaler[4][0x80];     // DS:430C..438B as the scaler left them in each quarter
@@ -232,6 +244,8 @@ void bg_write(PhysPt at, const void *from, Bitu n) {
 enum { kIdleAt = 0x60 };
 bool g_nested = true, g_skipEntry = false;
 unsigned g_nestedRuns = 0, g_nestedSlices = 0;
+double g_costNestedMs = 0, g_costSpriteMs = 0, g_costHookMs = 0;   // (the host's clock: the scaler's runs, the sprites' whole handling, every hook of the one pass)
+unsigned g_costSprites = 0, g_costHooks = 0;
 bool run_to_idle(u16 stubSeg) {
     const PhysPt stub = ((PhysPt)stubSeg << 4) + kIdleAt;
     mem_writeb(stub, 0xEB); mem_writeb(stub + 1, 0xFE);
@@ -767,6 +781,74 @@ int oracle(const u16 *args) {
     return i == g_answers.end() ? -1 : i->second;
 }
 
+// The one run's sprite (g_smallBg as the scaler left it, g_smallIn what its row pass was given) into the four
+// quarters: each quarter's buffer given the sprite's box twice the size (a pixel of the small buffer four of the
+// 640x378), the quarter's own box worked out, the buffer kept for the replay's row pass, and the hand-written row
+// pass made on the quarter's buffer (it maps the sprite's pixels to their colours, as it does in the small one).
+void small_to_quarters(const Live &L, Bit16u loadSeg) {
+    SpriteIn &in = g_sprites[(size_t)g_run.sprite];
+    const u8 *cs = L.M + ((PhysPt)(u16)(loadSeg + kRendPara) << 4);
+    const int last = g_deep - 1;
+    const Bit16s minX = (Bit16s)TraceMem::get16(g_smallIn.box), maxY = (Bit16s)TraceMem::get16(g_smallIn.box + 2),
+                 maxX = (Bit16s)TraceMem::get16(g_smallIn.box + 4), minY = (Bit16s)TraceMem::get16(g_smallIn.box + 6);
+    if (g_scratch.empty()) g_scratch.resize(0x20000);
+    for (int q = 0; q < 4; q++) {
+        in.has[q] = true;
+        in.stale[q] = g_smallIn.stale;
+        in.pixels[q] = false;
+        in.at[q][0] = g_smallIn.at[0]; in.at[q][1] = g_smallIn.at[1]; in.at[q][2] = g_smallIn.at[2];
+        in.parent[q] = g_smallIn.parent; in.idLow[q] = g_smallIn.idLow;
+        memcpy(in.map[q], g_smallIn.map, 0x40);
+        memcpy(g_quarterScaler[q], L.M + L.ds + 0x430C, 0x80);
+        if (g_smallIn.stale) { memcpy(in.box[q], kBoxUnset, 8); continue; }
+        const int offX = (q & 1) * g_wide, offY = (q >> 1) * g_deep;
+        // (the box: x from the left; y UPWARDS from the window's bottom row)
+        const int bx0 = 2 * minX - offX, bx1 = 2 * maxX + 1 - offX, by1 = 2 * maxY - g_deep + 1 + offY, by0 = 2 * minY - g_deep + offY;
+        const int clamp0 = -0x7000, clamp1 = 0x7000;
+        const Bit16s b[4] = { (Bit16s)std::max(clamp0, std::min(clamp1, bx0)), (Bit16s)std::max(clamp0, std::min(clamp1, by1)),
+                              (Bit16s)std::max(clamp0, std::min(clamp1, bx1)), (Bit16s)std::max(clamp0, std::min(clamp1, by0)) };
+        for (int i = 0; i < 4; i++) { in.box[q][2 * i] = (u8)(b[i] & 0xFF); in.box[q][2 * i + 1] = (u8)((u16)b[i] >> 8); }
+        // (the 64 bytes taken as the sprite's colour map run over the box itself, DS:48A2 + 0x10: this quarter's there)
+        memcpy(in.map[q] + (kBox - kSpriteMap), in.box[q], 8);
+        const int left = b[0] - 2, top = b[1] + 2, right = b[2] + 2, bottom = b[3] - 2;
+        in.pixels[q] = !(left >= g_wide || right < 0 || last - top >= g_deep || last - bottom < 0);
+        if (!in.pixels[q]) continue;
+        // the quarter's buffer: the box's part of it, from the small buffer
+        u8 *to = &g_quarterBg[q][0];
+        const u8 *from = &g_smallBg[0];
+        const int x0 = std::max(0, left), x1 = std::min(g_wide - 1, right), r0 = std::max(0, last - top), r1 = std::min(last, last - bottom);
+        for (int r = r0; r <= r1; r++) {
+            const u16 rowTo = TraceMem::get16(cs + (u16)(kRowOffsetsCs + 2 * r)), rowFrom = TraceMem::get16(cs + (u16)(kRowOffsetsCs + 2 * ((r + offY) >> 1)));
+            for (int x = x0; x <= x1; x++) to[(u16)(rowTo + x)] = from[(u16)(rowFrom + ((x + offX) >> 1))];
+        }
+        in.snap[q] = g_snaps.size();
+        g_snaps.resize(g_snaps.size() + kBgBytes);
+        memcpy(&g_snaps[in.snap[q]], to, kBgBytes);
+        // the row pass on it (the lists thrown away): the sprite's pixels mapped; the quarter's box as it leaves it
+        memcpy(&g_scratch[0], L.M + L.ds, 0x10000);
+        TraceMem t;
+        t.ds = &g_scratch[0]; t.tb = &g_scratch[0x10000]; t.cs = cs;
+        memcpy(t.ds + kBox, in.box[q], 8);
+        t.D16(kFlatNext, TraceMem::get16(&g_start[kFlatNext]));
+        t.D16(kPool, TraceMem::get16(&g_start[kPool]));
+        memset(t.ds + kRows, 0, 2 * 200);
+        tie640_trace_sprite_rows(t, to, NULL);
+        memcpy(g_quarterBox[q], t.ds + kBox, 8);
+        g_quarterBoxKnown[q] = true;
+    }
+    // ... and the small buffer's own row pass: its sprite's pixels mapped too (the next sprite is drawn over them)
+    if (!g_smallIn.stale) {
+        memcpy(&g_scratch[0], L.M + L.ds, 0x10000);
+        TraceMem t;
+        t.ds = &g_scratch[0]; t.tb = &g_scratch[0x10000]; t.cs = cs;
+        memcpy(t.ds + kBox, g_smallIn.box, 8);
+        t.D16(kFlatNext, TraceMem::get16(&g_start[kFlatNext]));
+        t.D16(kPool, TraceMem::get16(&g_start[kPool]));
+        memset(t.ds + kRows, 0, 2 * 200);
+        tie640_trace_sprite_rows(t, &g_smallBg[0], NULL);
+    }
+}
+
 // the scaler has drawn the sprite in quarter g_run.q: that quarter's buffer, the scaler's variables and box kept
 void quarter_drawn(const Live &L, PhysPt buffer) {
     bg_read(buffer, &g_quarterBg[g_run.q][0], kBgBytes);
@@ -829,6 +911,8 @@ bool tie640_onepass_on() {
         g_nested = !(e && e[0] == '0');
         e = getenv("WCNET_T640_SPRMAP");
         g_nativeMap = !(e && e[0] == '0');
+        e = getenv("WCNET_T640_SPR1X");
+        g_spr1x = !(e && e[0] == '0');
         e = getenv("WCNET_T640_SPRCULL");
         g_cullSprites = e && e[0] == '1';
         if (g_on) wclog(1, T640_GAME " 640: the scene in one pass (WCNET_T640_NATIVE=2)%s%s", g_check ? ", every frame checked against the quarters" : "", g_noSprites ? ", no sprites" : "");
@@ -857,6 +941,8 @@ void tie640_onepass_begin(Bit16u loadSeg) {
     g_wide = L.d16(kWide); g_deep = L.d16(kDeep);
     g_sprites.clear(); g_snaps.clear();
     for (int q = 0; q < 4; q++) g_quarterBg[q].assign(g_start.begin() + 0x20000, g_start.begin() + 0x30000);
+    g_smallBg.assign(g_start.begin() + 0x20000, g_start.begin() + 0x30000);
+    g_small = false;
     g_run.active = false; g_backdropNext = false;
     for (int q = 0; q < 4; q++) g_quarterBoxKnown[q] = false;
     for (int q = 0; q < 4; q++) memcpy(g_quarterScaler[q], &g_start[0x430C], 0x80);
@@ -869,7 +955,20 @@ void tie640_onepass_begin(Bit16u loadSeg) {
 
 // A watched place of the renderer's while the one pass runs.  `draw`: the 640 picture; `corner`: the window's
 // corner in the game's picture.  True when the place was dealt with.
+static bool onepass_hook_inner(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch, int limitX, int limitY, int corner);
 bool tie640_onepass_hook(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch, int limitX, int limitY, int corner) {
+    const double t0 = perf_now_ms();
+    const bool r = onepass_hook_inner(loadSeg, ip, draw, pitch, limitX, limitY, corner);
+    g_costHookMs += perf_now_ms() - t0;
+    g_costHooks++;
+    return r;
+}
+// (the one pass's cost since the last asking, for the wall clock's line)
+void tie640_onepass_cost(char *to, size_t n) {
+    snprintf(to, n, "the one pass's hooks %.0f ms in %u calls, of that the sprites' scaler %.0f ms in %u runs (%u slices)", g_costHookMs, g_costHooks, g_costNestedMs, g_costSprites, g_nestedSlices);
+    g_costHookMs = g_costNestedMs = 0; g_costHooks = g_costSprites = 0; g_nestedSlices = 0;
+}
+static bool onepass_hook_inner(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch, int limitX, int limitY, int corner) {
     Live L;
     L.at(loadSeg);
     switch (ip) {
@@ -967,6 +1066,37 @@ bool tie640_onepass_hook(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch, int 
             g_sprites.push_back(in);
             Event &ev = add(kSpriteCall);
             ev.sprite = g_run.sprite;
+            if (g_spr1x && g_nested && buffer + kBgBytes <= 0xA0000) {
+                // One run at the game's own scale: the place and the scale halved (the caller's are the 640x378's).
+                const int base = g_run.backdrop ? 0 : -2 * g_deep + 2 * (g_deep >> 1);
+                const u16 scale = mem_readw(stack + (u16)(reg_sp + 4));
+                mem_writew(stack + (u16)reg_sp, (u16)((Bit16s)g_run.x >> 1));
+                // (y runs UPWARDS from the window's bottom row: the caller's + base is the upper quarters' own, the
+                // 640x378's a window's depth more)
+                mem_writew(stack + (u16)(reg_sp + 2), (u16)((Bit16s)(u16)(g_run.y + base + g_deep) >> 1));
+                mem_writew(stack + (u16)(reg_sp + 4), (u16)(scale >> 1));
+                const u16 stubSeg = (u16)(loadSeg - 0x10);
+                CPU_Push16(stubSeg);
+                CPU_Push16(kIdleAt);
+                g_spritesRun++;
+                bg_write(buffer, &g_smallBg[0], kBgBytes);
+                for (int i = 0; i < 8; i++) mem_writeb(L.ds + kBox + i, kBoxUnset[i]);
+                memset(&g_smallIn, 0, sizeof(g_smallIn));
+                g_smallIn.stale = true;
+                g_small = true;
+                SegSet16(cs, (u16)(loadSeg + kRendPara));
+                reg_eip = kSprite;
+                g_skipEntry = true;
+                const double t0 = perf_now_ms();
+                const bool ok = run_to_idle(stubSeg);
+                g_costNestedMs += perf_now_ms() - t0; g_costSprites++;
+                g_small = false;
+                if (!ok) { g_nested = false; return true; }
+                bg_read(buffer, &g_smallBg[0], kBgBytes);
+                mem_writew(stack + (u16)(reg_sp + 4), scale);
+                small_to_quarters(L, loadSeg);
+                g_run.q = 4;
+            }
         } else {
             quarter_drawn(L, buffer);
             g_run.q++;
@@ -996,7 +1126,8 @@ bool tie640_onepass_hook(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch, int 
             SegSet16(cs, (u16)(loadSeg + kRendPara));      // (the quarter before left the CPU at the idle place)
             reg_eip = kSprite;
             g_skipEntry = true;
-            if (!run_to_idle(stubSeg)) { g_nested = false; return true; }   // (it did not come back: the old way from here on)
+            { const double t0 = perf_now_ms(); const bool ok = run_to_idle(stubSeg); g_costNestedMs += perf_now_ms() - t0; g_costSprites++;
+              if (!ok) { g_nested = false; return true; } }   // (it did not come back: the old way from here on)
             quarter_drawn(L, buffer);
         }
         g_run.active = false;
@@ -1010,6 +1141,16 @@ bool tie640_onepass_hook(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch, int 
         // the scaler's row pass in the quarter being drawn: what it is given taken down; the game's own then runs
         // (it maps the sprite's pixels in the buffer; its lists are of no use and start from nothing each time)
         if (!g_run.active) return false;
+        if (g_small) {
+            // (the one run's: what the row pass is given taken down, the row pass itself left: small_to_quarters)
+            for (int i = 0; i < 8; i++) g_smallIn.box[i] = L.d8((u16)(kBox + i));
+            g_smallIn.stale = memcmp(g_smallIn.box, kBoxUnset, 8) == 0;
+            g_smallIn.at[0] = L.d32(kSpriteX); g_smallIn.at[1] = L.d32(kSpriteY); g_smallIn.at[2] = L.d32(kSpriteZ);
+            g_smallIn.parent = L.d16(kParent); g_smallIn.idLow = L.d16(kIdLow);
+            for (int i = 0; i < 0x40; i++) g_smallIn.map[i] = L.d8((u16)(kSpriteMap + i));
+            reg_eip = CPU_Pop16();      // (a near call)
+            return true;
+        }
         SpriteIn &in = g_sprites[(size_t)g_run.sprite];
         const int q = g_run.q;
         in.has[q] = true;

@@ -729,6 +729,7 @@ void tie640_tick(bool flight, Bit16u loadSeg) {
 // (!wallfps), the fewest frames of any one second, the mean, and how much emulated time passed in that wall time (work
 // done outside the emulated clock, the sprites' scaler run inside a hook, shows here and nowhere in the game's own
 // frame rate).
+void tie640_onepass_cost(char *to, size_t n);
 void tie640_wall_frame(bool say) {
     static double since = 0, secAt = 0, emuAt = 0;
     static int inSec = 0, least = 1 << 30, most = 0, total = 0, secs = 0;
@@ -746,8 +747,10 @@ void tie640_wall_frame(bool say) {
     }
     if ((say && secs > 0) || now - since >= 30000) {
         const double emu = PIC_FullIndex() - emuAt, wall = now - since;
-        wclog(1, T640_GAME ": wall clock: %d s of flight: the fewest frames in a second %d, the most %d, the mean %.1f; the emulator at %.0f%% of real time (%s); each second:%s",
-              secs, least, most, secs ? (double)total / secs : 0.0, wall > 0 ? 100.0 * emu / wall : 0.0, g_on ? "640x400" : "the game's own picture", each.c_str());
+        char cost[240];
+        tie640_onepass_cost(cost, sizeof(cost));
+        wclog(1, T640_GAME ": wall clock: %d s of flight: the fewest frames in a second %d, the most %d, the mean %.1f; the emulator at %.0f%% of real time (%s); each second:%s; %s",
+              secs, least, most, secs ? (double)total / secs : 0.0, wall > 0 ? 100.0 * emu / wall : 0.0, g_on ? "640x400" : "the game's own picture", each.c_str(), cost);
         each.clear();
         since = secAt = now;
         emuAt = PIC_FullIndex();

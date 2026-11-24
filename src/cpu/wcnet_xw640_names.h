@@ -34,6 +34,7 @@
 #define tie640_onepass_check_begin xw640_onepass_check_begin
 #define tie640_onepass_check_end xw640_onepass_check_end
 #define tie640_onepass_check_middle xw640_onepass_check_middle
+#define tie640_onepass_cost xw640_onepass_cost
 #define tie640_onepass_hook xw640_onepass_hook
 #define tie640_onepass_no_sprites xw640_onepass_no_sprites
 #define tie640_onepass_on xw640_onepass_on
