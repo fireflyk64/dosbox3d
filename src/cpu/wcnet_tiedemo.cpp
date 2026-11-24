@@ -34,6 +34,7 @@
 #include <utility>
 #include <vector>
 #include "wcnet_tiedemo.h"
+#include "wcnet_tie640.h"
 #include "wcnet_log.h"
 #include "wcnet_game.h"
 #include "wc_net.h"
@@ -112,6 +113,7 @@ unsigned g_watchLines = 0;
 // (the aid !tdmglue=dx:dy:dz: object 0 held beside the player, every frame after the moves, the player's record but its
 // number copied with the offset added to its place)
 bool g_glue = false;
+bool g_glueAhead = false;
 Bit32s g_glueD[3] = { 0, 0, 0 };
 std::vector<std::pair<double, int> > g_recAt;      // (the aid !tdmrec=<object>: its record logged once)
 
@@ -147,6 +149,13 @@ bool ours_running() { return g_found && dos.psp() == g_psp; }
 
 void prof_sample() {
     const Bit16u codeSeg = SegValue(cs);
+    if (g_prof == 2) {      // every instruction, counted only while ES or DS is the VGA's segment, in 16-byte buckets
+        wc_net_countdown = 0;
+        if (SegValue(es) == 0xA000 || SegValue(ds) == 0xA000)
+            g_profAt[((Bit32u)(Bit16u)(codeSeg - g_load) << 16) | (reg_eip & 0xFFF0)]++;
+    } else if (g_prof == 3) {   // sampled, in 256-byte buckets: where the time goes, routine by routine
+        g_profAt[((Bit32u)(Bit16u)(codeSeg - g_load) << 16) | (reg_eip & 0xFF00)]++;
+    } else
     g_profAt[((Bit32u)(Bit16u)(codeSeg - g_load) << 16) | (reg_eip & 0xFFFF)]++;
     g_profDs[(Bit16u)(SegValue(ds) - g_load)]++;
     g_profSamples++;
@@ -157,7 +166,7 @@ void prof_sample() {
     for (std::map<Bit32u, unsigned>::const_iterator i = g_profAt.begin(); i != g_profAt.end(); ++i) top.push_back(std::make_pair(i->second, i->first));
     std::sort(top.rbegin(), top.rend());
     std::string atText;
-    for (size_t i = 0; i < top.size() && i < 30; i++) {
+    for (size_t i = 0; i < top.size() && i < (g_prof == 2 ? 400u : g_prof == 3 ? 60u : 30u); i++) {
         char b[40];
         snprintf(b, sizeof(b), " %04X:%04X=%u", top[i].second >> 16, top[i].second & 0xFFFF, top[i].first);
         atText += b;
@@ -240,7 +249,13 @@ void glue_step() {
     const Bit16u me = r16(tdm::kPlayer), other = obj_at(0);
     if (me && me != other) {
         for (int k = 6; k < tdm::kObjectSize - 4; k += 2) mem_writew(dsa((Bit16u)(other + k)), r16((Bit16u)(me + k)));
-        for (int a = 0; a < 3; a++) w32((Bit16u)(other + kObjPos + 4 * a), (Bit32u)(r32s((Bit16u)(me + kObjPos + 4 * a)) + g_glueD[a]));
+        for (int a = 0; a < 3; a++) {
+            Bit32s d = g_glueD[a];
+            // (!tdmahead: so far along our forward, side and up vectors, +0x42, +0x48, +0x4E, 32767 = 1)
+            if (g_glueAhead) d = (Bit32s)(((Bit64s)g_glueD[0] * (Bit16s)r16((Bit16u)(me + 0x42 + 2 * a)) + (Bit64s)g_glueD[1] * (Bit16s)r16((Bit16u)(me + 0x48 + 2 * a)) +
+                                           (Bit64s)g_glueD[2] * (Bit16s)r16((Bit16u)(me + 0x4E + 2 * a))) / 32767);
+            w32((Bit16u)(other + kObjPos + 4 * a), (Bit32u)(r32s((Bit16u)(me + kObjPos + 4 * a)) + d));
+        }
     }
 }
 
@@ -578,6 +593,7 @@ bool tdm_chosen() {
 
 void tdm_tick() {
     if (tdm_chosen()) tdm_session_tick();
+    tie640_tick(g_found && g_flightSaid && version_here(g_load), g_load);
     if (!g_found) return;
     const double now = PIC_FullIndex();
     if (now >= g_nextCheckMs) {
@@ -598,7 +614,7 @@ void tdm_tick() {
     if (!ours_running()) return;
     if (g_prof < 0) {
         const char *env = getenv("WCNET_TDM_PROF");
-        g_prof = env && env[0] && env[0] != '0' ? 1 : 0;
+        g_prof = env && env[0] && env[0] != '0' ? (env[0] == '2' ? 2 : env[0] == '3' ? 3 : 1) : 0;
         g_profNextMs = now + 5000;
     }
     if (g_prof) prof_sample();
@@ -616,17 +632,19 @@ void tdm_tick() {
 void tdm_watch_list(void (*watch)(Bit16u ip)) {
     if (g_neonPsp) watch(kNeonWaitOff);
     if (!g_found) return;
-    watch(kCreateMission.off);
-    watch(kMissionRead.off);
-    watch(kDoFrame.off);
-    watch(kMoveObjects.off);
-    watch(kCreateProjectile.off);
-    watch(kLaserHit.off);
-    watch(kDamage.off);
-    watch(kBoard.off);
-    watch(kFlightOver.off);
-    watch(kBank.off);
-    watch(kStubOff);
+    watch_at(seg_of(kCreateMission), kCreateMission.off);
+    watch_at(seg_of(kMissionRead), kMissionRead.off);
+    watch_at(seg_of(kDoFrame), kDoFrame.off);
+    watch_at(seg_of(kMoveObjects), kMoveObjects.off);
+    watch_at(seg_of(kCreateProjectile), kCreateProjectile.off);
+    watch_at(seg_of(kLaserHit), kLaserHit.off);
+    watch_at(seg_of(kDamage), kDamage.off);
+    watch_at(seg_of(kBoard), kBoard.off);
+    watch_at(seg_of(kFlightOver), kFlightOver.off);
+    watch_at(seg_of(kBank), kBank.off);
+    watch_at(g_psp, kStubOff);
+    tie640_watch(g_load);
+    tie640_stars_watch(watch);
 }
 
 unsigned g_shotsMade, g_ourShots;      // laser_createprojectile's calls, and those for our craft (!tdmpose)
@@ -640,6 +658,8 @@ bool tdm_check_hooks(Bit32u ip) {
         return false;
     }
     if (!g_found) return false;
+    if (tie640_hook(ip)) return true;
+    if (tie640_stars_hook(ip, g_load)) return true;
     if (ip == kStubOff && SegValue(cs) == g_psp) {
         if (g_holding) at_stub();
         return true;
@@ -710,10 +730,23 @@ bool tdm_check_hooks(Bit32u ip) {
 
 bool tdm_script_item(const std::string &item, double t) {
     if (tdm_campaign_script_item(item, t)) return true;
+    if (tie640_script_item(item, t)) return true;
     if (item.compare(0, 9, "!tdmglue=") == 0) {
+        g_glueAhead = false;
         g_glue = sscanf(item.c_str() + 9, "%d:%d:%d", &g_glueD[0], &g_glueD[1], &g_glueD[2]) == 3;
         wclog(1, "key script %.1fs: TIE demo: object 0 %s the player (%d %d %d)", t, g_glue ? "held beside" : "let go of",
               g_glueD[0], g_glueD[1], g_glueD[2]);
+        return true;
+    }
+    if (item.compare(0, 10, "!tdmahead=") == 0) {
+        // (test aid) !tdmahead=<forward>:<side>:<up>: object 0 held so far ahead of, beside and above the player
+        g_glue = g_glueAhead = sscanf(item.c_str() + 10, "%d:%d:%d", &g_glueD[0], &g_glueD[1], &g_glueD[2]) == 3;
+        return true;
+    }
+    if (item.compare(0, 9, "!tdmkill=") == 0) {
+        // (test aid) !tdmkill=<object>: collide_damagecraft(object, -1, -1, 0) forty times: it blows up
+        const int o = atoi(item.c_str() + 9);
+        for (int k = 0; k < 40; k++) tdm_queue_call(TDM_DAMAGE, 4, (Bit16u)o, 0xFFFF, 0xFFFF, 0, NULL, NULL, o);
         return true;
     }
     if (item.compare(0, 6, "!tdmr=") == 0) {

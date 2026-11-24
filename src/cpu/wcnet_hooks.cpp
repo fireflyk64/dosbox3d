@@ -38,6 +38,7 @@
 #include "wcnet_armada.h"
 #include "wcnet_armada_hires.h"
 #include "wcnet_ipx.h"
+#include "wcnet_tie640.h"
 #include "paging.h"
 #include "callback.h"
 #include "cpu.h"
@@ -52,6 +53,7 @@
 extern std::string incoming_text;
 
 bool wc_net_watch[0x10000];   // IPs with a hook, whatever the segment (tested in line by the CPU cores)
+Bit16u wc_net_watch_cs[0x10000];   // the segment a watched IP is watched in (0: any), wc::watch_at
 bool wc_net_watch32[0x10000]; // ... and the low words of a 32-bit program's EIPs (TIE Fighter: wcnet_tie.cpp)
 Bit32s wc_net_countdown = 0;  // instructions until the next periodic call
 
@@ -62,7 +64,16 @@ static bool g_watchReady = false;
 static int g_asyncCounter = 0;
 static bool g_skipBarracks = false;
 
-static void watch(Bit16u ip) { g_watch[ip] = true; }
+static void watch(Bit16u ip) { g_watch[ip] = true; wc_net_watch_cs[ip] = 0; }
+// ... in one code segment only; a second segment asking for the same IP (or a plain watch) makes it any segment's
+void watch_at(Bit16u seg, Bit16u ip) {
+    if (!g_watch[ip]) {
+        g_watch[ip] = true;
+        wc_net_watch_cs[ip] = seg;
+    } else if (wc_net_watch_cs[ip] != seg) {
+        wc_net_watch_cs[ip] = 0;
+    }
+}
 
 // Between "mission about to start" and "mission ended", and once the first
 // in-flight frame has run: what the test aids mean by "in space".  It does
@@ -285,6 +296,7 @@ static int rock_onto(int target) {
 // shows of video memory: TIE Fighter's 640x480).  A text mode goes to the
 // same name with .txt instead: its 80 x 25 characters.
 static bool write_screenshot(const std::string &path) {
+    if (wc::tie640_on()) return wc::tie640_shot(path);     // (the TIE demo's 640x400 picture; !low= the game's own)
     if (vga.mode == M_TEXT) {
         std::string txt = path.size() > 4 && path.compare(path.size() - 4, 4, ".ppm") == 0 ? path.substr(0, path.size() - 4) + ".txt" : path + ".txt";
         FILE *f = fopen(txt.c_str(), "wb");
@@ -2722,12 +2734,22 @@ Bitu wc_net_hook_exit(Bit32u ip) {
     if (ip < 0x10000 && wc_net_countdown >= 0 && wc_net_watch[ip] && wc::priv_core_hook(ip)) {
         return 0;
     }
+    // (a watched offset passed by another segment's code: not a hook's place)
+    if (ip < 0x10000 && wc_net_countdown >= 0 && wc_net_watch_cs[ip] && wc_net_watch_cs[ip] != SegValue(cs)) {
+        return 0;
+    }
     PhysPt at = SegPhys(cs) + ip;
     for (int i = g_nHooksRan - 1; i >= 0; i--) {
         if (g_hooksRan[i] == at) {          // back at it, its hooks done: on with the instruction
             g_hooksRan[i] = g_hooksRan[--g_nHooksRan];
             return 0;
         }
+    }
+    // (the TIE demo's 640 picture in one pass: the renderer's calls are taken down some hundreds of times a frame,
+    // waiting on nothing: made here in the core.  After the test above: an arrival the main loop has dealt with
+    // -- the periodic call fell on it -- is not dealt with again)
+    if (ip < 0x10000 && wc_net_countdown >= 0 && wc::tie640_fast_trip(ip)) {
+        return 0;
     }
     if (!g_hookCb) {
         g_hookCb = CALLBACK_Allocate();
@@ -2740,6 +2762,9 @@ Bitu wc_net_hook_exit(Bit32u ip) {
 
 void wc_net_check_cpu_hooks() {
     using namespace wc;
+    if (wc_net_countdown >= 0 && reg_eip < 0x10000 && wc_net_watch_cs[reg_eip] && wc_net_watch_cs[reg_eip] != SegValue(cs)) {
+        return;     // (a watched offset passed by another segment's code)
+    }
     if (g_build == BUILD_RV && (!rv_shared() || solo())) {
         // RetroVega alone (a room of one), with shared flights switched off, or
         // of an interface this emulator was not built for: only watched.

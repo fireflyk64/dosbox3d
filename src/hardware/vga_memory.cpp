@@ -22,6 +22,7 @@
 #include "dosbox.h"
 #include "mem.h"
 #include "vga.h"
+#include "../cpu/wcnet_tie640.h"   // the TIE Fighter demo at 640x400: mode 13h's writes watched
 #include "paging.h"
 #include "pic.h"
 #include "inout.h"
@@ -349,12 +350,14 @@ public:
 		addr = PAGING_GetPhysicalAddress(addr) & vgapages.mask;
 		addr += vga.svga.bank_read_full;
 		addr = CHECKED(addr);
+		if (GCC_UNLIKELY(wc_hires_watch)) { Bitu v; if (wc_hires_read(addr, 1, &v)) return v; }
 		return readHandler<Bit8u>( addr );
 	}
 	Bitu readw(PhysPt addr ) {
 		addr = PAGING_GetPhysicalAddress(addr) & vgapages.mask;
 		addr += vga.svga.bank_read_full;
 		addr = CHECKED(addr);
+		if (GCC_UNLIKELY(wc_hires_watch)) { Bitu v; if (wc_hires_read(addr, 2, &v)) return v; }
 		if (GCC_UNLIKELY(addr & 1)) {
 			Bitu ret = (readHandler<Bit8u>( addr+0 ) << 0 );
 			ret     |= (readHandler<Bit8u>( addr+1 ) << 8 );
@@ -366,6 +369,7 @@ public:
 		addr = PAGING_GetPhysicalAddress(addr) & vgapages.mask;
 		addr += vga.svga.bank_read_full;
 		addr = CHECKED(addr);
+		if (GCC_UNLIKELY(wc_hires_watch)) { Bitu v; if (wc_hires_read(addr, 4, &v)) return v; }
 		if (GCC_UNLIKELY(addr & 3)) {
 			Bitu ret = (readHandler<Bit8u>( addr+0 ) << 0 );
 			ret     |= (readHandler<Bit8u>( addr+1 ) << 8 );
@@ -379,6 +383,7 @@ public:
 		addr = PAGING_GetPhysicalAddress(addr) & vgapages.mask;
 		addr += vga.svga.bank_write_full;
 		addr = CHECKED(addr);
+		if (GCC_UNLIKELY(wc_hires_watch) && wc_hires_write(addr, val, 1)) return;
 		MEM_CHANGED( addr );
 		writeHandler<Bit8u>( addr, val );
 		writeCache<Bit8u>( addr, val );
@@ -387,6 +392,7 @@ public:
 		addr = PAGING_GetPhysicalAddress(addr) & vgapages.mask;
 		addr += vga.svga.bank_write_full;
 		addr = CHECKED(addr);
+		if (GCC_UNLIKELY(wc_hires_watch) && wc_hires_write(addr, val, 2)) return;
 		MEM_CHANGED( addr );
 //		MEM_CHANGED( addr + 1);
 		if (GCC_UNLIKELY(addr & 1)) {
@@ -401,6 +407,7 @@ public:
 		addr = PAGING_GetPhysicalAddress(addr) & vgapages.mask;
 		addr += vga.svga.bank_write_full;
 		addr = CHECKED(addr);
+		if (GCC_UNLIKELY(wc_hires_watch) && wc_hires_write(addr, val, 4)) return;
 		MEM_CHANGED( addr );
 //		MEM_CHANGED( addr + 3);
 		if (GCC_UNLIKELY(addr & 3)) {
