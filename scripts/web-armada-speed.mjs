@@ -31,10 +31,10 @@ function typeAt(time, name) {
   return [...name, "enter"].map((key, i) => `${time + i * 0.3}:${key}`).join(",");
 }
 const entry = ["7:esc", "10:esc", clickAt(13, 0.5, 0.71), clickAt(17, 0.5, 0.615), "21:y"];
-// (each stops when the other's ship is large in its 640x400 view: 12,000 texture pixels a frame, !armstopnear)
+// (each stops when the other's ship is large in its 640x400 view: 10,000 texture pixels a frame, !armstopnear)
 const routes = {
-  host: [clickAt(65, 0.31, 0.475), "69:b", "70:enter", clickAt(92, 0.125, 0.475), "130:!armstopnear=12000"],
-  guest: [clickAt(82, 0.5, 0.475), "130:!armstopnear=12000"],
+  host: [clickAt(65, 0.31, 0.475), "69:b", "70:enter", clickAt(92, 0.125, 0.475), "130:!armstopnear=10000"],
+  guest: [clickAt(82, 0.5, 0.475), "130:!armstopnear=10000"],
 };
 // the host's work off and on (each half 10 s, timed in 2 s windows), the pictures at the close-up
 const halves = [[196, 0], [206, 1], [216, 0], [226, 1]];

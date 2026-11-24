@@ -1,6 +1,6 @@
 /*
- *  Fine lines for Armada's 640x400 flight (wcnet_armada_hires.cpp): the target's brackets on the space, one fine pixel
- *  wide.  Privateer's (wcnet_priv_hires.cpp), copied.
+ *  Fine lines for Armada's 640x400 flight (wcnet_armada_hires.cpp): the target's brackets on the space and the reticle's
+ *  icons, one fine pixel wide.  The lines are Privateer's (wcnet_priv_hires.cpp), copied.
  */
 #ifndef WCNET_ARMADA_ART_H_
 #define WCNET_ARMADA_ART_H_
@@ -21,6 +21,7 @@ struct Target {
 void plot(const Target &t, int X, int Y, Bit8u c);                      // a fine pixel
 void line_fine(const Target &t, int X, int Y, int Xe, int Ye, Bit8u c);  // between fine pixels
 void line(const Target &t, int x0, int y0, int x1, int y1, Bit8u c);     // between the game's pixels' middles
+void circle_fine(const Target &t, int X, int Y, int r, Bit8u c);         // about a fine pixel (the midpoint circle)
 
 }  // namespace armart
 }  // namespace wc

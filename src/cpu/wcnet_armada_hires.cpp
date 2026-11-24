@@ -40,6 +40,7 @@
 #include <vector>
 #include <math.h>
 #include <set>
+#include <map>
 #include <algorithm>
 #include <chrono>
 #include "wcnet_armada_hires.h"
@@ -72,24 +73,26 @@ struct Build {
     Bit16u boomSeg, boomEntry;  // an explosion piece's draw (its frame counted on at +32 each time it is drawn)
     Bit16u listSeg, listCall;   // the display list's call of each entry's draw (a test aid's)
     Bit16u lineSeg, lineEntry;  // the library's line (bitmap record, x0, y0, x1, y1, colour)
+    Bit16u monoSeg, monoEntry;  // its shape in one colour (bitmap record, x, y, shapes far, index, colour): the reticle
     Bit16u texSeg, texJump;     // the texture mapper's span: its jmp word ss:[D] to one of its two loops (tex_span)
+    Bit16u texEntry;            // (texSeg) the textured polygon's routine (bitmap record, count, corners far, texture...)
     Bit16u starSearch;          // (starSeg) a star's colour looked up: its distance's square against a table; its
                                 // pixel's call (bitmap record, x, y, colour) 36h on
     Bit16u netSeg, netWait;     // a room's wait for every player's packets: the round's end (0: none known)
 };
 const Build kBuilds[] = {
     { "ARMADA.EXE",   0x2B4B, 0x061A, 0x621A, 0x83BA, 0x8646, 0x29CA, 0x054A, 0x07C5, 0x0D70, 0x2943, 0x0864,
-      { 0x3FD8, 0 }, { 0x0443, 0 }, 0x6493, 0x0ECC, 0x2230, 0x008A, 0x36D4, 0x003F, 0x5F32, 0x0006,
-      0x30DD, 0x1387, 0x0B15, 0x23E6, 0x067A },
+      { 0x3FD8, 0 }, { 0x0443, 0 }, 0x6493, 0x0ECC, 0x2230, 0x008A, 0x36D4, 0x003F, 0x5F32, 0x0006, 0x5F69, 0x0008,
+      0x30DD, 0x1387, 0x0EA2, 0x0B15, 0x23E6, 0x067A },
     { "ARMADACD.EXE", 0x2B4E, 0x061A, 0x62A6, 0x843A, 0x86C6, 0x29CD, 0x054A, 0x07C5, 0x0D70, 0x2946, 0x0864,
-      { 0x3FDB, 0 }, { 0x0443, 0 }, 0x6496, 0x0ECC, 0x2233, 0x008A, 0x36D7, 0x003F, 0x5F35, 0x0006,
-      0x30E0, 0x1387, 0x0B15, 0x23E9, 0x067A },
+      { 0x3FDB, 0 }, { 0x0443, 0 }, 0x6496, 0x0ECC, 0x2233, 0x008A, 0x36D7, 0x003F, 0x5F35, 0x0006, 0x5F6C, 0x0008,
+      0x30E0, 0x1387, 0x0EA2, 0x0B15, 0x23E9, 0x067A },
     { "PG.EXE",       0x205C, 0x0632, 0x4E78, 0x714E, 0x73DA, 0x1DDF, 0x0540, 0x07BB, 0x0D66, 0x1D57, 0x086A,
-      { 0x2C03, 0x3DA0 }, { 0x0CBE, 0x029D }, 0x6100, 0x0ECE, 0x17BE, 0x008F, 0x2FC7, 0x0049, 0x5B9F, 0x0008,
-      0x25A9, 0x138D, 0x0B0B, 0, 0 },
+      { 0x2C03, 0x3DA0 }, { 0x0CBE, 0x029D }, 0x6100, 0x0ECE, 0x17BE, 0x008F, 0x2FC7, 0x0049, 0x5B9F, 0x0008, 0x5BD6, 0x000A,
+      0x25A9, 0x138D, 0x0EA8, 0x0B0B, 0, 0 },
     { "PGCD.EXE",     0x2060, 0x0632, 0x4F88, 0x725E, 0x74EA, 0x1DE3, 0x0540, 0x07BB, 0x0D66, 0x1D5B, 0x086A,
-      { 0x2C23, 0x3DBF }, { 0x0CBC, 0x02AB }, 0x6120, 0x0ECC, 0x17C2, 0x008F, 0x2FE7, 0x0047, 0x5BBF, 0x0006,
-      0x25AD, 0x138D, 0x0B0B, 0, 0 },
+      { 0x2C23, 0x3DBF }, { 0x0CBC, 0x02AB }, 0x6120, 0x0ECC, 0x17C2, 0x008F, 0x2FE7, 0x0047, 0x5BBF, 0x0006, 0x5BF6, 0x0008,
+      0x25AD, 0x138D, 0x0EA8, 0x0B0B, 0, 0 },
 };
 enum { kCleared = 0x11, kSetup = 0x25, kDrawn = 0x57, kCockpit = 0x81 };   // from the section's top
 
@@ -723,6 +726,25 @@ void tex_span() {
     reg_eip = (Bit16u)(g_b->texJump + kTexDone);
 }
 
+// The game's own pass while the picture is 640x400: its scene is never seen (the 640x400 one is shown, and the cockpit
+// is drawn over the marker), so a textured polygon is stepped over there, the routine's whole work (the user,
+// 2026-11-24: "skipping pixel draw would be good").  It changes nothing but the picture and its own scratch (callers
+// ignore its AX).  The stars, the explosions and the rest still draw in that pass: they move their own objects.
+// WCARMHIRESOWN=draw: drawn (a test aid)
+int g_ownSkip = -1;
+unsigned long g_ownSkipped;
+void tex_entry() {
+    if (g_ownSkip < 0) {
+        const char *env = getenv("WCARMHIRESOWN");
+        g_ownSkip = !(env && !strcmp(env, "draw"));
+    }
+    if (!g_ownSkip || g_hostOff || g_pass != 4 || g_texOk != 1) return;
+    const PhysPt e = SegPhys(cs) + reg_ip;
+    if (mem_readd(e) != 0x000068C8 || mem_readd(e + 4) != 0xFC57561E) return;     // enter 68h, 0; push ds si di; cld
+    g_ownSkipped++;
+    return_far();
+}
+
 // (check: the game's loop has run: each pixel as ours, and its count)
 void tex_done() {
     if (!g_texChecking) return;
@@ -909,15 +931,145 @@ void cockpit_line() {
         }
     }
     const bool space = 3 * on >= n;
-    static int told = 0;
-    if (getenv("WCARMHIRESDEBUG") && told < 40) {
-        told++;
-        wclog(1, "Armada line: %d,%d - %d,%d colour %02X, under its middle %02X (%s), clip %d,%d-%d,%d", x0, y0, x1, y1, colour,
-              pixel_of(rec, (x0 + x1) / 2, (y0 + y1) / 2), space ? "space" : "cockpit", (Bit16s)mem_readw(rec + 4),
-              (Bit16s)mem_readw(rec + 6), (Bit16s)mem_readw(rec + 8), (Bit16s)mem_readw(rec + 10));
+    if (getenv("WCARMHIRESDEBUG")) {
+        // (each caller once: which of the cockpit's routines draws on the space)
+        static std::set<Bit32u> seen;
+        const PhysPt sp = SegPhys(ss) + reg_sp;
+        const Bit32u caller = ((Bit32u)(Bit16u)(mem_readw(sp + 2) - g_load) << 16) | mem_readw(sp);
+        if (seen.insert(caller * 2 + (space ? 1 : 0)).second && seen.size() < 200) {
+            wclog(1, "Armada line from %04X:%04X: %d,%d - %d,%d colour %02X (%s)", caller >> 16, caller & 0xFFFF, x0, y0,
+                  x1, y1, colour, space ? "space" : "cockpit");
+        }
     }
     if (!space) return;
     armart::line(over_target(rec), x0, y0, x1, y1, colour);
+    g_overAny = true;
+    return_far();
+}
+
+// The reticle's icons (the user, 2026-11-24: "I wonder if we could have saved out reticle icons instead of runnign some
+// post process ... Basically we just need thin lines for target box and thin lines for the reticle--and at least the
+// reticle is a static image").  Armada's reticles are one shape file's (both sides'): the main one, a circle of radius
+// 9 with four spokes from 6 to 13 out, bars across them at 13, 11, 9 and 7 (half 2, 1, 2, 1 long), and a small one, a
+// dot in a diamond of radius 2 with spokes to 4.  Each is drawn here by hand at the fine pixels (doubled: a circle of
+// 18, the rest as lines), one fine pixel wide, about the fine pixel of the game's own middle, in the call's colour; the
+// game's shape is known by its outline (FNV-1a over its size, anchor and lit pixels), so nothing of the game's art is
+// kept here.  Any other shape is the game's own.  WCARMHIRESRETICLE=0: the game's reticle (a test aid).
+struct IconStroke { int kind, x0, y0, x1, y1; };     // kind 0: a line, 1: a circle of radius x0, 2: a pixel
+struct Icon { Bit32u outline; std::vector<IconStroke> strokes; };
+
+void icon_spokes(std::vector<IconStroke> &v, const int bars[][2], int nbars, int inner, int outer) {
+    static const int kDir[4][2] = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
+    for (int d = 0; d < 4; d++) {
+        const int ux = kDir[d][0], uy = kDir[d][1], px = -uy, py = ux;
+        IconStroke s = { 0, ux * inner, uy * inner, ux * outer, uy * outer };
+        v.push_back(s);
+        for (int b = 0; b < nbars; b++) {
+            const int r = bars[b][0], half = bars[b][1];
+            IconStroke t = { 0, ux * r - px * half, uy * r - py * half, ux * r + px * half, uy * r + py * half };
+            v.push_back(t);
+        }
+    }
+}
+
+const std::vector<Icon> &icons() {
+    static std::vector<Icon> v;
+    if (v.empty()) {
+        Icon main;
+        main.outline = 0xDAB5EBDF;
+        IconStroke ring = { 1, 18, 0, 0, 0 };
+        main.strokes.push_back(ring);
+        static const int kBars[4][2] = { { 26, 4 }, { 22, 2 }, { 18, 4 }, { 14, 2 } };
+        icon_spokes(main.strokes, kBars, 4, 12, 26);
+        v.push_back(main);
+        Icon small;
+        small.outline = 0xA6A87A24;
+        IconStroke dot = { 2, 0, 0, 0, 0 };
+        small.strokes.push_back(dot);
+        static const int kDiamond[5][2] = { { 4, 0 }, { 0, 4 }, { -4, 0 }, { 0, -4 }, { 4, 0 } };
+        for (int k = 0; k < 4; k++) {
+            IconStroke s = { 0, kDiamond[k][0], kDiamond[k][1], kDiamond[k + 1][0], kDiamond[k + 1][1] };
+            small.strokes.push_back(s);
+        }
+        icon_spokes(small.strokes, NULL, 0, 4, 8);
+        v.push_back(small);
+    }
+    return v;
+}
+
+Bit32u shape_outline(const Shape &s) {
+    Bit32u h = 2166136261u;
+    const int head[4] = { s.w & 255, s.h & 255, s.left & 255, s.top & 255 };
+    for (int i = 0; i < 4; i++) h = (h ^ (Bit32u)head[i]) * 16777619u;
+    for (size_t i = 0; i < s.px.size(); i++) h = (h ^ (s.px[i] >= 0 ? 1u : 0u)) * 16777619u;
+    return h;
+}
+
+// The shape in one colour (bitmap record, x, y, shapes far, index, colour) at the view's middle: the reticle, an icon's
+// if it is one of them.  WCARMHIRESRETICLES=<dir> (a test aid): each reticle met saved as <dir>/ret-<file>-<index>.txt
+// (its size, anchor and pixels), and its shape file's every shape beside it (<dir>/file-<file>-<index>.txt), once each
+void cockpit_mono() {
+    const PhysPt a = SegPhys(ss) + reg_sp + 4;
+    const int x = (Bit16s)mem_readw(a + 2), y = (Bit16s)mem_readw(a + 4);
+    const PhysPt view = ds_at(g_b->view);
+    if (x != (Bit16s)mem_readw(view) || y != (Bit16s)mem_readw(view + 2)) return;
+    const PhysPt file = ((PhysPt)mem_readw(a + 8) << 4) + mem_readw(a + 6);
+    const int index = (Bit16s)mem_readw(a + 10);
+    const char *dir = getenv("WCARMHIRESRETICLES");
+    if (dir && dir[0]) {
+        static std::set<std::pair<PhysPt, int> > seen;
+        if (seen.insert(std::make_pair(file, index)).second) {
+            // (the file's own identity: its first shape's bytes, so two loads of one file are one)
+            Bit32u h = 2166136261u;
+            for (int i = 0; i < 64; i++) h = (h ^ mem_readb(file + i)) * 16777619u;
+            for (int k = -1; k < 64; k++) {
+                Shape sh;
+                const int idx = k < 0 ? index : k;
+                if (!shape_at(file, idx, sh)) { if (k >= 0) break; continue; }
+                char name[512];
+                snprintf(name, sizeof(name), k < 0 ? "%s/ret-%08X-%d.txt" : "%s/file-%08X-%d.txt", dir, h, idx);
+                FILE *f = fopen(name, "w");
+                if (!f) continue;
+                fprintf(f, "%d %d %d %d colour %02X at %d,%d\n", sh.w, sh.h, sh.left, sh.top, mem_readb(a + 12), x, y);
+                for (int r = 0; r < sh.h; r++) {
+                    for (int c = 0; c < sh.w; c++) {
+                        const Bit16s v = sh.px[r * sh.w + c];
+                        if (v < 0) fputs(" .", f); else fprintf(f, "%02X", v);
+                    }
+                    fputc('\n', f);
+                }
+                fclose(f);
+            }
+            wclog(1, "Armada: a reticle, shape %d of file %08X", index, h);
+        }
+    }
+    static int on = -1;
+    if (on < 0) on = !(getenv("WCARMHIRESRETICLE") && getenv("WCARMHIRESRETICLE")[0] == '0');
+    if (!on) return;
+    // (each shape's icon looked up once: the file's place and the index; a file loaded elsewhere is another key)
+    static std::map<std::pair<PhysPt, int>, int> known;
+    std::map<std::pair<PhysPt, int>, int>::iterator k = known.find(std::make_pair(file, index));
+    if (k == known.end()) {
+        int which = -1;
+        Shape sh;
+        if (shape_at(file, index, sh)) {
+            const Bit32u outline = shape_outline(sh);
+            for (size_t i = 0; i < icons().size(); i++) if (icons()[i].outline == outline) which = (int)i;
+            wclog(1, "Armada: the reticle (shape %d, outline %08X) %s", index, outline, which >= 0 ? "drawn from its icon" :
+                  "is not one known: the game's own");
+        }
+        k = known.insert(std::make_pair(std::make_pair(file, index), which)).first;
+    }
+    if (k->second < 0) return;
+    const armart::Target t = over_target(ds_at(mem_readw(a)));
+    const Bit8u colour = mem_readb(a + 12);
+    const int X = 2 * x, Y = 2 * y;
+    const std::vector<IconStroke> &st = icons()[k->second].strokes;
+    for (size_t i = 0; i < st.size(); i++) {
+        if (st[i].kind == 1) armart::circle_fine(t, X, Y, st[i].x0, colour);
+        else if (st[i].kind == 2) armart::plot(t, X + st[i].x0, Y + st[i].y0, colour);
+        else armart::line_fine(t, X + st[i].x0, Y + st[i].y0, X + st[i].x1, Y + st[i].y1, colour);
+    }
     g_overAny = true;
     return_far();
 }
@@ -1037,9 +1189,10 @@ void time_frame_top() {
             g_starSearches = g_starDots = 0;
         }
         if (g_texSpans || g_texFalls) {
-            wclog(1, "Armada time: texture spans done here %lu, %lu pixels (%lu left to the game; checked %lu, %lu differ)",
-                  g_texSpans, g_texPixels, g_texFalls, g_texChecked, g_texWrong);
-            g_texSpans = g_texPixels = g_texFalls = 0;
+            wclog(1, "Armada time: texture spans done here %lu, %lu pixels (%lu left to the game; checked %lu, %lu differ); "
+                  "%lu polygons not drawn in the game's own pass", g_texSpans, g_texPixels, g_texFalls, g_texChecked,
+                  g_texWrong, g_ownSkipped);
+            g_texSpans = g_texPixels = g_texFalls = g_ownSkipped = 0;
         }
         g_sumPass = g_sumFrame = g_sumWork = g_maxPass = g_maxFrame = g_maxWork = 0;
         g_nTime = 0;
@@ -2143,6 +2296,7 @@ void arm_hires_watch(void (*watch)(Bit16u ip)) {
     for (int i = 0; i < 2; i++) if (g_b->waitCall[i]) watch(g_b->waitCall[i]);
     watch(g_b->turnEntry);
     watch(g_b->texJump);
+    watch(g_b->texEntry);
     watch(g_b->starSearch);
     watch((Bit16u)(g_b->starSearch + 0x36));
     if (getenv("WCARMHIRESSTARS") && !strcmp(getenv("WCARMHIRESSTARS"), "check")) watch((Bit16u)(g_b->starSearch + 0x26));
@@ -2151,6 +2305,7 @@ void arm_hires_watch(void (*watch)(Bit16u ip)) {
     watch(g_b->boomEntry);
     watch(g_b->listCall);
     watch(g_b->lineEntry);
+    watch(g_b->monoEntry);
     if (calls_on()) for (size_t i = 0; i < sizeof(kLibSeg) / sizeof(kLibSeg[0]); i++) watch(kLibOff[i]);
     if (g_m && g_mapCodeOk) {
         for (Bit16u a : { g_m->loop, g_m->after, g_m->conv, g_m->planetBox, g_m->fleetDone, g_m->fleetBox, g_m->markPlaced, g_m->markBox,
@@ -2207,6 +2362,7 @@ bool arm_hires_hook(Bit32u ip) {
     }
     if (g_pass == 5 && level() >= 1) {
         if (para == g_b->lineSeg && ip == g_b->lineEntry) { cockpit_line(); return true; }
+        if (para == g_b->monoSeg && ip == g_b->monoEntry) { cockpit_mono(); return true; }
     }
     if (calls_on() && lib_call(para, (Bit16u)ip)) {
         if (para == g_b->turnSeg && ip == g_b->turnEntry && g_pass >= 0 && g_pass <= 3) turn_entry();
@@ -2227,6 +2383,10 @@ bool arm_hires_hook(Bit32u ip) {
     }
     if (para == g_b->starSeg && ip == (Bit16u)(g_b->starSearch + 0x36)) {
         if (g_pass <= 3) star_pixel();
+        return true;
+    }
+    if (para == g_b->texSeg && ip == g_b->texEntry) {
+        tex_entry();
         return true;
     }
     if (para == g_b->texSeg && ip == (Bit16u)(g_b->texJump + kTexDone)) {
