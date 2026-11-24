@@ -232,6 +232,10 @@ void at_move_objects() {
 
 void at_create_mission() {
     g_pathAt = xw_arg(0);
+    {   // (test aid) WCNET_XW_MISSION=\mission\dstar1.xwi: that mission made instead, whatever was picked
+        const char *e = getenv("WCNET_XW_MISSION");
+        if (e && e[0]) xw_set_mission_path(e);
+    }
     const Bit16u back = mem_readw(((PhysPt)SegValue(ss) << 4) + (Bit16u)(reg_esp & 0xFFFF));
     if (!g_holding && !g_released) g_real = back == kSecondCreateReturn;
     if (!g_real) {

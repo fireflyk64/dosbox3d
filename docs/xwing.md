@@ -171,8 +171,10 @@ scanline pass, the game's 320x200 (cockpit, instruments, text) doubled behind it
   * a sprite's box is grown by 4 pixels, not 2; 6Fh flat objects at most, not 77h;
   * a marking's record holds 16 layers (colours' indices 6 bits, tables of 64 at CS:0A0F and 0A6B), the demo's 8;
     the layers are the top 16 object numbers;
-  * a shaded face cut by the window is not made flat (the demo's 1CCA:5D18 is not there); the edge that closes a
-    cut face is new code with the lights along it (23CF:611D to 6761, 1.3 KB more than the demo's);
+  * a shaded face cut by the near plane is not made flat (the demo's 1CCA:5D18 is not there): the edge that closes
+    a cut face is new code with the lights along it (23CF:611D to 6761, 1.3 KB more than the demo's). NOT ported
+    yet: the one pass still closes a cut face the demo's way, flat (a face that close to the eye loses its
+    shading; the closing edge half a pixel off X-Wing's);
   * the near plane's clip is in two places, not four; the static objects' records are 14 bytes.
 * **Checked** (`WCNET_T640_TRACECHECK=1`, each call of the game's tracer against the hand-written one on a copy of
   the memory; Tour of Duty I's first mission, a freighter held ahead): the line tracer the same in 68,246 of 68,246
