@@ -2108,6 +2108,8 @@ inline double real_ms() {
 }
 unsigned g_abN[2];
 unsigned g_nTime;
+long g_wallSec = -1;            // (the frames in each wall-clock second, and the fewest in one this window: the user's
+unsigned g_wallCount, g_wallFewest = ~0u;     // measure, "the minimum framerate over 30 seconds of gameplay")
 int g_timeOn = -1;
 double g_timeEvery = 5000;
 
@@ -2124,6 +2126,18 @@ void time_frame_top() {
         if (real - g_realLast > g_realMax) g_realMax = real - g_realLast;
     }
     g_realLast = real;
+    {
+        const long sec = (long)(real / 1000);
+        if (sec != g_wallSec) {
+            if (g_wallSec >= 0) {
+                const unsigned had = sec == g_wallSec + 1 ? g_wallCount : 0;     // (a whole second without one: 0)
+                if (had < g_wallFewest) g_wallFewest = had;
+            }
+            g_wallSec = sec;
+            g_wallCount = 0;
+        }
+        g_wallCount++;
+    }
     if (g_tLast > 0) {
         const double period = now - g_tLast, work = period - g_skipMs;
         g_sumFrame += period;
@@ -2141,10 +2155,11 @@ void time_frame_top() {
     g_tTop = now;
     if (now >= g_tNext && g_nTime) {
         wclog(1, "Armada time: %u frames, %.1f ms a frame (most %.1f), work %.1f ms (most %.1f, %.2fM instructions), "
-              "passes %.1f ms (most %.1f); real %.1f ms a frame (most %.1f)", g_nTime, g_sumFrame / g_nTime, g_maxFrame,
-              g_sumWork / g_nTime, g_maxWork, g_maxWork * CPU_CycleMax / 1e6, g_sumPass / g_nTime, g_maxPass,
-              g_realSum / g_nTime, g_realMax);
+              "passes %.1f ms (most %.1f); real %.1f ms a frame (most %.1f), fewest %d in a wall second", g_nTime,
+              g_sumFrame / g_nTime, g_maxFrame, g_sumWork / g_nTime, g_maxWork, g_maxWork * CPU_CycleMax / 1e6,
+              g_sumPass / g_nTime, g_maxPass, g_realSum / g_nTime, g_realMax, g_wallFewest == ~0u ? -1 : (int)g_wallFewest);
         g_realSum = g_realMax = 0;
+        g_wallFewest = ~0u;
         const char *altTex = getenv("WCARMHIRESTEX"), *altPoly = getenv("WCARMHIRESPOLY");
         if (g_abN[0] && g_abN[1] && ((altTex && !strcmp(altTex, "alt")) || (altPoly && !strcmp(altPoly, "alt")))) {
             wclog(1, "Armada time: A/B: the game's %.1f ms a frame (most %.1f), ours %.1f ms (most %.1f)",

@@ -4,6 +4,10 @@
 // large in its view.  Then the host's work (the texture spans, the stars, the room's wait: src/cpu/wcnet_armada_hires.cpp
 // "done here") is switched off and on again every 10 s (!armhost) and each pilot's frames timed (WCARMHIRESTIME: real
 // milliseconds a frame, the most of each 2 s, and the emulated work).  The worst real frame of each half is printed.
+// TOGGLE=key: instead, both pilots press ` (the high-resolution picture off and on) every 15 s, eight times, from
+// the same stopped places (the user, 2026-11-24: "toggle ` repeatedly does the min frame time over each mode stay the
+// same ... give the battle some warm up ... same coords etc especially if both ships are stopped"); each mode's
+// real frame times and fewest frames in a wall second (the user's measure) are printed.
 // THROTTLE=<n>: each page's CPU n times slower from Fly on (Chrome's own throttling: a slower machine).
 // PROFILE=1: Chrome's CPU profile of each page for 6 s in the second "the game's own" half and the second "done here"
 // half: each function's own time, the top printed and all in SHOT_DIR/<who>-<half>.prof.txt.
@@ -36,16 +40,18 @@ const routes = {
   host: [clickAt(65, 0.31, 0.475), "69:b", "70:enter", clickAt(92, 0.125, 0.475), "130:!armstopnear=10000"],
   guest: [clickAt(82, 0.5, 0.475), "130:!armstopnear=10000"],
 };
-// the host's work off and on (each half 10 s, timed in 2 s windows), the pictures at the close-up
-const halves = [[196, 0], [206, 1], [216, 0], [226, 1]];
-const end = 236;
+// the host's work off and on (each half 10 s, timed in 2 s windows), the pictures at the close-up; or ` every 15 s
+const byKey = process.env.TOGGLE === "key";
+const halves = byKey ? [] : [[196, 0], [206, 1], [216, 0], [226, 1]];
+const presses = byKey ? [196, 211, 226, 241, 256, 271, 286, 301] : [];
+const end = byKey ? 316 : 236;
 
 async function pilot(who) {
   const page = await browser.newPage({ viewport: { width: 1200, height: 960 } });
   const logs = [];
   page.on("console", (line) => {
     logs.push(line.text());
-    if (/lobby: joined|failed|spans, stars|stopped close|Armada: the (texture|stars|room)/.test(line.text())) console.log(`${who}: ${line.text()}`);
+    if (/lobby: joined|failed|spans, stars|stopped close|Armada: the (texture|stars|room|high-resolution)/.test(line.text())) console.log(`${who}: ${line.text()}`);
   });
   page.on("pageerror", (error) => console.error(`${who}: ${error.message}`));
   const url = new URL(pageUrl);
@@ -60,7 +66,8 @@ async function pilot(who) {
   url.searchParams.set("env.WCARMHIRESTIME", "2000");
   const route = [...entry, typeAt(33, who), ...routes[who],
     clickAt(98, who === "host" ? 0.12 : 0.9, 0.13), clickAt(103, 0.16, 0.97), clickAt(112, 0.16, 0.91),
-    "194:!frame=close", ...halves.map(([t, on]) => `${t}:!armhost=${on}`), `${end}:!frame=end`];
+    "194:!frame=close", ...halves.map(([t, on]) => `${t}:!armhost=${on}`), ...presses.map((t) => `${t}:grave`),
+    `${end}:!frame=end`];
   url.searchParams.set("env.WCNET_KEYSCRIPT", route.join(",").split(",").sort((a, b) => parseFloat(a) - parseFloat(b)).join(","));
   await page.goto(url.href);
   await page.setInputFiles("#gamefile", installer);
@@ -141,20 +148,23 @@ try {
     let on = -1, fresh = false;
     const by = { 0: [], 1: [] };
     for (const l of p.logs) {
-      const sw = /the spans, stars and wait (the game's own|done here)/.exec(l);
-      if (sw) { on = sw[1] === "done here" ? 1 : 0; fresh = true; continue; }
-      const m = /Armada time: (\d+) frames, ([0-9.]+) ms a frame .*work ([0-9.]+) ms \(most ([0-9.]+), ([0-9.]+)M.*real ([0-9.]+) ms a frame \(most ([0-9.]+)\)/.exec(l);
+      const sw = byKey ? /the high-resolution picture (off|on)/.exec(l) : /the spans, stars and wait (the game's own|done here)/.exec(l);
+      if (sw) { on = sw[1] === "done here" || sw[1] === "on" ? 1 : 0; fresh = true; continue; }
+      const m = /Armada time: (\d+) frames, ([0-9.]+) ms a frame .*work ([0-9.]+) ms \(most ([0-9.]+), ([0-9.]+)M.*real ([0-9.]+) ms a frame \(most ([0-9.]+)\)(?:, fewest (-?\d+) in a wall second)?/.exec(l);
       if (!m || on < 0) continue;
       if (fresh) { fresh = false; continue; }
       by[on].push(m.slice(1).map(Number));
     }
-    for (const [half, name] of [[0, "the game's own"], [1, "done here"]]) {
+    const names = byKey ? [[0, "320x200 (` off)"], [1, "640x400 (` on)"]] : [[0, "the game's own"], [1, "done here"]];
+    for (const [half, name] of names) {
       const w = by[half];
       if (!w.length) continue;
       const real = Math.max(...w.map((x) => x[6])), mean = w.reduce((a, x) => a + x[5], 0) / w.length;
       const work = Math.max(...w.map((x) => x[3])), instr = Math.max(...w.map((x) => x[4]));
-      console.log(`${p.who}: ${name}: real ${mean.toFixed(1)} ms a frame (${(1000 / mean).toFixed(1)} fps), the worst ${real.toFixed(1)} ms; ` +
-        `the most emulated work ${work.toFixed(1)} ms (${instr.toFixed(2)}M instructions); ${w.length} windows`);
+      const fewest = Math.min(...w.map((x) => (Number.isNaN(x[7]) ? 99 : x[7])));
+      console.log(`${p.who}: ${name}: real ${mean.toFixed(1)} ms a frame (${(1000 / mean).toFixed(1)} fps), the worst ${real.toFixed(1)} ms, ` +
+        `fewest ${fewest} frames in a wall second` + (byKey && half === 0 ? "" :
+        `; the most emulated work ${work.toFixed(1)} ms (${instr.toFixed(2)}M instructions)`) + `; ${w.length} windows of 2 s`);
     }
   }
   console.log(`ARMADA SPEED DONE. Screenshots in ${out}`);
