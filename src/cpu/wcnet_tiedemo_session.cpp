@@ -116,13 +116,12 @@ enum {
     kShownOldPeerMs = 600,          //   the owner has dealt with it (its frames' hit_acks), this long at most; an
                                     //   owner that sends none (a machine of before them): this long
     kAckStuckMs = 1000,             // hits queued for the game's call and not come back this long: counted dealt with
-    kWpnSlots = 0x114,              // CraftData: the weapon slots, 6 bytes each (+0 its type: from 0x18 a launcher;
-    kWpnSlotSize = 6,               //   +2 its warheads, a word)
-#ifdef TDM_XWING
-    kWpnSlotCount = 0,              // (not ported: no warheads sent)
-#else
-    kWpnSlotCount = 8,
-#endif
+    // The craft data's weapon slots.  The demo's: 6 bytes each, +0 its type (from 0x18 a launcher), +2 its warheads (a
+    // word).  X-Wing's: 4 bytes each from +0x112, +1 its warheads (a byte: measured, a torpedo fired from each of an
+    // X-wing's two launchers, slots 4 and 5: 3 to 2); every slot's count is sent.
+    kWpnSlots = XG(0x114, 0x112),
+    kWpnSlotSize = XG(6, 4),
+    kWpnSlotCount = XG(8, 6),
     kShotReach = 2 * kReach,
     kKillCalls = 12,
 #ifdef TDM_XWING
@@ -518,6 +517,25 @@ std::string fg_table() {
 }
 
 #endif
+#ifdef TDM_XWING
+// Another pilot's flight groups' status, in flight: what its game has counted that ours has not (a boarding or a
+// capture counted where the boarder's AI runs, a craft a pilot has identified) is counted here too.  Each record's
+// counts (bytes 3 to 13) only grow, and a kill is counted by every machine itself, so the larger count is taken.
+void merge_goals(const std::string &theirs, int seat) {
+    if (!tdm_in_flight()) return;
+    const int n = std::min((int)kFgMax, (int)ds16(kNumFgs));
+    if ((int)theirs.size() != n * kFgStatusSize) return;
+    int taken = 0;
+    for (int g = 0; g < n; g++) {
+        for (int k = 3; k <= 13; k++) {
+            const PhysPt a = tdm_ds((Bit16u)(kFgStatus + g * kFgStatusSize + k));
+            const Bit8u ours = mem_readb(a), their = (Bit8u)theirs[(size_t)(g * kFgStatusSize + k)];
+            if (their > ours) { mem_writeb(a, their); taken++; if (taken <= 4) wclog(1, TDM_GAME ": flight group %d's count %d is %u on %s's machine (%u here): taken", g, k, their, pilot_name(seat).c_str(), ours); }
+        }
+    }
+}
+#endif
+
 void send_state(bool reliable) {
     NetworkMessage msg;
     TdmState *st = msg.mutable_tdm_state();
@@ -536,7 +554,7 @@ void send_state(bool reliable) {
 #endif
     }
 #ifdef TDM_XWING
-    if (g_net->host && g_net->flownGo && !g_net->atLaunch) st->set_rec(fg_table());
+    if (g_net->flownGo && !g_net->atLaunch && !g_net->alone) st->set_rec(fg_table());
 #else
     if (g_net->host && g_net->verdictGo) {
         st->set_verdict(g_net->verdictGo);
@@ -555,6 +573,9 @@ void take_state(const TdmState &st, int seat) {
     r.at = PIC_FullIndex();
 #ifdef TDM_XWING
     if (!g_net->host && seat == 0 && st.has_rec() && !st.rec().empty()) g_net->hostGoals = st.rec();
+#ifdef TDM_XWING
+    if (st.has_rec() && !st.rec().empty() && st.in_flight()) merge_goals(st.rec(), seat);
+#endif
     const bool wasAtLaunch = r.atLaunch, wasInFlight = r.inFlight;
 #else
     const bool wasAtLaunch = r.atLaunch;
@@ -768,6 +789,9 @@ void fill_craft(TieCraft *c, int obj) {
     c->set_pitch(o16(obj, kOPitch));
     c->set_roll(o16(obj, kORoll));
     c->set_speed((Bit16s)o16(obj, kOSpeed));
+#ifdef TDM_XWING
+    c->set_side(o8(obj, kOSide));
+#endif
     c->set_mx((Bit16s)o16(obj, kOMove));
     c->set_my((Bit16s)o16(obj, kOMove + 2));
     c->set_mz((Bit16s)o16(obj, kOMove + 4));
@@ -788,7 +812,8 @@ void fill_craft(TieCraft *c, int obj) {
         c->set_systems(mem_readw(craft + kCraftSystems));
         for (int k = 0; k < kWpnSlotCount; k++) {
             const PhysPt slot = craft + kWpnSlots + (PhysPt)(k * kWpnSlotSize);
-            if (mem_readb(slot) >= 0x18) c->add_warheads(mem_readw(slot + 2));
+            if (XG(0, 1)) c->add_warheads(mem_readb(slot + 1));
+            else if (mem_readb(slot) >= 0x18) c->add_warheads(mem_readw(slot + 2));
         }
     }
 }
@@ -902,7 +927,8 @@ void write_puppet(Puppet &p) {
         // for the rest of the flight)
         for (int k = 0, i = 0; craft && k < kWpnSlotCount && i < c.warheads_size(); k++) {
             const PhysPt slot = craft + kWpnSlots + (PhysPt)(k * kWpnSlotSize);
-            if (mem_readb(slot) >= 0x18) mem_writew(slot + 2, (Bit16u)c.warheads(i++));
+            if (XG(0, 1)) mem_writeb(slot + 1, (Bit8u)c.warheads(i++));
+            else if (mem_readb(slot) >= 0x18) mem_writew(slot + 2, (Bit16u)c.warheads(i++));
         }
         p.fresh = false;
     }
@@ -921,6 +947,12 @@ void write_puppet(Puppet &p) {
     wo16(obj, kOHeading, (Bit16u)c.heading());
     wo16(obj, kOPitch, (Bit16u)c.pitch());
     wo16(obj, kORoll, (Bit16u)c.roll());
+#ifdef TDM_XWING
+    if (c.has_side() && o8(obj, kOSide) != (Bit8u)c.side()) {
+        wclog(1, TDM_GAME ": obj %d changed sides on its owner's machine (%u to %u)", obj, o8(obj, kOSide), c.side());
+        wo8(obj, kOSide, (Bit8u)c.side());
+    }
+#endif
     wo16(obj, kOSpeed, (Bit16u)(Bit16s)c.speed());
     wo16(obj, kOMove, (Bit16u)(Bit16s)c.mx());
     wo16(obj, kOMove + 2, (Bit16u)(Bit16s)c.my());
@@ -2000,7 +2032,7 @@ void tdm_session_frame() {
     decide_owners(now);
     g_net->owner[own] = g_net->self;
 #ifdef TDM_XWING
-    if (g_net->host && now - g_net->goalsSentAt >= 2000) {
+    if (now - g_net->goalsSentAt >= 2000) {
         g_net->goalsSentAt = now;
         send_state(true);       // (the flight groups' status, for the guests' judging)
     }

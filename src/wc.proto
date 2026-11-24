@@ -365,6 +365,8 @@ message TieCraft {
     optional uint32 boarded = 21;
     // Its warheads: the count of each weapon slot that is a launcher, in the slots' order (none: a craft without).
     repeated uint32 warheads = 22;
+    // X-Wing: its side (the object's: a captured craft changes sides where its captor's AI runs)
+    optional uint32 side = 23;
 }
 // A shot (TIE Fighter): the shooter's object, the hardpoint, the projectile's type, as laser_createprojectile took them.
 message TieShot {

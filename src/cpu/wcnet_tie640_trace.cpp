@@ -119,6 +119,12 @@ inline u32 div_rounded(u32 n, u16 d) {
 
 // 1CCA:F59D.  n (16.16) / d (16.16) -> a whole number, rounded; by cases of the divisor's size.
 u32 fixed_div_round(u32 n, u16 dWhole, u16 dFrac) {
+#ifdef T640_XWING
+    // X-Wing's (23CF:F875) is the plain division, not rounded: n / d, both taken as longs (a divisor of 0: n as it is).
+    // The demo's by-cases routine below is a later build's.  (Where an edge comes in from just beside the window the
+    // two differ by a row: the seam at a quarter's side, the user's "cut line".)
+    { const u32 d = (u32)dWhole << 16 | dFrac; return d ? n / d : n; }
+#endif
     u16 nHi = (u16)(n >> 16), nLo = (u16)n;
     if (nHi == 0) {
         // less than one: only a divisor less than one gives anything
@@ -205,6 +211,15 @@ u32 fixed_div_round(u32 n, u16 dWhole, u16 dFrac) {
 // 1CCA:F6F0.  n (whole) / d (16.16) -> a whole number, not rounded; used once, for a steep edge that begins far
 // above the window.
 u32 fixed_div_far(u32 n, u16 dWhole, u16 dFrac) {
+#ifdef T640_XWING
+    // X-Wing's (23CF:F897): the 48-bit n : 0000 by the divisor as a long; when that would overflow, the dividend's
+    // low word moved up is what is left in the registers
+    {
+        const u32 d = (u32)dWhole << 16 | dFrac;
+        if ((n >> 16) >= d) return (n & 0xFFFF) << 16;
+        return (u32)((((Bit64u)(n >> 16) << 32) | ((Bit64u)(n & 0xFFFF) << 16)) / d);
+    }
+#endif
     if ((n >> 16) == 0) return fixed_div_round(n << 16, dWhole, dFrac);
     seen(k_divfar);
     if (dFrac == 0) return dWhole <= 1 ? n : n / dWhole;
@@ -977,34 +992,34 @@ struct Tracer {
     // The light's step a row from the two ends' lights: into the edge's record (the scanline pass steps the light
     // of a crossing that stays with it) and, doubled, into kLightPerRow2.  A step of less than one unit a row
     // counts as none.
-    u16 light_step_rows(u16 e) {
+    u16 light_step_rows(u16 e) { return light_step_rows_of(m.d32((u16)(kAbsDy + 4 * e)), m.d8((u16)(kSignDy + e))); }
+    u16 light_step_rows_of(u32 rows, u8 signDy) {
         const u16 a = m.d16(kLightA), b = m.d16(kLightB);
         const bool down = (s16)(u16)(b - a) < 0;
         u16 diff = (u16)(b - a);
         if (down) diff = (u16)(0 - diff);
         diff >>= 1;
         u16 step = 0;
-        const u32 rows = m.d32((u16)(kAbsDy + 4 * e));
         if ((u32)diff > rows) {
             step = (u16)rows ? (u16)(diff / (u16)rows) : diff;
             if (step >> 8) step &= 0xFFFE;
-            if (((down ? 0xFF : 0) ^ m.d8((u16)(kSignDy + e))) & 0x80) step = (u16)(0 - step);
+            if (((down ? 0xFF : 0) ^ signDy) & 0x80) step = (u16)(0 - step);
         }
         m.D16(kLightPerRow2, (u16)(step << 1));
         return (u16)((u16)(step << 1) >> 1);
     }
     // ... and a pixel, for a steep edge (kLightPerPixel)
-    void light_step_pixels(u16 e) {
+    void light_step_pixels(u16 e) { light_step_pixels_of(m.d32((u16)(kAbsDx + 4 * e)), m.d8((u16)(kSignDx + e))); }
+    void light_step_pixels_of(u32 pixels, u8 signDx) {
         const u16 a = m.d16(kLightA), b = m.d16(kLightB);
         const bool down = (s16)(u16)(b - a) < 0;
         u16 diff = (u16)(b - a);
         if (down) diff = (u16)(0 - diff);
         u16 step = 0;
-        const u32 pixels = m.d32((u16)(kAbsDx + 4 * e));
         if ((u32)diff > pixels) {
             step = (u16)pixels ? (u16)(diff / (u16)pixels) : diff;
             step &= 0xFFFC;
-            if (((down ? 0xFF : 0) ^ m.d8((u16)(kSignDx + e))) & 0x80) step = (u16)(0 - step);
+            if (((down ? 0xFF : 0) ^ signDx) & 0x80) step = (u16)(0 - step);
         }
         m.D16(kLightPerPixel, step);
     }
@@ -1158,6 +1173,7 @@ struct Tracer {
     }
 
     void close_cut_face(const u8 *face) {
+#ifndef T640_XWING
         if (m.d8(kGouraud)) {
             const u16 at = (u16)(m.d16(kRecord) + 2 * m.d16(kFace) + 0x65);
             m.T8(at, m.cs ? m.cs[(u16)(kShadesMiddle + 16 * m.t8(at))] : m.t8(at));
@@ -1165,6 +1181,7 @@ struct Tracer {
             m.D8(kShadeMode, 7);
             seen(k_cut_shaded_made_flat);
         }
+#endif
         // the two cut points: where the outline goes behind the plane and where it comes back
         auto point = [&](int i) { return m.d16((u16)(kVertexPoint + 2 * face[i])); };
         int i = 0;
@@ -1183,6 +1200,49 @@ struct Tracer {
             to = other_end(face[i - 1], point(i - 2));
         }
         m.D16(kCutPoint, from);
+#ifdef T640_XWING
+        close_cut_face_xwing(from, to);
+    }
+
+    // X-Wing's closing edge (23CF:5FA1..6740), an earlier build's: a shaded face stays shaded (the lights are the
+    // words before the two cut points, stepped along the closing edge), and an edge wholly beside the window is one
+    // running record there (right of it: for a shaded face only), as the tracers' own edges beside it are.
+    void cut_beside(Side side, u16 top, u16 rows, u16 point, u16 light, u32 dx, u32 dy) {
+        const u32 half = dy >> 1;
+        const s32 x = (s32)m.d32(point), y = (s32)m.d32((u16)(point + 4));
+        const bool back = (s8)m.d8(kSignX) < 0;
+        // (left of the window the edge's way in is away from x 0 turned round)
+        const bool add = side == kLeftSide ? back : !back;
+        u32 out = side == kLeftSide ? (u32)(0 - x) : (u32)x;
+        u16 kind, slopeWord;
+        if (half < dx) {
+            // pixels a row, 7 bits of fraction
+            const Slope s = slope_div(dx, dy);
+            const u32 slope7 = ((u32)s.hi << 16 | s.lo) << 7 | s.frac >> 9;
+            out <<= 7;
+            if (top == 0) { const u32 moved = (u32)(0 - y) * slope7; out = add ? out + moved : out - moved; }
+            kind = side == kLeftSide ? (back ? 0xFFFB : 0xFFFC) : (back ? 0xFFF3 : 0xFFF4);
+            if (slope7 >> 16) { kind = (u16)(kind - 4); slopeWord = (u16)(slope7 >> 7); out >>= 7; }
+            else slopeWord = (u16)slope7;
+            seen(k_cut_shallow);
+        } else {
+            // rows a pixel, 8 bits of fraction
+            const Slope two = { 0, 2, 0 };
+            const Slope s = half == dx ? two : slope_div(dy, dx);
+            const u32 slope8 = ((u32)s.hi << 16 | s.lo) << 8 | s.frac >> 8;
+            if (top == 0) { const u32 moved = slope8 ? (u32)(((Bit64u)(u32)(0 - y) << 8) / slope8) : 0; out = add ? out + moved : out - moved; }
+            slopeWord = (slope8 >> 16) ? 0xFFFF : (u16)slope8;
+            kind = side == kLeftSide ? (back ? 0xFFF9 : 0xFFFA) : (back ? 0xFFF1 : 0xFFF2);
+            seen(k_cut_steep);
+        }
+        running(top, kind, slopeWord, light, (u32)(u8)rows << 24 | (out & 0xFFFFFF));
+    }
+    void close_cut_face_xwing(u16 from, u16 to) {
+        enum : u16 { kCutDx = 0x329C, kCutDy = 0x32A0 };
+        m.D16(kLightA, m.d16((u16)(from - 2)));
+        m.D16(kLightB, m.d16((u16)(to - 2)));
+        const bool shaded = m.d8(kGouraud) != 0;
+#endif
         // the edge from `from` to `to`: nothing to do when it is level, or not in the window's rows or columns
         const s32 fromX = (s32)m.d32(from), fromY = (s32)m.d32((u16)(from + 4)), toX = (s32)m.d32(to), toY = (s32)m.d32((u16)(to + 4));
         m.D8(kSignY, 1);
@@ -1194,6 +1254,47 @@ struct Tracer {
             if (upperY >= 0 && ((u32)upperY >> 16 || (u16)upperY >= deep())) return;
         }
         const u32 dy = toY < fromY ? (u32)fromY - (u32)toY : (u32)toY - (u32)fromY;
+#ifdef T640_XWING
+        m.D8(kSignX, 1);
+        int where = 0;              // -1 wholly at or left of x 0, +1 wholly right of the window
+        u32 dx = (u32)toX - (u32)fromX;
+        if (toX != fromX) {
+            if (toX < fromX) { m.D8(kSignX, 0xFF); dx = 0 - dx; }
+            const s32 rightX = toX < fromX ? fromX : toX, leftX = toX < fromX ? toX : fromX;
+            if (rightX <= 0) where = -1;
+            else if (leftX >= 0 && ((u32)leftX >> 16 || (u16)leftX >= wide())) where = 1;
+        }
+        if (where > 0 && !shaded) return;
+        m.D32(kCutDx, dx); m.D32(kCutDy, dy);
+        take_spare_edge();
+        const u16 slot = edge_slot(m.d16(kSpareEdge));
+        const u16 step = shaded ? light_step_rows_of(dy, m.d8(kSignY)) : 0;
+        m.T16(slot, m.d16(kFace));
+        m.T16((u16)(slot + 2), step);
+        if (where != 0) {
+            u16 top = row_in_window(from), end = row_in_window(to), point = from, light = m.d16(kLightA);
+            if (top != end) {
+                if (top > end) { const u16 t = top; top = end; end = t; m.D8(kSignX, (u8)(0 - m.d8(kSignX))); point = to; light = m.d16(kLightB); }
+                if (!shaded) {
+                    seen(k_cut_column);
+                    put_tall(top, (u16)(end - top), point, 0);      // (the point's address is in the register the light is taken from)
+                } else {
+                    if (top == 0) light = (u16)(light + (u16)((u32)(0 - m.d32((u16)(point + 4))) * (u32)(s32)(s16)m.d16(kLightPerRow2)));
+                    cut_beside(where < 0 ? kLeftSide : kRightSide, top, (u16)(end - top), point, light, dx, dy);
+                }
+            }
+        } else {
+            bool steep;
+            const Slope s = slope_of(dx, dy, steep);
+            seen(steep ? k_cut_steep : k_cut_shallow);
+            if (steep) { if (shaded) light_step_pixels_of(dx, m.d8(kSignX)); steep_edge(from, to, s); }
+            else shallow_edge(from, to, s);
+        }
+        const u16 e = m.d16(kSpareEdge);
+        m.D16(kSpareEdge, 0);
+        set_flags(e, 0x20);
+    }
+#else
         m.D8(kSignX, 1);
         bool column = false;        // the edge is wholly at or left of x 0
         u32 dx = (u32)toX - (u32)fromX;
@@ -1217,6 +1318,7 @@ struct Tracer {
         }
         give_spare_edge();
     }
+#endif
 
     // -----------------------------------------------------------------------------------------------------------
     // trace2_drawface (1CCA:53F3)
@@ -1935,6 +2037,8 @@ void tie640_trace_check_return(Bit16u loadSeg) {
         for (int i = 0; i < XA(0xA000, 0xE000) && shown < 40; i++) if (g_tb[i] != tables[i]) { snprintf(b, sizeof(b), " T:%04X %02X/%02X", i, g_tb[i], tables[i]); t += b; shown++; }
         wclog(1, "T640 trace check: call %u differs (%d bytes of the tables' segment, %d of the data segment; native/game):%s", g_calls, countT, countD, t.c_str());
         wclog(1, "T640 trace check: ... its face: %s", g_inputs.c_str());
+        wclog(1, "T640 trace check: ... the native routine's way:%s", path_text().c_str());
+        wclog(1, "T640 trace check: ... window: wide %u less1 %u wide7 %04X deep %u (before), wide %u (after)", host_readw(g_ds + kWide), host_readw(g_ds + kWideLess1), host_readw(g_ds + kWide7), host_readw(g_ds + kDeep), mem_readw(SegPhys(::ds) + kWide));
         if (firstT >= 0x2000) {
             // where the lists first differ: the row whose chain holds the chunk, and the entry there (the game's
             // chunk walked from its start; a record split over two chunks can put the walk out of step)

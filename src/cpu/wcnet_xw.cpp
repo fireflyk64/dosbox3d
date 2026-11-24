@@ -525,6 +525,15 @@ bool xw_script_item(const std::string &item, double t) {
         return true;
     }
     if (item.compare(0, 9, "!xwsteer=") == 0) { xw_controls_steer(item.substr(9)); return true; }
+    if (item.compare(0, 5, "!xwcd") == 0) {
+        // !xwcd[=<object>]: a craft's data in hex (ours when none is named)
+        const int o = item.size() > 6 ? atoi(item.c_str() + 6) : xw_player_object();
+        const PhysPt c = xw_flight_loaded() ? xw_craft(o) : 0;
+        std::string hex;
+        for (int i = 0; c && i < 0x170; i++) { char b[4]; snprintf(b, sizeof(b), "%02x", mem_readb(c + (PhysPt)i)); hex += b; if ((i & 15) == 15) hex += ' '; }
+        wclog(1, "key script %.1fs: X-Wing: craft data of obj %d: %s", t, o, hex.c_str());
+        return true;
+    }
     if (item == "!xwcraft") {
         // every craft logged: its slot, identity, flight group, type, place, speed, hull, shields, death
         if (!g_found || !xw_flight_loaded()) {
