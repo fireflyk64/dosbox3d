@@ -40,7 +40,9 @@
 #include <vector>
 #include <math.h>
 #include <set>
+#include <map>
 #include <algorithm>
+#include <chrono>
 #include "wcnet_armada_hires.h"
 #include "wcnet_armada_art.h"
 #include "wcnet_game.h"
@@ -72,16 +74,25 @@ struct Build {
     Bit16u listSeg, listCall;   // the display list's call of each entry's draw (a test aid's)
     Bit16u lineSeg, lineEntry;  // the library's line (bitmap record, x0, y0, x1, y1, colour)
     Bit16u monoSeg, monoEntry;  // its shape in one colour (bitmap record, x, y, shapes far, index, colour): the reticle
+    Bit16u texSeg, texJump;     // the texture mapper's span: its jmp word ss:[D] to one of its two loops (tex_span)
+    Bit16u texEntry;            // (texSeg) the textured polygon's routine (bitmap record, count, corners far, texture...)
+    Bit16u starSearch;          // (starSeg) a star's colour looked up: its distance's square against a table; its
+                                // pixel's call (bitmap record, x, y, colour) 36h on
+    Bit16u netSeg, netWait;     // a room's wait for every player's packets: the round's end (0: none known)
 };
 const Build kBuilds[] = {
     { "ARMADA.EXE",   0x2B4B, 0x061A, 0x621A, 0x83BA, 0x8646, 0x29CA, 0x054A, 0x07C5, 0x0D70, 0x2943, 0x0864,
-      { 0x3FD8, 0 }, { 0x0443, 0 }, 0x6493, 0x0ECC, 0x2230, 0x008A, 0x36D4, 0x003F, 0x5F32, 0x0006, 0x5F69, 0x0008 },
+      { 0x3FD8, 0 }, { 0x0443, 0 }, 0x6493, 0x0ECC, 0x2230, 0x008A, 0x36D4, 0x003F, 0x5F32, 0x0006, 0x5F69, 0x0008,
+      0x30DD, 0x1387, 0x0EA2, 0x0B15, 0x23E6, 0x067A },
     { "ARMADACD.EXE", 0x2B4E, 0x061A, 0x62A6, 0x843A, 0x86C6, 0x29CD, 0x054A, 0x07C5, 0x0D70, 0x2946, 0x0864,
-      { 0x3FDB, 0 }, { 0x0443, 0 }, 0x6496, 0x0ECC, 0x2233, 0x008A, 0x36D7, 0x003F, 0x5F35, 0x0006, 0x5F6C, 0x0008 },
+      { 0x3FDB, 0 }, { 0x0443, 0 }, 0x6496, 0x0ECC, 0x2233, 0x008A, 0x36D7, 0x003F, 0x5F35, 0x0006, 0x5F6C, 0x0008,
+      0x30E0, 0x1387, 0x0EA2, 0x0B15, 0x23E9, 0x067A },
     { "PG.EXE",       0x205C, 0x0632, 0x4E78, 0x714E, 0x73DA, 0x1DDF, 0x0540, 0x07BB, 0x0D66, 0x1D57, 0x086A,
-      { 0x2C03, 0x3DA0 }, { 0x0CBE, 0x029D }, 0x6100, 0x0ECE, 0x17BE, 0x008F, 0x2FC7, 0x0049, 0x5B9F, 0x0008, 0x5BD6, 0x000A },
+      { 0x2C03, 0x3DA0 }, { 0x0CBE, 0x029D }, 0x6100, 0x0ECE, 0x17BE, 0x008F, 0x2FC7, 0x0049, 0x5B9F, 0x0008, 0x5BD6, 0x000A,
+      0x25A9, 0x138D, 0x0EA8, 0x0B0B, 0, 0 },
     { "PGCD.EXE",     0x2060, 0x0632, 0x4F88, 0x725E, 0x74EA, 0x1DE3, 0x0540, 0x07BB, 0x0D66, 0x1D5B, 0x086A,
-      { 0x2C23, 0x3DBF }, { 0x0CBC, 0x02AB }, 0x6120, 0x0ECC, 0x17C2, 0x008F, 0x2FE7, 0x0047, 0x5BBF, 0x0006, 0x5BF6, 0x0008 },
+      { 0x2C23, 0x3DBF }, { 0x0CBC, 0x02AB }, 0x6120, 0x0ECC, 0x17C2, 0x008F, 0x2FE7, 0x0047, 0x5BBF, 0x0006, 0x5BF6, 0x0008,
+      0x25AD, 0x138D, 0x0EA8, 0x0B0B, 0, 0 },
 };
 enum { kCleared = 0x11, kSetup = 0x25, kDrawn = 0x57, kCockpit = 0x81 };   // from the section's top
 
@@ -92,7 +103,7 @@ const Build *g_b;
 Bit16u g_load;
 bool g_codeOk;
 
-int g_level = -1;               // 0 off, 1 the space alone, 2 all (the cockpit's lines and reticle too); -1 unread
+int g_level = -1;               // 0 off, 1 on (the space; the cockpit and reticle the game's own); -1 unread
 bool g_never, g_used;
 int g_farTimes = 16;
 
@@ -112,8 +123,15 @@ double g_lastCompose = -1e9;
 bool g_override;
 unsigned g_frames;
 
+struct StarDot {
+    Bit16s x, y;                // in the 640x400 picture
+    Bit8u c;
+};
 struct StarKeep {
     PhysPt obj;
+    int pass;                   // the pass that kept it (the first to draw the field this frame)
+    int dotsPass;               // the quarter whose stars are kept as dots (-1: none yet)
+    std::vector<StarDot> dots;
     Bit8u head[18];             // the field's count of stars (+08, its density: the frame rate's), last camera place (+0E)
     std::vector<Bit8u> stars;   // its stars, 12 bytes each, as they were before the frame
 };
@@ -123,6 +141,7 @@ std::vector<StarKeep> g_starKeep;
 // with its own wait), and that wait is skipped ahead a little at a time instead of spun: never past the game's own
 // timer unit (1/6026 s), never past the next event
 int g_cyclesWant = -1;          // WCARMHIRESCYCLES; default three times the launch's
+bool g_hostOff;                 // !armhost=0: the texture spans, the stars and the room's wait the game's own (a test aid)
 Bit32s g_cyclesBase, g_cyclesBoost;
 const double kIdleStepMs = 0.05;
 
@@ -135,10 +154,10 @@ inline Bit16u rd16l(PhysPt a) { return mem_readw(a); }
 
 int level() {
     if (g_level < 0) {
-        // WCARMHIRES: 1, 2 or all: all; space: the space alone; off: never (the key inert); else off
+        // WCARMHIRES: 1 (or space, the page's): on; off: never (the key inert); else off
         const char *env = getenv("WCARMHIRES");
         g_never = env && !strcmp(env, "off");
-        g_level = g_never || !env || !env[0] || env[0] == '0' ? 0 : !strcmp(env, "space") ? 1 : 2;
+        g_level = g_never || !env || !env[0] || env[0] == '0' ? 0 : 1;
         const char *marker = getenv("WCARMHIRESMARKER");
         if (marker && marker[0]) kMarker = (Bit8u)strtol(marker, NULL, 16);
         const char *far = getenv("WCARMHIRESFAR");
@@ -301,63 +320,10 @@ void marker_clear() {
     for (int y = 0; y < H; y++) lin_write(b.row[y], &line[0], W);
 }
 
-// The window's edge smoothed (level 2; Privateer's way, smooth_edge): the window (where the marker was left) blurred
-// 3x3 and sampled at each fine pixel; where that side is not the game pixel's own, the fine pixel is the scene's there,
-// or a neighbouring cockpit pixel's.  The edge's staircase becomes one-pixel steps of the 640x400 at any slope.
-void smooth_edge(const std::vector<Bit8u> &win) {
-    static int blur[W * H];
-    for (int y = 0; y < H; y++) {
-        for (int x = 0; x < W; x++) {
-            int sum = 0;
-            for (int j = -1; j <= 1; j++) {
-                const int yy = y + j < 0 ? 0 : y + j >= H ? H - 1 : y + j;
-                for (int i = -1; i <= 1; i++) {
-                    const int xx = x + i < 0 ? 0 : x + i >= W ? W - 1 : x + i;
-                    sum += win[yy * W + xx] * (i ? 1 : 2) * (j ? 1 : 2);
-                }
-            }
-            blur[y * W + x] = sum;
-        }
-    }
-    for (int Y = 0; Y < FH; Y++) {
-        int vy = 10 * Y - 5;
-        if (vy < 0) vy = 0;
-        int y0 = vy / 20, fy = vy % 20;
-        if (y0 >= H - 1) { y0 = H - 1; fy = 0; }
-        const int y1 = y0 + 1 < H ? y0 + 1 : y0;
-        for (int X = 0; X < FW; X++) {
-            int vx = 10 * X - 5;
-            if (vx < 0) vx = 0;
-            int x0 = vx / 20, fx = vx % 20;
-            if (x0 >= W - 1) { x0 = W - 1; fx = 0; }
-            const int x1 = x0 + 1 < W ? x0 + 1 : x0;
-            const int a = blur[y0 * W + x0], b2 = blur[y0 * W + x1], c = blur[y1 * W + x0], d = blur[y1 * W + x1];
-            if ((a | b2 | c | d) == 0 || (a & b2 & c & d) == 16) continue;      // (not near the edge)
-            const int v = (a * (20 - fx) + b2 * fx) * (20 - fy) + (c * (20 - fx) + d * fx) * fy;
-            const Bit8u side = v > 8 * 20 * 20 ? 1 : 0;
-            const int x = X >> 1, y = Y >> 1;
-            if (win[y * W + x] == side) continue;
-            if (side) {
-                g_out[Y * FW + X] = g_fine[Y * FW + X];
-                continue;
-            }
-            static const int kDx[8] = { -1, 1, 0, 0, -1, 1, -1, 1 }, kDy[8] = { 0, 0, -1, 1, -1, -1, 1, 1 };
-            for (int k = 0; k < 8; k++) {
-                const int nx = x + kDx[k], ny = y + kDy[k];
-                if (nx >= 0 && ny >= 0 && nx < W && ny < H && !win[ny * W + nx]) {
-                    g_out[Y * FW + X] = g_low[ny * W + nx];
-                    break;
-                }
-            }
-        }
-    }
-}
-
 // After the cockpit: the 640x400 shown, and the game's own buffer as the game made it (its scene under the cockpit)
 void compose() {
     const Bitmap b = bitmap();
     std::vector<Bit8u> line(W);
-    static std::vector<Bit8u> win(W * H);
     for (int y = 0; y < H; y++) {
         lin_read(b.row[y], &line[0], W);
         Bit8u *own = &g_low[y * W];
@@ -367,7 +333,6 @@ void compose() {
         bool back = false;
         for (int x = 0; x < W; x++) {
             const Bit8u l = line[x];
-            win[y * W + x] = l == kMarker;
             if (l == kMarker) {
                 o0[2 * x] = f0[2 * x]; o0[2 * x + 1] = f0[2 * x + 1];
                 o1[2 * x] = f1[2 * x]; o1[2 * x + 1] = f1[2 * x + 1];
@@ -379,7 +344,6 @@ void compose() {
         }
         if (back) lin_write(b.row[y], own, W);
     }
-    if (level() == 2) smooth_edge(win);
     if (g_overAny) {
         int n = 0;
         for (int i = 0; i < FW * FH; i++) if (g_overSet[i]) { g_out[i] = g_over[i]; n++; }
@@ -421,34 +385,149 @@ StarKeep *star_keep(PhysPt obj, bool make) {
     return &g_starKeep.back();
 }
 
+// The stars in the quarters (the user, 2026-11-24: "stars can also be drawn as 1x1 rather than 2x2 so it shouldn't
+// increase the amount of work as before--just change the number of pixels drawn"): the field is drawn by the game in
+// the first quarter that draws it, its view the 640x400 one less that quarter's corner, so each star's pixel call
+// (bitmap record, x, y, colour) has its 640x400 place; those are kept, and in the other quarters the field's draw is
+// stepped over and the kept stars put in that quarter's pixels where the field's draw would have put them (in the
+// display list's order: whatever is drawn later still covers them).  The game's own pass draws the field as always.
+// A star's colour is its distance's square looked up in a table, a word at a time (star_search, done here as it does
+// it, in every pass).
+int g_starOk = -1;              // -1: not looked at yet
+Bit16u g_starTable;             // DS: the colours' table (dwords, the distances' squares, falling)
+int g_dotsKeep = -1;            // the field whose stars this quarter keeps (g_starKeep's index)
+unsigned long g_starSearches, g_starDots;
+void star_dots(const StarKeep &k);
+void return_far();
+
+int g_starMode = -1;            // WCARMHIRESSTARS=0: the game's own stars in every quarter; =check: the game's search,
+                                // each compared with ours (test aids)
+unsigned long g_starChecked, g_starWrong;
+int g_starExpect = -1;
+
+int star_code_ok() {
+    if (g_starOk >= 0) return g_starOk;
+    if (g_starMode < 0) {
+        const char *env = getenv("WCARMHIRESSTARS");
+        g_starMode = !env || !env[0] ? 1 : env[0] == '0' ? 0 : !strcmp(env, "check") ? 2 : 1;
+    }
+    if (!g_starMode) return g_starOk = 0;
+    // C7 46 F8 00 00 EB 03 FF 46 F8 8B 5E F8 C1 E3 02 66 8B 87 [table] 66 3B 46 EC 7E 05 B8 01 00 EB 02 33 C0 0A C0 75
+    // E1 8A 46 F8 04 A2 50 FF 76 FA FF 76 FC FF 36 [rec] 9A
+    static const Bit8u kCode[0x37] = {
+        0xC7, 0x46, 0xF8, 0x00, 0x00, 0xEB, 0x03, 0xFF, 0x46, 0xF8, 0x8B, 0x5E, 0xF8, 0xC1, 0xE3, 0x02, 0x66, 0x8B, 0x87,
+        0x00, 0x00, 0x66, 0x3B, 0x46, 0xEC, 0x7E, 0x05, 0xB8, 0x01, 0x00, 0xEB, 0x02, 0x33, 0xC0, 0x0A, 0xC0, 0x75, 0xE1,
+        0x8A, 0x46, 0xF8, 0x04, 0xA2, 0x50, 0xFF, 0x76, 0xFA, 0xFF, 0x76, 0xFC, 0xFF, 0x36, 0x00, 0x00, 0x9A };
+    const PhysPt a = ((PhysPt)(Bit16u)(g_load + g_b->starSeg) << 4) + g_b->starSearch;
+    bool ok = true;
+    for (int i = 0; i < (int)sizeof(kCode); i++) {
+        if (i == 0x13 || i == 0x14 || i == 0x34 || i == 0x35) continue;
+        if (mem_readb(a + i) != kCode[i]) ok = false;
+    }
+    if (ok && mem_readw(a + 0x34) != g_b->rec) ok = false;
+    g_starTable = mem_readw(a + 0x13);
+    g_starOk = ok ? 1 : 0;
+    wclog(1, "Armada: the stars %s", ok ? "are drawn once in the quarters, their colours looked up here" :
+          "are not as known: the game's own in every quarter");
+    return g_starOk;
+}
+
+// At the search (mov word [bp-8], 0): the first entry not greater than the distance's square [bp-14h], its index to
+// [bp-8], BX and EAX as the loop leaves them (index*4; the entry's high word, AX 0), and on after the loop
+void star_search() {
+    if (g_hostOff || star_code_ok() != 1) return;
+    const PhysPt dsb = SegPhys(ds), bpb = SegPhys(ss) + reg_bp;
+    const Bit32s dist = (Bit32s)mem_readd(bpb - 0x14);
+    Bit32u e = 0;
+    unsigned i = 0;
+    for (;; i++) {
+        if (i > 0xFFFF) return;     // (no end: the game's own loop)
+        e = mem_readd(dsb + (Bit16u)(((i << 2) & 0xFFFF) + g_starTable));
+        if (!((Bit32s)e > dist)) break;
+    }
+    if (g_starMode == 2) {
+        g_starExpect = (int)i;
+        return;
+    }
+    mem_writew(bpb - 8, (Bit16u)i);
+    reg_bx = (Bit16u)(i << 2);
+    reg_eax = e & 0xFFFF0000;
+    reg_eip = (Bit16u)(g_b->starSearch + 0x26);
+    g_starSearches++;
+}
+
+// (check: after the game's search, its index as ours)
+void star_searched() {
+    if (g_starExpect < 0) return;
+    const Bit16u got = mem_readw(SegPhys(ss) + (Bit16u)(reg_bp - 8));
+    g_starChecked++;
+    if (got != (Bit16u)g_starExpect && g_starWrong++ < 5) wclog(1, "Armada: a star's colour %u, ours %d", got, g_starExpect);
+    g_starExpect = -1;
+}
+
+// At the star's pixel call (the quarter keeping the field's stars): its 640x400 place and colour kept
+void star_pixel() {
+    if (g_dotsKeep < 0 || g_dotsKeep >= (int)g_starKeep.size() || g_starKeep[g_dotsKeep].dotsPass != g_pass) return;
+    const PhysPt sp = SegPhys(ss) + reg_sp;
+    StarDot d;
+    d.x = (Bit16s)((Bit16s)mem_readw(sp + 2) + (g_pass & 1) * W);
+    d.y = (Bit16s)((Bit16s)mem_readw(sp + 4) + (g_pass >> 1) * H);
+    d.c = mem_readb(sp + 6);
+    if (g_starKeep[g_dotsKeep].dots.size() < 8192) g_starKeep[g_dotsKeep].dots.push_back(d);
+}
+
+// The kept stars in this quarter's pixels, within its clip rectangle (as the pixel routine puts them)
+void star_dots(const StarKeep &k) {
+    const Bitmap b = bitmap();
+    if (!b.ok) return;
+    const int qx = (g_pass & 1) * W, qy = (g_pass >> 1) * H;
+    for (size_t i = 0; i < k.dots.size(); i++) {
+        const int x = k.dots[i].x - qx, y = k.dots[i].y - qy;
+        if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) continue;
+        lin_write(b.row[y] + x, &k.dots[i].c, 1);
+        g_starDots++;
+    }
+}
+
 void star_entry() {
     // (a far call: [sp] the return, [sp+4] the field's offset, [sp+6] its segment)
     const PhysPt sp = SegPhys(ss) + reg_sp;
     const PhysPt obj = ((PhysPt)mem_readw(sp + 6) << 4) + mem_readw(sp + 4);
-    if (g_pass == 0) {
-        StarKeep *k = star_keep(obj, true);
-        if (k) for (int i = 0; i < 18; i++) k->head[i] = mem_readb(obj + 8 + i);
+    StarKeep *k = star_keep(obj, false);
+    if (!k) {
+        k = star_keep(obj, true);
+        if (!k) return;
+        k->pass = g_pass;
+        k->dotsPass = -1;
+        k->dots.clear();
+        k->stars.clear();
+        for (int i = 0; i < 18; i++) k->head[i] = mem_readb(obj + 8 + i);
     } else {
-        const StarKeep *k = star_keep(obj, false);
-        if (k) for (int i = 0; i < 18; i++) mem_writeb(obj + 8 + i, k->head[i]);
+        for (int i = 0; i < 18; i++) mem_writeb(obj + 8 + i, k->head[i]);
     }
+    if (g_pass < 0 || g_pass > 3 || g_hostOff || star_code_ok() != 1) return;
+    if (k->dotsPass >= 0 && k->dotsPass != g_pass) {
+        star_dots(*k);          // (the first quarter's stars, as 1x1 dots: the field's own draw stepped over)
+        return_far();
+        return;
+    }
+    k->dotsPass = g_pass;
+    k->dots.clear();
+    g_dotsKeep = (int)(k - &g_starKeep[0]);
 }
-
 void star_locked() {
     // the stars' resource locked: DX:AX; the field at [bp+6], its count of stars at +8
     const PhysPt fp = SegPhys(ss) + (Bit16u)(reg_bp + 6);
     const PhysPt obj = ((PhysPt)mem_readw(fp + 2) << 4) + mem_readw(fp);
     const PhysPt stars = ((PhysPt)reg_dx << 4) + reg_ax;
     const Bitu n = (Bitu)(mem_readw(obj + 8) & 0x0FFF) * 12;
-    if (g_pass == 0) {
-        StarKeep *k = star_keep(obj, true);
-        if (k) {
-            k->stars.resize(n);
-            if (n) lin_read(stars, &k->stars[0], n);
-        }
-    } else {
-        const StarKeep *k = star_keep(obj, false);
-        if (k && k->stars.size() == n && n) lin_write(stars, &k->stars[0], n);
+    StarKeep *k = star_keep(obj, false);
+    if (!k) return;
+    if (k->pass == g_pass) {
+        k->stars.resize(n);
+        if (n) lin_read(stars, &k->stars[0], n);
+    } else if (k->stars.size() == n && n) {
+        lin_write(stars, &k->stars[0], n);
     }
 }
 
@@ -534,6 +613,150 @@ void keep_or_restore(PhysPt at, int n) {
 void boom_entry() {
     const PhysPt sp = SegPhys(ss) + reg_sp;
     keep_or_restore(((PhysPt)mem_readw(sp + 6) << 4) + mem_readw(sp + 4) + 0x32, 2);
+}
+
+// ----- the texture mapper's span, done here (the same pixels; the host's work instead of the emulated CPU's) --------
+
+// The ships are texture-mapped: each span of a polygon is a loop of a dozen instructions a pixel (seg30DD:138C with a
+// shading table, 13B8 without), entered by a jmp word ss:[D] (texJump) and left at texJump+53h, where everything the
+// loop leaves in the registers is popped or overwritten (its count on the stack too).  At 640x400 the quarters fill
+// four times the pixels, and a ship close by is most of the frame's work: here the loop is done as it does it, a
+// pixel at a time (the texel at DS:SI unless FFh, through FS:[texel + R] with the table, to ES:DI; DX += AX and
+// CX += BP, their carries choosing SI's step from ss:[T]; the count a word at SS:ESP, decremented to 0 or less), and
+// the game goes on after the loop.  A page that is not the host's memory: the game's own loop (the pixels it writes
+// are the same, so those already written do not matter).
+const Bit8u kTexCode[0x54] = {
+    0x36, 0xFF, 0x26, 0x00, 0x00, 0x8A, 0x1C, 0x80, 0xFB, 0xFF, 0x74, 0x0B, 0x36, 0x03, 0x1E, 0x00, 0x00, 0x64, 0x8A,
+    0x1F, 0x26, 0x88, 0x1D, 0x47, 0x33, 0xDB, 0x03, 0xD0, 0x13, 0xDB, 0x03, 0xCD, 0x13, 0xDB, 0x03, 0xDB, 0x36, 0x03,
+    0xB7, 0x00, 0x00, 0x67, 0xFF, 0x0C, 0x24, 0x7F, 0xD6, 0xEB, 0x22, 0x8A, 0x1C, 0x80, 0xFB, 0xFF, 0x74, 0x03, 0x26,
+    0x88, 0x1D, 0x47, 0x33, 0xDB, 0x03, 0xD0, 0x13, 0xDB, 0x03, 0xCD, 0x13, 0xDB, 0x03, 0xDB, 0x36, 0x03, 0xB7, 0x00,
+    0x00, 0x67, 0xFF, 0x0C, 0x24, 0x7F, 0xDE, 0x5F };
+const int kTexD = 3, kTexR = 0x0F, kTexT1 = 0x27, kTexT2 = 0x4B;     // (the code's words: the dispatch, table, steps)
+const int kTexShaded = 5, kTexPlain = 0x31, kTexDone = 0x53;
+int g_texOk = -1;               // -1: not looked at yet
+Bit16u g_texD, g_texR, g_texT;
+int g_texOn = -1;               // WCARMHIRESTEX=0: the game's own loop; =check: the game's, each pixel compared with
+                                // ours; =alt: ours every other 2 s, the game's between (test aids)
+unsigned long g_texSpans, g_texPixels, g_texFalls, g_texChecked, g_texWrong;
+unsigned long g_texFrame;       // this frame's pixels (!armstopnear's)
+long g_stopNear = -1;           // !armstopnear=<pixels>: Backspace (the full stop) once a frame's texture pixels pass it
+bool g_stopHeld;                // (a test aid: two pilots flying at each other stop close, wherever that is)
+std::vector<std::pair<PhysPt, Bit8u> > g_texCheck;      // (check: what the span is to write, and its count's end)
+int g_texCheckEnd;
+bool g_texChecking;
+
+bool tex_code_here() {
+    const PhysPt j = ((PhysPt)(Bit16u)(g_load + g_b->texSeg) << 4) + g_b->texJump;
+    for (int i = 0; i < (int)sizeof(kTexCode); i++) {
+        if (i == kTexD || i == kTexD + 1 || i == kTexR || i == kTexR + 1 || i == kTexT1 || i == kTexT1 + 1 ||
+            i == kTexT2 || i == kTexT2 + 1) continue;
+        if (mem_readb(j + i) != kTexCode[i]) return false;
+    }
+    g_texD = mem_readw(j + kTexD);
+    g_texR = mem_readw(j + kTexR);
+    g_texT = mem_readw(j + kTexT1);
+    return mem_readw(j + kTexT2) == g_texT;
+}
+
+// A byte of the game's linear memory through the TLB (false: not the host's memory just now)
+inline bool tex_read(PhysPt a, Bit8u &v) {
+    const HostPt t = get_tlb_read(a);
+    if (t) { v = host_readb(t + a); return true; }
+    return !mem_readb_checked(a, &v);
+}
+inline bool tex_write(PhysPt a, Bit8u v) {
+    const HostPt t = get_tlb_write(a);
+    if (t) { host_writeb(t + a, v); return true; }
+    return !mem_writeb_checked(a, v);
+}
+
+void tex_span() {
+    if (g_texOn < 0) {
+        const char *env = getenv("WCARMHIRESTEX");
+        g_texOn = !env || !env[0] ? 1 : env[0] == '0' ? 0 : !strcmp(env, "check") ? 2 : !strcmp(env, "alt") ? 3 : 1;
+    }
+    if (!g_texOn || g_hostOff || (g_texOn == 3 && ((long)(PIC_FullIndex() / 2000) & 1))) return;     // (alt: every other 2 s)
+    if (g_texOk < 0) {
+        g_texOk = tex_code_here();
+        wclog(1, "Armada: the texture mapper's span %s", g_texOk ? "is done here" : "is not as known: the game's own");
+    }
+    if (!g_texOk) return;
+    const PhysPt ssb = SegPhys(ss);
+    const Bit16u to = mem_readw(ssb + g_texD);
+    const bool shaded = to == (Bit16u)(g_b->texJump + kTexShaded);
+    if (!shaded && to != (Bit16u)(g_b->texJump + kTexPlain)) return;
+    Bit16u step[4];
+    for (int k = 0; k < 4; k++) step[k] = mem_readw(ssb + (Bit16u)(g_texT + 2 * k));
+    const Bit16u base = mem_readw(ssb + g_texR);
+    const PhysPt dsb = SegPhys(ds), esb = SegPhys(es), fsb = SegPhys(fs), countAt = ssb + reg_esp;
+    int n = (Bit16s)mem_readw(countAt);
+    g_texCheck.clear();
+    Bit16u si = reg_si, di = reg_di, dx = reg_dx, cx = reg_cx;
+    const Bit16u ax = reg_ax, bp = reg_bp;
+    unsigned px = 0;
+    do {
+        Bit8u t;
+        if (!tex_read(dsb + si, t)) { g_texFalls++; return; }
+        if (t != 0xFF) {
+            if (shaded && !tex_read(fsb + (Bit16u)(t + base), t)) { g_texFalls++; return; }
+            if (g_texOn == 2) {
+                g_texCheck.push_back(std::make_pair(esb + di, t));
+            } else if (!tex_write(esb + di, t)) {
+                g_texFalls++;
+                return;
+            }
+        }
+        di++;
+        const Bit32u u = (Bit32u)dx + ax, v = (Bit32u)cx + bp;
+        dx = (Bit16u)u;
+        cx = (Bit16u)v;
+        si += step[((u >> 16) << 1) | (v >> 16)];
+        n--;
+        px++;
+    } while (n > 0);
+    g_texSpans++;
+    g_texPixels += px;
+    g_texFrame += px;
+    if (g_texOn == 2) {
+        g_texCheckEnd = n;
+        g_texChecking = true;
+        return;
+    }
+    mem_writew(countAt, (Bit16u)n);
+    reg_eip = (Bit16u)(g_b->texJump + kTexDone);
+}
+
+// The game's own pass while the picture is 640x400: its scene is never seen (the 640x400 one is shown, and the cockpit
+// is drawn over the marker), so a textured polygon is stepped over there, the routine's whole work (the user,
+// 2026-11-24: "skipping pixel draw would be good").  It changes nothing but the picture and its own scratch (callers
+// ignore its AX).  The stars, the explosions and the rest still draw in that pass: they move their own objects.
+// WCARMHIRESOWN=draw: drawn (a test aid)
+int g_ownSkip = -1;
+unsigned long g_ownSkipped;
+void tex_entry() {
+    if (g_ownSkip < 0) {
+        const char *env = getenv("WCARMHIRESOWN");
+        g_ownSkip = !(env && !strcmp(env, "draw"));
+    }
+    if (!g_ownSkip || g_hostOff || g_pass != 4 || g_texOk != 1) return;
+    const PhysPt e = SegPhys(cs) + reg_ip;
+    if (mem_readd(e) != 0x000068C8 || mem_readd(e + 4) != 0xFC57561E) return;     // enter 68h, 0; push ds si di; cld
+    g_ownSkipped++;
+    return_far();
+}
+
+// (check: the game's loop has run: each pixel as ours, and its count)
+void tex_done() {
+    if (!g_texChecking) return;
+    g_texChecking = false;
+    bool ok = mem_readw(SegPhys(ss) + reg_esp) == (Bit16u)g_texCheckEnd;
+    for (size_t i = 0; i < g_texCheck.size(); i++) {
+        Bit8u v;
+        if (!tex_read(g_texCheck[i].first, v) || v != g_texCheck[i].second) ok = false;
+    }
+    g_texChecked++;
+    if (!ok && g_texWrong++ < 5) wclog(1, "Armada: a texture span differs from the game's (%u pixels)", (unsigned)g_texCheck.size());
+    g_texCheck.clear();
 }
 
 // ----- the library's shape turned and scaled, in the quarters ------------------------------------------------------
@@ -652,7 +875,10 @@ void list_call() {
     if (seen.insert(key).second) wclog(1, "Armada draws: a new kind, %04X:%04X (from the load segment)", key >> 16, key & 0xFFFF);
 }
 
-// ----- the cockpit's stage (level 1: the lines on the space; level 2: all its lines, the reticle, turned shapes) -----
+// ----- the cockpit's stage: the lines on the space (the target's brackets) at the fine pixels -------------------------
+// (The user, 2026-11-24, of the cockpit's lines, the reticle as line art, the target display's ship at the fine pixels and
+// the window's edge smoothed: "I think for now we should remove the code to make the very high resolution displays as
+// they are going very slow": gone; the cockpit, the reticle and the displays are the game's own.)
 
 armart::Target over_target(PhysPt rec) {
     armart::Target t;
@@ -682,7 +908,7 @@ Bit8u pixel_of(PhysPt rec, int x, int y) {
 }
 
 // The line (bitmap record, x0, y0, x1, y1, colour): one fine pixel wide, if it is drawn on the space (the target's
-// brackets: level 1 too) or at level 2 any; else the game's own
+// brackets); else the game's own
 void cockpit_line() {
     const PhysPt a = SegPhys(ss) + reg_sp + 4;
     const PhysPt rec = ds_at(mem_readw(a));
@@ -705,64 +931,144 @@ void cockpit_line() {
         }
     }
     const bool space = 3 * on >= n;
-    static int told = 0;
-    if (getenv("WCARMHIRESDEBUG") && told < 40) {
-        told++;
-        wclog(1, "Armada line: %d,%d - %d,%d colour %02X, under its middle %02X (%s), clip %d,%d-%d,%d", x0, y0, x1, y1, colour,
-              pixel_of(rec, (x0 + x1) / 2, (y0 + y1) / 2), space ? "space" : "cockpit", (Bit16s)mem_readw(rec + 4),
-              (Bit16s)mem_readw(rec + 6), (Bit16s)mem_readw(rec + 8), (Bit16s)mem_readw(rec + 10));
+    if (getenv("WCARMHIRESDEBUG")) {
+        // (each caller once: which of the cockpit's routines draws on the space)
+        static std::set<Bit32u> seen;
+        const PhysPt sp = SegPhys(ss) + reg_sp;
+        const Bit32u caller = ((Bit32u)(Bit16u)(mem_readw(sp + 2) - g_load) << 16) | mem_readw(sp);
+        if (seen.insert(caller * 2 + (space ? 1 : 0)).second && seen.size() < 200) {
+            wclog(1, "Armada line from %04X:%04X: %d,%d - %d,%d colour %02X (%s)", caller >> 16, caller & 0xFFFF, x0, y0,
+                  x1, y1, colour, space ? "space" : "cockpit");
+        }
     }
-    if (!space && level() < 2) return;
+    if (!space) return;
     armart::line(over_target(rec), x0, y0, x1, y1, colour);
     g_overAny = true;
     return_far();
 }
 
-// The shape in one colour (bitmap record, x, y, shapes far, index, colour) at the view's middle: the reticle, as line
-// art (level 2); anything else (the text) the game's own
+// The reticle's icons (the user, 2026-11-24: "I wonder if we could have saved out reticle icons instead of runnign some
+// post process ... Basically we just need thin lines for target box and thin lines for the reticle--and at least the
+// reticle is a static image").  Armada's reticles are one shape file's (both sides'): the main one, a circle of radius
+// 9 with four spokes from 6 to 13 out, bars across them at 13, 11, 9 and 7 (half 2, 1, 2, 1 long), and a small one, a
+// dot in a diamond of radius 2 with spokes to 4.  Each is drawn here by hand at the fine pixels (doubled: a circle of
+// 18, the rest as lines), one fine pixel wide, about the fine pixel of the game's own middle, in the call's colour; the
+// game's shape is known by its outline (FNV-1a over its size, anchor and lit pixels), so nothing of the game's art is
+// kept here.  Any other shape is the game's own.  WCARMHIRESRETICLE=0: the game's reticle (a test aid).
+struct IconStroke { int kind, x0, y0, x1, y1; };     // kind 0: a line, 1: a circle of radius x0, 2: a pixel
+struct Icon { Bit32u outline; std::vector<IconStroke> strokes; };
+
+void icon_spokes(std::vector<IconStroke> &v, const int bars[][2], int nbars, int inner, int outer) {
+    static const int kDir[4][2] = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
+    for (int d = 0; d < 4; d++) {
+        const int ux = kDir[d][0], uy = kDir[d][1], px = -uy, py = ux;
+        IconStroke s = { 0, ux * inner, uy * inner, ux * outer, uy * outer };
+        v.push_back(s);
+        for (int b = 0; b < nbars; b++) {
+            const int r = bars[b][0], half = bars[b][1];
+            IconStroke t = { 0, ux * r - px * half, uy * r - py * half, ux * r + px * half, uy * r + py * half };
+            v.push_back(t);
+        }
+    }
+}
+
+const std::vector<Icon> &icons() {
+    static std::vector<Icon> v;
+    if (v.empty()) {
+        Icon main;
+        main.outline = 0xDAB5EBDF;
+        IconStroke ring = { 1, 18, 0, 0, 0 };
+        main.strokes.push_back(ring);
+        static const int kBars[4][2] = { { 26, 4 }, { 22, 2 }, { 18, 4 }, { 14, 2 } };
+        icon_spokes(main.strokes, kBars, 4, 12, 26);
+        v.push_back(main);
+        Icon small;
+        small.outline = 0xA6A87A24;
+        IconStroke dot = { 2, 0, 0, 0, 0 };
+        small.strokes.push_back(dot);
+        static const int kDiamond[5][2] = { { 4, 0 }, { 0, 4 }, { -4, 0 }, { 0, -4 }, { 4, 0 } };
+        for (int k = 0; k < 4; k++) {
+            IconStroke s = { 0, kDiamond[k][0], kDiamond[k][1], kDiamond[k + 1][0], kDiamond[k + 1][1] };
+            small.strokes.push_back(s);
+        }
+        icon_spokes(small.strokes, NULL, 0, 4, 8);
+        v.push_back(small);
+    }
+    return v;
+}
+
+Bit32u shape_outline(const Shape &s) {
+    Bit32u h = 2166136261u;
+    const int head[4] = { s.w & 255, s.h & 255, s.left & 255, s.top & 255 };
+    for (int i = 0; i < 4; i++) h = (h ^ (Bit32u)head[i]) * 16777619u;
+    for (size_t i = 0; i < s.px.size(); i++) h = (h ^ (s.px[i] >= 0 ? 1u : 0u)) * 16777619u;
+    return h;
+}
+
+// The shape in one colour (bitmap record, x, y, shapes far, index, colour) at the view's middle: the reticle, an icon's
+// if it is one of them.  WCARMHIRESRETICLES=<dir> (a test aid): each reticle met saved as <dir>/ret-<file>-<index>.txt
+// (its size, anchor and pixels), and its shape file's every shape beside it (<dir>/file-<file>-<index>.txt), once each
 void cockpit_mono() {
     const PhysPt a = SegPhys(ss) + reg_sp + 4;
     const int x = (Bit16s)mem_readw(a + 2), y = (Bit16s)mem_readw(a + 4);
     const PhysPt view = ds_at(g_b->view);
-    if (level() < 2 || x != (Bit16s)mem_readw(view) || y != (Bit16s)mem_readw(view + 2)) return;
-    const PhysPt rec = ds_at(mem_readw(a));
+    if (x != (Bit16s)mem_readw(view) || y != (Bit16s)mem_readw(view + 2)) return;
     const PhysPt file = ((PhysPt)mem_readw(a + 8) << 4) + mem_readw(a + 6);
-    Shape s;
-    if (!shape_at(file, (Bit16s)mem_readw(a + 10), s)) return;
-    const Bit8u colour = mem_readb(a + 12);
-    armart::Shape art;
-    art.w = s.w; art.h = s.h; art.left = s.left; art.top = s.top;
-    art.px = s.px;
-    for (size_t i = 0; i < art.px.size(); i++) if (art.px[i] >= 0) art.px[i] = colour;
-    armart::shape_lines(over_target(rec), art, x, y);
-    g_overAny = true;
-    return_far();
-}
-
-// A turned-and-scaled shape in the cockpit's stage (the target display's ship): drawn at the fine pixels (level 2)
-void cockpit_turn() {
-    if (level() < 2) return;
-    const PhysPt a = SegPhys(ss) + reg_sp + 4;
-    const PhysPt rec = ds_at(mem_readw(a));
-    const int x = (Bit16s)mem_readw(a + 2), y = (Bit16s)mem_readw(a + 4);
-    const PhysPt file = ((PhysPt)mem_readw(a + 8) << 4) + mem_readw(a + 6);
-    const int index = (Bit16s)mem_readw(a + 10), degrees = (Bit16s)mem_readw(a + 12), scale = (Bit16s)mem_readw(a + 14);
-    const int flags = mem_readw(a + 16);
-    Shape s;
-    if (scale <= 0 || scale > 64 * 256 || !shape_at(file, index, s)) return;
-    const armart::Target t = over_target(rec);
-    const double sc = scale / 256.0, w = degrees * 3.141592653589793 / 180.0, c = cos(w), n = sin(w);
-    const double mx = (flags & 0x10) ? -1 : 1, my = (flags & 0x20) ? -1 : 1;
-    for (int Y = 2 * t.y0; Y < 2 * (t.y1 + 1); Y++) {
-        for (int X = 2 * t.x0; X < 2 * (t.x1 + 1); X++) {
-            const double gx = (X + 0.5) / 2 - x, gy = (Y + 0.5) / 2 - y;
-            if (fabs(gx) > 2 * (s.w + s.h) * sc + 4 || fabs(gy) > 2 * (s.w + s.h) * sc + 4) continue;
-            const int iu = (int)floor((gx * c + gy * n) * mx / sc + s.left), iv = (int)floor((-gx * n + gy * c) * my / sc + s.top);
-            if (iu < 0 || iv < 0 || iu >= s.w || iv >= s.h) continue;
-            const Bit16s colour = s.px[iv * s.w + iu];
-            if (colour < 0) continue;
-            armart::plot(t, X, Y, (Bit8u)colour);
+    const int index = (Bit16s)mem_readw(a + 10);
+    const char *dir = getenv("WCARMHIRESRETICLES");
+    if (dir && dir[0]) {
+        static std::set<std::pair<PhysPt, int> > seen;
+        if (seen.insert(std::make_pair(file, index)).second) {
+            // (the file's own identity: its first shape's bytes, so two loads of one file are one)
+            Bit32u h = 2166136261u;
+            for (int i = 0; i < 64; i++) h = (h ^ mem_readb(file + i)) * 16777619u;
+            for (int k = -1; k < 64; k++) {
+                Shape sh;
+                const int idx = k < 0 ? index : k;
+                if (!shape_at(file, idx, sh)) { if (k >= 0) break; continue; }
+                char name[512];
+                snprintf(name, sizeof(name), k < 0 ? "%s/ret-%08X-%d.txt" : "%s/file-%08X-%d.txt", dir, h, idx);
+                FILE *f = fopen(name, "w");
+                if (!f) continue;
+                fprintf(f, "%d %d %d %d colour %02X at %d,%d\n", sh.w, sh.h, sh.left, sh.top, mem_readb(a + 12), x, y);
+                for (int r = 0; r < sh.h; r++) {
+                    for (int c = 0; c < sh.w; c++) {
+                        const Bit16s v = sh.px[r * sh.w + c];
+                        if (v < 0) fputs(" .", f); else fprintf(f, "%02X", v);
+                    }
+                    fputc('\n', f);
+                }
+                fclose(f);
+            }
+            wclog(1, "Armada: a reticle, shape %d of file %08X", index, h);
         }
+    }
+    static int on = -1;
+    if (on < 0) on = !(getenv("WCARMHIRESRETICLE") && getenv("WCARMHIRESRETICLE")[0] == '0');
+    if (!on) return;
+    // (each shape's icon looked up once: the file's place and the index; a file loaded elsewhere is another key)
+    static std::map<std::pair<PhysPt, int>, int> known;
+    std::map<std::pair<PhysPt, int>, int>::iterator k = known.find(std::make_pair(file, index));
+    if (k == known.end()) {
+        int which = -1;
+        Shape sh;
+        if (shape_at(file, index, sh)) {
+            const Bit32u outline = shape_outline(sh);
+            for (size_t i = 0; i < icons().size(); i++) if (icons()[i].outline == outline) which = (int)i;
+            wclog(1, "Armada: the reticle (shape %d, outline %08X) %s", index, outline, which >= 0 ? "drawn from its icon" :
+                  "is not one known: the game's own");
+        }
+        k = known.insert(std::make_pair(std::make_pair(file, index), which)).first;
+    }
+    if (k->second < 0) return;
+    const armart::Target t = over_target(ds_at(mem_readw(a)));
+    const Bit8u colour = mem_readb(a + 12);
+    const int X = 2 * x, Y = 2 * y;
+    const std::vector<IconStroke> &st = icons()[k->second].strokes;
+    for (size_t i = 0; i < st.size(); i++) {
+        if (st[i].kind == 1) armart::circle_fine(t, X, Y, st[i].x0, colour);
+        else if (st[i].kind == 2) armart::plot(t, X + st[i].x0, Y + st[i].y0, colour);
+        else armart::line_fine(t, X + st[i].x0, Y + st[i].y0, X + st[i].x1, Y + st[i].y1, colour);
     }
     g_overAny = true;
     return_far();
@@ -823,24 +1129,74 @@ void side_report() {
 
 // ----- the section's places ----------------------------------------------------------------------------------------
 
-// WCARMHIRESTIME=1: a test aid, every 5 s: a frame's emulated milliseconds in the passes, in the rest, and its period
-double g_tTop = -1, g_tLast = -1, g_sumPass, g_sumFrame, g_maxPass, g_tNext;
+// WCARMHIRESTIME=1: a test aid, every 5 s (=<ms>: that often): a frame's emulated milliseconds in the passes, its
+// work (its period less the wait skipped: what the host's CPU runs) and its period, the mean and the most
+double g_tTop = -1, g_tLast = -1, g_sumPass, g_sumFrame, g_sumWork, g_maxPass, g_maxFrame, g_maxWork, g_tNext;
+double g_skipMs;                // the wait skipped this frame (emulated ms)
+double g_abWork[2], g_abMax[2];  // (WCARMHIRESTEX=alt: the frames' work with the twin off and on)
+double g_realLast = -1, g_realSum, g_realMax;    // the frames' real (wall-clock) periods, ms: what the player sees
+inline double real_ms() {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+unsigned g_abN[2];
 unsigned g_nTime;
 int g_timeOn = -1;
+double g_timeEvery = 5000;
 
 void time_frame_top() {
-    if (g_timeOn < 0) g_timeOn = getenv("WCARMHIRESTIME") != NULL;
+    if (g_timeOn < 0) {
+        const char *env = getenv("WCARMHIRESTIME");
+        g_timeOn = env != NULL;
+        if (env && atoi(env) > 1) g_timeEvery = atoi(env);
+    }
     if (!g_timeOn) return;
-    const double now = PIC_FullIndex();
-    if (g_tLast > 0) { g_sumFrame += now - g_tLast; g_nTime++; }
+    const double now = PIC_FullIndex(), real = real_ms();
+    if (g_tLast > 0 && g_realLast > 0) {
+        g_realSum += real - g_realLast;
+        if (real - g_realLast > g_realMax) g_realMax = real - g_realLast;
+    }
+    g_realLast = real;
+    if (g_tLast > 0) {
+        const double period = now - g_tLast, work = period - g_skipMs;
+        g_sumFrame += period;
+        g_sumWork += work;
+        g_nTime++;
+        if (period > g_maxFrame) g_maxFrame = period;
+        if (work > g_maxWork) g_maxWork = work;
+        const int ab = ((long)(g_tLast / 2000) & 1) ? 0 : 1;
+        g_abWork[ab] += work;
+        g_abN[ab]++;
+        if (work > g_abMax[ab]) g_abMax[ab] = work;
+    }
+    g_skipMs = 0;
     g_tLast = now;
     g_tTop = now;
     if (now >= g_tNext && g_nTime) {
-        wclog(1, "Armada time: %u frames, %.1f ms a frame, passes %.1f ms (most %.1f)", g_nTime, g_sumFrame / g_nTime,
-              g_sumPass / g_nTime, g_maxPass);
-        g_sumPass = g_sumFrame = g_maxPass = 0;
+        wclog(1, "Armada time: %u frames, %.1f ms a frame (most %.1f), work %.1f ms (most %.1f, %.2fM instructions), "
+              "passes %.1f ms (most %.1f); real %.1f ms a frame (most %.1f)", g_nTime, g_sumFrame / g_nTime, g_maxFrame,
+              g_sumWork / g_nTime, g_maxWork, g_maxWork * CPU_CycleMax / 1e6, g_sumPass / g_nTime, g_maxPass,
+              g_realSum / g_nTime, g_realMax);
+        g_realSum = g_realMax = 0;
+        if (g_abN[0] && g_abN[1] && getenv("WCARMHIRESTEX") && !strcmp(getenv("WCARMHIRESTEX"), "alt")) {
+            wclog(1, "Armada time: the game's spans %.1f ms a frame (most %.1f), ours %.1f ms (most %.1f)",
+                  g_abWork[0] / g_abN[0], g_abMax[0], g_abWork[1] / g_abN[1], g_abMax[1]);
+            g_abWork[0] = g_abWork[1] = g_abMax[0] = g_abMax[1] = 0;
+            g_abN[0] = g_abN[1] = 0;
+        }
+        if (g_starSearches || g_starDots) {
+            wclog(1, "Armada time: star colours looked up here %lu, stars put in the quarters %lu (checked %lu, %lu differ)",
+                  g_starSearches, g_starDots, g_starChecked, g_starWrong);
+            g_starSearches = g_starDots = 0;
+        }
+        if (g_texSpans || g_texFalls) {
+            wclog(1, "Armada time: texture spans done here %lu, %lu pixels (%lu left to the game; checked %lu, %lu differ); "
+                  "%lu polygons not drawn in the game's own pass", g_texSpans, g_texPixels, g_texFalls, g_texChecked,
+                  g_texWrong, g_ownSkipped);
+            g_texSpans = g_texPixels = g_texFalls = g_ownSkipped = 0;
+        }
+        g_sumPass = g_sumFrame = g_sumWork = g_maxPass = g_maxFrame = g_maxWork = 0;
         g_nTime = 0;
-        g_tNext = now + 5000;
+        g_tNext = now + g_timeEvery;
     }
 }
 
@@ -861,6 +1217,17 @@ void at_top() {
     view_back();                // (a frame left in the middle: the game's view again)
     g_pass = -1;
     time_frame_top();
+    if (g_stopHeld) {
+        KEYBOARD_AddKey(KBD_backspace, false);
+        g_stopHeld = false;
+    }
+    if (g_stopNear >= 0 && (long)g_texFrame > g_stopNear) {
+        wclog(1, "Armada: stopped close (%lu texture pixels a frame)", g_texFrame);
+        KEYBOARD_AddKey(KBD_backspace, true);
+        g_stopHeld = true;
+        g_stopNear = -1;
+    }
+    g_texFrame = 0;
     if (!g_codeOk || !wanted() || vga.mode != M_VGA) return;
     const Bitmap b = bitmap();
     if (!b.ok) {
@@ -869,6 +1236,7 @@ void at_top() {
     }
     g_pass = 0;
     g_starKeep.clear();
+    g_dotsKeep = -1;
     g_keep.clear();
     if (g_side == 1) {
         g_side = 2;
@@ -966,6 +1334,25 @@ void wait_idle() {
     const Bit32s skip = CPU_Cycles < step ? CPU_Cycles : step;
     CPU_IODelayRemoved += skip;
     CPU_Cycles -= skip;
+    g_skipMs += (double)skip / CPU_CycleMax;
+}
+
+// A room's wait for every player's packets for the frame (seg23E6:0616..067E: each player's poll, until each has its
+// packets): while the picture is 640x400 (three times the cycles) each round's spin is skipped ahead as the frame's
+// wait is, so a machine waiting for the other is idle on the host, not spinning
+int g_netOk = -1;
+void net_wait() {
+    if (!g_override || g_hostOff || CPU_Cycles <= 0) return;
+    if (g_netOk < 0 && getenv("WCARMHIRESNET") && getenv("WCARMHIRESNET")[0] == '0') g_netOk = 0;     // (a test aid)
+    if (g_netOk < 0) {
+        static const Bit8u kCode[6] = { 0x83, 0x7E, 0xFE, 0x00, 0x74, 0x96 };    // cmp word [bp-2], 0; je (the round)
+        const PhysPt a = ((PhysPt)(Bit16u)(g_load + g_b->netSeg) << 4) + g_b->netWait;
+        g_netOk = mem_readd(a - 0x64) == 0x01FE46C7 && mem_readw(a - 0x60) == 0x3300;   // (mov word [bp-2], 1; xor di)
+        for (int i = 0; i < 6 && g_netOk; i++) if (mem_readb(a + i) != kCode[i]) g_netOk = 0;
+        wclog(1, "Armada: the room's wait %s", g_netOk ? "idles on the host" : "is not as known: the game's own");
+    }
+    if (!g_netOk || mem_readw(SegPhys(ss) + (Bit16u)(reg_bp - 2)) != 0) return;
+    wait_idle();
 }
 
 bool g_mapModeWas;              // (the map's mode as the override was last set: its log line)
@@ -1868,6 +2255,7 @@ void arm_hires_loaded(const char *exe, Bit16u loadSeg) {
     }
     g_load = loadSeg;
     g_codeOk = false;
+    g_texOk = g_starOk = g_netOk = -1;
     g_m = NULL;
     g_mapCodeOk = false;
     g_mapPass = -1;
@@ -1907,6 +2295,13 @@ void arm_hires_watch(void (*watch)(Bit16u ip)) {
     watch(g_b->bgCall);
     for (int i = 0; i < 2; i++) if (g_b->waitCall[i]) watch(g_b->waitCall[i]);
     watch(g_b->turnEntry);
+    watch(g_b->texJump);
+    watch(g_b->texEntry);
+    watch(g_b->starSearch);
+    watch((Bit16u)(g_b->starSearch + 0x36));
+    if (getenv("WCARMHIRESSTARS") && !strcmp(getenv("WCARMHIRESSTARS"), "check")) watch((Bit16u)(g_b->starSearch + 0x26));
+    if (g_b->netWait) watch(g_b->netWait);
+    if (getenv("WCARMHIRESTEX") && !strcmp(getenv("WCARMHIRESTEX"), "check")) watch((Bit16u)(g_b->texJump + kTexDone));
     watch(g_b->boomEntry);
     watch(g_b->listCall);
     watch(g_b->lineEntry);
@@ -1954,6 +2349,10 @@ bool arm_hires_hook(Bit32u ip) {
         }
         return frame_hook((Bit16u)ip);
     }
+    if (g_b->netWait && para == g_b->netSeg && ip == g_b->netWait) {
+        net_wait();
+        return true;
+    }
     for (int i = 0; i < 2; i++) {
         if (g_b->waitCall[i] && para == g_b->waitSeg[i] && ip == g_b->waitCall[i]) {
             const PhysPt at = SegPhys(cs) + ip;
@@ -1964,13 +2363,36 @@ bool arm_hires_hook(Bit32u ip) {
     if (g_pass == 5 && level() >= 1) {
         if (para == g_b->lineSeg && ip == g_b->lineEntry) { cockpit_line(); return true; }
         if (para == g_b->monoSeg && ip == g_b->monoEntry) { cockpit_mono(); return true; }
-        if (para == g_b->turnSeg && ip == g_b->turnEntry) { cockpit_turn(); return true; }
     }
     if (calls_on() && lib_call(para, (Bit16u)ip)) {
         if (para == g_b->turnSeg && ip == g_b->turnEntry && g_pass >= 0 && g_pass <= 3) turn_entry();
         return true;
     }
     if (g_pass < 0 || g_pass > 4) return false;
+    if (para == g_b->texSeg && ip == g_b->texJump) {
+        tex_span();
+        return true;
+    }
+    if (para == g_b->starSeg && ip == g_b->starSearch) {
+        star_search();
+        return true;
+    }
+    if (para == g_b->starSeg && ip == (Bit16u)(g_b->starSearch + 0x26)) {
+        star_searched();
+        return true;
+    }
+    if (para == g_b->starSeg && ip == (Bit16u)(g_b->starSearch + 0x36)) {
+        if (g_pass <= 3) star_pixel();
+        return true;
+    }
+    if (para == g_b->texSeg && ip == g_b->texEntry) {
+        tex_entry();
+        return true;
+    }
+    if (para == g_b->texSeg && ip == (Bit16u)(g_b->texJump + kTexDone)) {
+        tex_done();
+        return true;
+    }
     if (para == g_b->turnSeg && ip == g_b->turnEntry) {
         if (g_pass <= 3) turn_entry();
         return true;
@@ -2028,6 +2450,18 @@ void arm_hires_tick() {
 }
 
 bool arm_hires_script_item(const std::string &item, double t) {
+    // !armstopnear=<pixels>: the full stop (Backspace) once a frame's texture pixels pass that (a test aid)
+    if (item.compare(0, 13, "!armstopnear=") == 0) {
+        g_stopNear = atol(item.c_str() + 13);
+        wclog(1, "key script %.1fs: a stop at %ld texture pixels a frame", t, g_stopNear);
+        return true;
+    }
+    // !armhost=0|1: the texture spans, the stars and the room's wait the game's own, or done here (a test aid)
+    if (item.compare(0, 9, "!armhost=") == 0) {
+        g_hostOff = item[9] == '0';
+        wclog(1, "key script %.1fs: the spans, stars and wait %s", t, g_hostOff ? "the game's own" : "done here");
+        return true;
+    }
     // !armmapdump=<name>: the doubled panel and the game's own pass's (the newest) to $WCNET_DUMP_DIR/<name>.ppm and
     // <name>-own.ppm, in the screen's palette (a test aid)
     if (item.compare(0, 12, "!armmapdump=") == 0) {
@@ -2061,29 +2495,30 @@ bool arm_hires_script_item(const std::string &item, double t) {
         return true;
     }
     if (item.compare(0, 10, "!armhires=") == 0) {
-        arm_hires_set(item.compare(10, std::string::npos, "space") == 0 ? 1 : atoi(item.c_str() + 10) ? 2 : 0);
+        arm_hires_set(item.compare(10, std::string::npos, "space") == 0 || atoi(item.c_str() + 10) ? 1 : 0);
         (void)t;
         return true;
     }
     return false;
 }
 
+int arm_hires_pass() { return g_pass; }
+
 void arm_hires_set(int lvl) {
     level();
-    g_level = lvl < 0 ? 0 : lvl > 2 ? 2 : lvl;
+    g_level = lvl > 0 ? 1 : 0;
     g_mapLevel = 1;
     now_wanted();
-    wclog(1, "Armada: the high-resolution picture %s", g_level == 2 ? "all" : g_level == 1 ? "the space alone" : "off");
+    wclog(1, "Armada: the high-resolution picture %s", g_level ? "on" : "off");
 }
 
-// The ` key: all -> the space alone -> off -> all (Privateer's order)
+// The ` key: on <-> off
 void arm_hires_flip() {
     if (g_never) return;
-    const int l = level();
-    g_level = l == 2 ? 1 : l == 1 ? 0 : 2;
+    g_level = level() ? 0 : 1;
     g_mapLevel = 1;
     now_wanted();
-    wclog(1, "Armada: the high-resolution picture %s", g_level == 2 ? "all" : g_level == 1 ? "the space alone" : "off");
+    wclog(1, "Armada: the high-resolution picture %s", g_level ? "on" : "off");
 }
 
 int arm_hires_level() { return g_override ? level() : 0; }
