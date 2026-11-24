@@ -45,29 +45,29 @@ typedef Bit16u u16;
 typedef Bit8u u8;
 
 enum {
-    kRendPara = 0x1CCA, kDataPara = 0x421F, kListPara = 0x3598, kDrawPara = 0x168C,
-    kDepthSort = 0x0798,        // 168C: draw_polydepthsort(faceA, a, parentA, idA, faceB, b, parentB, idB)
+    kRendPara = XA(0x1CCA, 0x222D), kDataPara = XA(0x421F, 0x3F1C), kListPara = 0x3598, kDrawPara = XA(0x168C, 0x1D5D),
+    kDepthSort = XA(0x0798, 0x07FA),        // 168C: draw_polydepthsort(faceA, a, parentA, idA, faceB, b, parentB, idB)
     // DS: the window
-    kCorner = 0x48C3, kWide = 0x48C5, kDeep = 0x48D1, kBackColour = 0x48BC, kBufferSeg = 0x48BD, kBufferOff = 0x48BF,
-    kTablesSeg = 0xD8A6, kMaskAt = 0x28B6,
-    kRows = 0x6232,             // DS: for each row the first chunk of its entries (in the tables' segment)
+    kCorner = XA(0x48C3, 0x5421), kWide = XA(0x48C5, 0x5423), kDeep = XA(0x48D1, 0x5433), kBackColour = XA(0x48BC, 0x541A), kBufferSeg = XA(0x48BD, 0x541B), kBufferOff = XA(0x48BF, 0x541D),
+    kTablesSeg = XA(0xD8A6, 0xD34A), kMaskAt = XA(0x28B6, 0x33FB),
+    kRows = XA(0x6232, 0xD3C8),             // DS: for each row the first chunk of its entries (in the tables' segment)
     // DS: an object's state on the row being walked
-    kObjFlag = 0x2AF0,          // [obj] its place in the heap (FF: it is the one in front, 0: not open)
-    kOpenFaces = 0x28F0,        // [obj] how many of its faces are open
-    kMinFace = 0x2970,          // [obj] the lowest open face: the one seen
-    kMinEdge = 0x29F0,          // [2*obj] the crossing that face began at (its x and light)
-    kHeap = 0x2CF0,             // [2..] the open objects that are not in front
-    kObjects = 0x233A,          // [2*obj] the object's record in the tables' segment
-    kMarkPtr = 0x2552, kMarkOn = 0x2652, kMarkCount = 0x26D2,
-    kFlatColour = 0x410C, kFlatComp = 0x428C, kFlatParent = 0x418C, kFlatX = 0x3E0C, kFlatY = 0x3F0C, kFlatZ = 0x400C,
+    kObjFlag = XA(0x2AF0, 0x3635),          // [obj] its place in the heap (FF: it is the one in front, 0: not open)
+    kOpenFaces = XA(0x28F0, 0x3435),        // [obj] how many of its faces are open
+    kMinFace = XA(0x2970, 0x34B5),          // [obj] the lowest open face: the one seen
+    kMinEdge = XA(0x29F0, 0x3535),          // [2*obj] the crossing that face began at (its x and light)
+    kHeap = XA(0x2CF0, 0x3835),             // [2..] the open objects that are not in front
+    kObjects = XA(0x233A, 0x2E72),          // [2*obj] the object's record in the tables' segment
+    kMarkPtr = XA(0x2552, 0x308A), kMarkOn = XA(0x2652, 0x318A), kMarkCount = XA(0x26D2, 0x320A),
+    kFlatColour = XA(0x410C, 0x4C51), kFlatComp = XA(0x428C, 0x4DD1), kFlatParent = XA(0x418C, 0x4CD1), kFlatX = XA(0x3E0C, 0x4951), kFlatY = XA(0x3F0C, 0x4A51), kFlatZ = XA(0x400C, 0x4B51),
     // DS: the row's lists (near pointers into the tables' segment)
-    kNew = 0x2DF0,              // the row's single crossings, as found
-    kNewSorted = 0x38B8,        // ... sorted by x: {slot in kNew, crossing}, the order kept from row to row
-    kTallNew = 0x3090, kTall = 0x3378,   // crossings that stay at their x for several rows: {crossing, rows left, light's fraction}
+    kNew = XA(0x2DF0, 0x3935),              // the row's single crossings, as found
+    kNewSorted = XA(0x38B8, 0x43FD),        // ... sorted by x: {slot in kNew, crossing}, the order kept from row to row
+    kTallNew = XA(0x3090, 0x3BD5), kTall = XA(0x3378, 0x3EBD),   // crossings that stay at their x for several rows: {crossing, rows left, light's fraction}
     // the lists' segment: edges that run over several rows {record, long x}
     kLeftNew = 0x000C, kLeft = 0x05DC,   // left of the window
     kRightNew = 0x0BAC, kRight = 0x117C, // right of it
-    kShades = 0x07A0,           // the renderer's code segment: 16 colours a material
+    kShades = XA(0x07A0, 0x07A0),           // the renderer's code segment: 16 colours a material
 };
 
 struct Native {
@@ -139,8 +139,8 @@ struct Native {
     // a running edge's record: where its three parts are (it may lie across two chunks)
     void parts(u16 rec, u16 &entry, u16 &third) const {
         const int past = (rec & 0x7F) - 0x78;
-        if (past > 0) { const u16 next = t16((u16)(rec & 0xFF80)); entry = (u16)(next + 4); third = (u16)(next + 8); }
-        else if (past == 0) { const u16 next = t16((u16)(rec & 0xFF80)); entry = (u16)(rec + 4); third = (u16)(next + 4); }
+        if (past > 0) { const u16 next = t16((u16)(rec & XA(0xFF80, 0xFF80))); entry = (u16)(next + 4); third = (u16)(next + 8); }
+        else if (past == 0) { const u16 next = t16((u16)(rec & XA(0xFF80, 0xFF80))); entry = (u16)(rec + 4); third = (u16)(next + 4); }
         else { entry = (u16)(rec + 4); third = (u16)(rec + 8); }
     }
 
@@ -210,7 +210,7 @@ struct Native {
                 if (left <= 0) break;       // (an empty chunk: never made by the game)
                 for (;;) {
                     const u16 w = t16(at);
-                    if (w < 0xFFEF) {
+                    if (w < XA(0xFFEF, 0xFFEF)) {
                         D16(newEnd, at);
                         newEnd = (u16)(newEnd + 2);
                     } else if (w == 0xFFFF) {
@@ -227,7 +227,7 @@ struct Native {
                         D16((u16)(tallNewEnd + 2), rows);
                         tallNewEnd = (u16)(tallNewEnd + 4);
                     } else {
-                        const bool leftSide = w >= 0xFFF7;
+                        const bool leftSide = w >= XA(0xFFF7, 0xFFF7);
                         u16 &end = leftSide ? leftNewEnd : rightNewEnd;
                         L16(end, at);
                         const u16 slope = t16((u16)(at + 2));
@@ -458,7 +458,7 @@ struct Native {
             if (!got) {
                 for (u16 r = kRight; r < rightEnd; r = (u16)(r + 6)) {
                     u16 rec = l16(r);
-                    if ((rec & 0x7F) == 0x7C) rec = t16((u16)(rec & 0xFF80));
+                    if ((rec & 0x7F) == 0x7C) rec = t16((u16)(rec & XA(0xFF80, 0xFF80)));
                     const u16 e = (u16)(rec + 4);
                     if (t8((u16)(e + 1)) != f || !bounds(f, e, face)) continue;
                     if (l16((u16)(r + 4))) break;       // (its x past 65535: the crossing being taken serves)
@@ -491,7 +491,7 @@ struct Native {
                     }
                 }
                 u16 rec = l16(at);
-                if ((rec & 0x7F) == 0x7C) rec = t16((u16)(rec & 0xFF80));
+                if ((rec & 0x7F) == 0x7C) rec = t16((u16)(rec & XA(0xFF80, 0xFF80)));
                 const u16 edgeLight = t16((u16)(rec + 4 + 2));
                 u16 l = (u16)((rightLight & 0x3F) << 9);
                 const Bit16s d = (Bit16s)(edgeLight - l);
@@ -534,7 +534,7 @@ struct Native {
         const u16 z = d16((u16)(kFlatZ + i));
         if (z == 0x8000) return mesh;
         if (d8((u16)(kObjFlag + 0x80)) && (parent >> 8) == 0x10) return flat;
-        if (z == 0x8001) return mesh;
+        if (z == XA(0x8001, 0x8001)) return mesh;
         if (parent == d16((u16)(kFlatParent + i))) return (u8)mesh < d8((u16)(kFlatComp + (meshFirst ? flat : i >> 1))) ? mesh : flat;
         return flat_or_mesh(flat, mesh);
     }
@@ -819,7 +819,7 @@ struct Native {
             if (!under) {
                 T8((u16)(mark + 0xA), 0);
                 D8((u16)(kMarkOn + edge), 0);
-                D8(0x26D8, (u8)(d8(0x26D8) - 1));
+                D8(XA(0x26D8, 0x3210), (u8)(d8(XA(0x26D8, 0x3210)) - 1));
                 with = (u16)(mark + pos);
             } else {
                 u8 c;
@@ -836,7 +836,7 @@ struct Native {
             do { const u8 was = t8((u16)(p + 0xA)); T8((u16)(p + 0xA), c); c = was; p++; } while (c);
             if (!top) {
                 D8((u16)(kMarkOn + edge), 1);
-                D8(0x26D8, (u8)(d8(0x26D8) + 1));
+                D8(XA(0x26D8, 0x3210), (u8)(d8(XA(0x26D8, 0x3210)) + 1));
                 with = (u16)(mark + pos);
             } else {
                 const u16 a = (u16)(mark + pos), b = (u16)(mark + top);
@@ -903,7 +903,7 @@ struct Native {
             u16 marker = 0xC000;
             for (u16 at = kLeft; at < leftEnd; at = (u16)(at + 6), marker = (u16)(marker + 6)) {
                 u16 rec = l16(at);
-                if ((rec & 0x7F) == 0x7C) rec = t16((u16)(rec & 0xFF80));
+                if ((rec & 0x7F) == 0x7C) rec = t16((u16)(rec & XA(0xFF80, 0xFF80)));
                 const u16 e = (u16)(rec + 4);
                 obj = t8((u16)(e + 1)); edge = t8(e); info = marker; endX = 0;
                 crossing();
@@ -970,8 +970,8 @@ struct Native {
             }
         }
         // the row's end: the markings' colours put back, every object closed
-        if (d8(0x26D8)) {
-            D8(0x26D8, 0);
+        if (d8(XA(0x26D8, 0x3210))) {
+            D8(XA(0x26D8, 0x3210), 0);
             for (u16 m = d16(kMarkCount); m; m--) {
                 if (!d8((u16)(kMarkOn + m))) continue;
                 D8((u16)(kMarkOn + m), 0);
@@ -1000,7 +1000,7 @@ struct Native {
         tallEnd = kTall; sortedEnd = kNewSorted; leftEnd = kLeft; rightEnd = kRight;
         memset(M + ds + kObjFlag, 0, 0x100);
         memset(M + ds + kOpenFaces, 0, 0x80);
-        D8(0x26D8, 0);
+        D8(XA(0x26D8, 0x3210), 0);
         maskAt = d16(kMaskAt);
         buffer = ((PhysPt)d16(kBufferSeg) << 4) + d16(kBufferOff);
         for (row = 0; row < deep && !stopped; row++, buffer += (PhysPt)wide) {
@@ -1021,7 +1021,8 @@ unsigned g_nativeRuns = 0, g_nativeSorts = 0;
 bool tie640_native_on() {
     if (g_nativeOn < 0) {
         const char *e = getenv("WCNET_T640_NATIVE");
-        g_nativeOn = e && e[0] ? atoi(e) : XA(2, 0);   // (X-Wing: the quarters by the game's own code until its tracers are proved)
+        g_nativeOn = e && e[0] ? atoi(e) : XA(2, 0);
+        if (XA(0, 1) && g_nativeOn == 1) g_nativeOn = 2;    // (X-Wing: no quarters with this pass: its lists' segment is not a fixed one)   // (X-Wing: the quarters by the game's own code until its tracers are proved)
              // (the default: 2, the scene in one pass; 1 the quarters with this pass; 0 the quarters by the game's own)
         if (g_nativeOn) wclog(1, T640_GAME " 640: the scanline pass is native (WCNET_T640_NATIVE=%d)", g_nativeOn);
     }
@@ -1113,13 +1114,13 @@ void tie640_native_ref(Bit16u loadSeg, int what) {
     const PhysPt ds = (PhysPt)(Bit16u)(loadSeg + kDataPara) << 4;
     RefShade r;
     if (what == 2) {        // (xtrans2_outputxt's entry: every run)
-        r.row = mem_readw(ds + 0x28D4); r.from = mem_readw(ds + 0x28C4); r.to = mem_readw(ds + 0x28C6); r.front = mem_readw(ds + 0x28DC);
+        r.row = mem_readw(ds + XA(0x28D4, 0x3419)); r.from = mem_readw(ds + XA(0x28C4, 0x3409)); r.to = mem_readw(ds + XA(0x28C6, 0x340B)); r.front = mem_readw(ds + XA(0x28DC, 0x3421));
         if (r.to <= r.from) return;
-        r.rightX = -1; r.rightInfo = mem_readw(ds + 0x28BE); r.left = (mem_readw(ds + 0x28BC) << 8) | mem_readb(ds + 0x28BA);
+        r.rightX = -1; r.rightInfo = mem_readw(ds + XA(0x28BE, 0x3403)); r.left = (mem_readw(ds + XA(0x28BC, 0x3401)) << 8) | mem_readb(ds + XA(0x28BA, 0x33FF));
         g_refShades.push_back(r);
         return;
     }
-    r.row = mem_readw(ds + 0x28D4); r.from = mem_readw(ds + 0x28C4); r.to = mem_readw(ds + 0x28C6); r.front = mem_readw(ds + 0x28DC);
+    r.row = mem_readw(ds + XA(0x28D4, 0x3419)); r.from = mem_readw(ds + XA(0x28C4, 0x3409)); r.to = mem_readw(ds + XA(0x28C6, 0x340B)); r.front = mem_readw(ds + XA(0x28DC, 0x3421));
     r.rightX = reg_cx; r.rightInfo = reg_di; r.left = mem_readw(ds + kMinEdge + 2 * (r.front & 0x7F));
     g_refShades.push_back(r);
 }
@@ -1151,24 +1152,26 @@ void tie640_native_row(int row) {
 bool tie640_native_fill(Bit16u loadSeg, Bit32u ip) {
     Bit8u *M = GetMemBase();
     const PhysPt ds = (PhysPt)(Bit16u)(loadSeg + kDataPara) << 4;
-    if (ip == 0xD772) {
-        const Bit16u off = host_readw(M + ds + kBufferOff), words = host_readw(M + ds + 0x48D9);
+    if (ip == XA(0xD772, 0xDB94)) {
+        const Bit16u off = host_readw(M + ds + kBufferOff), words = host_readw(M + ds + XA(0x48D9, 0x543F));
         Bit8u *to = M + ((PhysPt)host_readw(M + ds + kBufferSeg) << 4);
         const Bit8u c = M[ds + kBackColour];
         for (unsigned i = 0; i < 2u * words; i++) to[(Bit16u)(off + i)] = c;
+#ifndef T640_XWING     // (X-Wing's run tables are in a block the routine asks for: its own code makes them)
     } else if (ip == 0x8510) {
         Bit8u *tb = M + ((PhysPt)host_readw(M + ds + kTablesSeg) << 4);
-        Bit16u at = (Bit16u)(host_readw(M + ds + 0xD8A4) + 0xA000);
-        host_writew(M + ds + 0x28E8, at);
-        host_writew(M + ds + 0x28EE, at);
-        host_writew(M + ds + 0x28EC, (Bit16u)(at + 0x2EDE));
+        Bit16u at = (Bit16u)(host_readw(M + ds + XA(0xD8A4, 0xFFFE)) + XA(0xA000, 0xA000));
+        host_writew(M + ds + XA(0x28E8, 0x342D), at);
+        host_writew(M + ds + XA(0x28EE, 0x3433), at);
+        host_writew(M + ds + XA(0x28EC, 0x3431), (Bit16u)(at + XA(0x2EDE, 0x2EDE)));
         const int rows = host_readw(M + ds + kDeep);
         Bit16u run = (Bit16u)(host_readw(M + ds + kWide) - 1);
         for (int r = 0; r < rows; r++) {
             if (!(run >> 8)) { host_writew(tb + at, (Bit16u)(0xFF00 | run)); at = (Bit16u)(at + 2); }
             else { host_writew(tb + at, 0xFFFF); host_writew(tb + (Bit16u)(at + 2), (Bit16u)(0xFF00 | ((run - 0x100) & 0xFF))); at = (Bit16u)(at + 4); }
         }
-        host_writew(M + ds + 0x28EA, at);
+        host_writew(M + ds + XA(0x28EA, 0x342F), at);
+#endif
     } else return false;
     const Bit16u rip = CPU_Pop16();
     const Bit16u seg = CPU_Pop16();

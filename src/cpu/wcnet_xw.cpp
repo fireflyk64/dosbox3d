@@ -115,6 +115,7 @@ void frame_top() {
         wclog(1, "X-Wing: the flight's frames are coming (our object %d, DS %04X%s)", xw_player_object(), (unsigned)SegValue(ds),
               SegValue(ds) == g_ds ? "" : ": NOT the data segment expected");
         hooks_flight_began();
+        hooks_game_changed();       // (the dispatcher's table again: the flight overlay's 640x400 places are there now)
     }
     if (mem_readb(dsa(kSceneFlag)) != 0) return;       // (the jump's scene: no flight yet)
     g_lastFrameMs = now;

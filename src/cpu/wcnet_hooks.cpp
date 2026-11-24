@@ -1250,7 +1250,7 @@ static void key_script() {
         wr16(ds::missionStatus, (Bit16u)status);
     } else if (tv_script_item(item, t)) {
         // (Terminal Velocity's aids: wcnet_tv.cpp)
-    } else if (rap_script_item(item, t) || tdm_script_item(item, t) || xw_script_item(item, t)) {
+    } else if ((xw_found() && xw_script_item(item, t)) || rap_script_item(item, t) || tdm_script_item(item, t) || xw_script_item(item, t)) {
         // (Raptor's aids: wcnet_rap.cpp; the TIE Fighter demo's: wcnet_tiedemo.cpp)
     } else if (priv_script_item(item, t)) {
         // (Privateer's aids: wcnet_priv.cpp)
