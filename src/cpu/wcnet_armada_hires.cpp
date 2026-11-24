@@ -1014,7 +1014,8 @@ void set_override(bool on, bool map) {
 //  - The arrow keys, which the map does not use, move the view (250 units a second; 125 on the game's own map), within
 //    those limits, the picture on or not; not under a dialog.
 //  - The wheel: up, the game's own map; down, one level out again; about the pointer (map_zoom).
-//  - + and - in Move Resources: a click on a row's arrows (mr_update; the game's own keys do the rest: F1..F8).
+//  - + and - in Move Resources, Dock and Move: a click on the top row's arrows (arrows_click; the game's own keys do the
+//    rest: F1..F8, C, D, A).
 // The picture: each screen refresh the game's screen doubled, and in the panel wherever the screen still holds the
 // game's own pass's pixel (of the latest frame or the one before) the 640x400 panel instead: the pointer, the dialogs
 // and anything else drawn over the panel stay the game's.
@@ -1037,17 +1038,18 @@ struct MapBuild {
     // a marker beside a planet (a squadron, a fleet's other ships, the other side's presence: seg11DE:23A0, its planet
     // at +10h): its update method; its offset from the planet (2361); after 2361's call; its box computed
     Bit16u markConv, markOffset, markPlaced, markBox;
-    // the Move Resources dialog (seg0C92 in ARMADA.EXE): its update method's entry; its mouse handler (its arrows' boxes)
-    Bit16u dlgSeg, mrUpdate, mrEvent;
+    // the dialogs with a row of arrows (seg0C92 in ARMADA.EXE), by their mouse handlers (vtable +0Ch): Move Resources,
+    // Dock, Move (a squadron's fighters to another planet)
+    Bit16u dlgSeg, mrEvent, dockEvent, moveEvent;
     Bit16u qStart, qEnd, qHead, qTail, qSize;   // DS: the mouse's event queue (seg6A6C:0162 puts, 0180 takes)
 };
 const MapBuild kMapBuilds[] = {
     { "ARMADA.EXE", 0x14C6, 0x11DE, 0x2DD2, 0x306D, 0x3094, 0x0AA7, 0x07DD, 0x0939,
       { 0x074F, 0x0783, 0x07B7, 0x07EB }, 0x4554, 0x458A, 0x44C0, 0x311F, 0x07B8, 0x2892, 0x080A, 0x28B1, 0x28D5, 0x0B08, 0x76CA, 0x8E56, 0x8EFA, 0x8EFC,
-      0x2390, 0x2361, 0x23EE, 0x2412, 0x0C92, 0x0F05, 0x11F5, 0x6C2C, 0x6C2E, 0x6C30, 0x6C32, 0x8ED8 },
+      0x2390, 0x2361, 0x23EE, 0x2412, 0x0C92, 0x11F5, 0x18EC, 0x0998, 0x6C2C, 0x6C2E, 0x6C30, 0x6C32, 0x8ED8 },
     { "ARMADACD.EXE", 0x14C9, 0x11E1, 0x2DD2, 0x306D, 0x3094, 0x0AA7, 0x07DD, 0x0939,
       { 0x074F, 0x0783, 0x07B7, 0x07EB }, 0x4554, 0x458A, 0x44C0, 0x311F, 0x07B8, 0x2892, 0x080A, 0x28B1, 0x28D5, 0x0B08, 0x774A, 0x8ED6, 0x8F7A, 0x8F7C,
-      0x2390, 0x2361, 0x23EE, 0x2412, 0x0C95, 0x0F05, 0x11F5, 0x6CB8, 0x6CBA, 0x6CBC, 0x6CBE, 0x8F58 },
+      0x2390, 0x2361, 0x23EE, 0x2412, 0x0C95, 0x11F5, 0x18EC, 0x0998, 0x6CB8, 0x6CBA, 0x6CBC, 0x6CBE, 0x8F58 },
 };   // (Proving Grounds has no strategy map)
 enum { kPX0 = 105, kPY0 = 15, kPW = 197, kPH = 137, kPCX = 203, kPCY = 83, kMW = 2 * kPW, kMH = 2 * kPH };
 enum { kMapX0 = 2 * kPX0, kMapY0 = 2 * kPY0 };      // the doubled panel on the 640x400 screen
@@ -1078,8 +1080,7 @@ bool g_mapZoomIn;               // the wheel's: the game's own map (up), or one 
 int g_mapWheel;                 // the wheel's turn not yet taken (the frame's entry takes it: the quarters' scroll and
                                 // pointer are the game's own again there)
 double g_mapFrameAt = -1e9;     // the map screen's frame function's latest entry
-bool g_mrOk;                    // the Move Resources dialog and the event queue are as known (+ and -)
-double g_mrAt = -1e9;           // its update's latest call
+bool g_mrOk;                    // the arrows' dialogs and the event queue are as known (+ and -)
 std::vector<int> g_mrPending;   // + (1) and - (-1) not yet clicked
 
 PhysPt map_view() { return ds_at(rd16l(ds_at(g_m->viewPtr))); }
@@ -1117,17 +1118,23 @@ bool map_code_here() {
     return mem_readw(c + g_m->ovLines) == 0x7D6A;
 }
 
-// The Move Resources dialog's update (55 8B EC 56 57 8B 76 06, then its key: mov al,[...]) and its mouse handler: a
-// row's arrows at x C7..CD (to the ship) and CF..D5 (to the planet), its rows 8 high from y 4Ch
+// The arrows' dialogs' mouse handlers: a row's left arrow at x C7..CD and its right at CF..D5, rows 8 high from y 4Ch
+// (Move Resources: its row's top in [bp-8]) or 6Eh (Dock, Move: [bp-6]); a check of each at its place
 bool mr_code_here() {
     const PhysPt d = (PhysPt)(Bit16u)(g_load + g_m->dlgSeg) << 4;
-    if (mem_readd(d + g_m->mrUpdate) != 0x56EC8B55 || mem_readd(d + g_m->mrUpdate + 4) != 0x06768B57 ||
-        mem_readb(d + g_m->mrUpdate + 8) != 0xA0) return false;
     const PhysPt e = d + g_m->mrEvent;
     if (mem_readd(e) != 0x83EC8B55 || mem_readb(e + 0x10F) != 0xC7 || mem_readd(e + 0x110) != 0x004CF846) return false;
     if (mem_readd(e + 0x12F) != 0x00C7FF81 || mem_readd(e + 0x135) != 0x00CDFF81) return false;
     if (mem_readd(e + 0x172) != 0x00CFFF81 || mem_readd(e + 0x178) != 0x00D5FF81) return false;
-    return mem_readd(e + 0x143) == 0x05F8468B && mem_readw(e + 0x147) == 0x0008;   // (mov ax,[bp-8]; add ax,8)
+    if (mem_readd(e + 0x143) != 0x05F8468B || mem_readw(e + 0x147) != 0x0008) return false;   // (mov ax,[bp-8]; add ax,8)
+    const PhysPt k = d + g_m->dockEvent;     // (cmp di,C7h ... CDh, CFh ... D5h; mov word [bp-6],6Eh; add word [bp-6],8)
+    if (mem_readd(k) != 0x83EC8B55 || mem_readd(k + 0x113) != 0x6EFA46C7 || mem_readd(k + 0x174) != 0x00C7FF81 ||
+        mem_readd(k + 0x17A) != 0x00CDFF81 || mem_readd(k + 0x1D4) != 0x00CFFF81 || mem_readd(k + 0x1DA) != 0x00D5FF81 ||
+        mem_readd(k + 0x241) != 0x08FA4683) return false;
+    const PhysPt v = d + g_m->moveEvent;     // (cmp word [bp-2],C7h ...; the same rows)
+    if (mem_readd(v) != 0x83EC8B55 || mem_readd(v + 0x122) != 0x6EFA46C7 || mem_readd(v + 0x183) != 0xC7FE7E81 ||
+        mem_readd(v + 0x18D) != 0xCDFE7E81 || mem_readd(v + 0x222) != 0xCFFE7E81 || mem_readd(v + 0x22C) != 0xD5FE7E81) return false;
+    return true;
 }
 
 bool map_wanted() { return g_m && g_mapCodeOk && wanted() && !g_mapZoomIn && vga.mode == M_VGA; }
@@ -1152,6 +1159,8 @@ void map_clamp(PhysPt view, int &cx, int &cy, bool doubled) {
     cx = left + kPW > right - kPW ? (left + right) / 2 : std::max(left + kPW, std::min(right - kPW, cx));
     cy = top + kPH > bottom - kPH ? (top + bottom) / 2 : std::max(top + kPH, std::min(bottom - kPH, cy));
 }
+
+void arrows_click();
 
 // The wheel's turn, at the frame's entry
 void map_zoom(bool in) {
@@ -1183,6 +1192,7 @@ void map_frame() {
     g_mapFrameAt = now;
     g_mapDS = ds_at(0);
     if (g_mapWheel) map_zoom(g_mapWheel > 0);
+    if (g_mrOk && !g_mrPending.empty()) arrows_click();
     const PhysPt view = map_view();
     int cx = (Bit16s)mem_readw(view + 0x42) + kPCX, cy = (Bit16s)mem_readw(view + 0x44) + kPCY;
     const int wasX = cx, wasY = cy;
@@ -1703,16 +1713,17 @@ void map_conv() {
     g_mapHalved.insert(o);
 }
 
-// The Move Resources dialog's + and - (the user, 2026-11-23: "increasing resource count for transport or carrier";
-// "if there are gaps we can add those": the game's own keys are F1..F8 for the buttons, C and D for a dialog's Cancel
-// and Done, none for these arrows).  + is a click on a row's left arrow (a ton from the planet onto the ship), - on
-// its right (back to the planet): the row level with the pointer, else the first.  The click is the game's own: a
-// press and a release put in the mouse's event queue (seg6A6C: 7 bytes each: kind 1 press / 2 release, the button,
-// x in 640ths, y, the buttons held), from the dialog's update (the game's own flow, never inside the mouse's
-// interrupt), so the dialog's handler takes it as a click at that arrow, its limits and all, the pointer where it was.
-// One a frame; a key held repeats as the keyboard repeats it.
-const int kMrRowTop = 0x4C, kMrRows = 6;
-
+// + and - in the dialogs with a row of arrows (the user, 2026-11-23: "increasing resource count for transport or
+// carrier"; "if there are gaps we can add those": the game's own keys are F1..F8 for the buttons, C and D for a
+// dialog's Cancel and Done, A for the Move dialog's All, none for these arrows; "yes +/- on the dock is also good....
+// and what about undock.... and move...maybe those could just do the top item....other ones you have to click"):
+//  - Move Resources (0C92:11F5): + the top row's left arrow (a ton from the planet onto the ship), - its right;
+//  - Dock (18EC): + the top row's right arrow (one more docked), - its left (one undocked);
+//  - Move (0998, a squadron sent to another planet): + the right (one more going), - the left (one more staying).
+// The click is the game's own: a press and a release put in the mouse's event queue (seg6A6C: 7 bytes each: kind 1
+// press / 2 release, the button, x in 640ths, y, the buttons held), from the map's frame (the game's own flow, never
+// inside the mouse's interrupt), so the dialog's handler takes it as a click at that arrow, its limits and all, the
+// pointer where it was.  One a frame; a key held repeats as the keyboard repeats it.
 bool mr_queue_put(PhysPt ds, Bit8u kind, int x, int y, Bit8u held) {
     const Bit16u start = mem_readw(ds + g_m->qStart), end = mem_readw(ds + g_m->qEnd), size = mem_readw(ds + g_m->qSize);
     const Bit16u head = mem_readw(ds + g_m->qHead), tail = mem_readw(ds + g_m->qTail);
@@ -1726,29 +1737,35 @@ bool mr_queue_put(PhysPt ds, Bit8u kind, int x, int y, Bit8u held) {
     return true;
 }
 
-void mr_update() {
-    g_mrAt = PIC_FullIndex();
-    g_mapDS = ds_at(0);
-    if (g_mrPending.empty()) return;
-    const PhysPt ds = g_mapDS;
-    const Bit16u head = mem_readw(ds + g_m->qHead), tail = mem_readw(ds + g_m->qTail);
-    if (head != tail) return;           // (the game's own events first)
-    const int py = (Bit16s)mem_readw(ds_at(g_m->mouseY));
-    const int row = py >= kMrRowTop && py < kMrRowTop + 8 * kMrRows ? (py - kMrRowTop) / 8 : 0;
-    const int x = 2 * (g_mrPending.front() > 0 ? 0xCA : 0xD2), y = kMrRowTop + 8 * row + 4;
-    if (mr_queue_put(ds, 1, x, y, 1) && mr_queue_put(ds, 2, x, y, 0)) {
-        g_mrPending.erase(g_mrPending.begin());
-    }
+// The dialog over the map now, by its mouse handler (its vtable +0Ch): 1 Move Resources, 2 Dock, 3 Move; else 0
+int arrows_dialog(PhysPt dsb) {
+    const Bit16u obj = mem_readw(map_view_in(dsb) + 0x2A4);
+    if (!obj) return 0;
+    const PhysPt vt = dsb + mem_readw(dsb + obj);
+    if ((Bit16u)(mem_readw(vt + 0x0E) - g_load) != g_m->dlgSeg) return 0;
+    const Bit16u h = mem_readw(vt + 0x0C);
+    return h == g_m->mrEvent ? 1 : h == g_m->dockEvent ? 2 : h == g_m->moveEvent ? 3 : 0;
 }
 
-bool mr_open() { return g_m && g_mrOk && PIC_FullIndex() - g_mrAt < 300.0 && mem_readw(map_view_in(g_mapDS) + 0x2A4); }
+// At the map's frame: the next + or - clicked
+void arrows_click() {
+    const int kind = arrows_dialog(g_mapDS);
+    if (!kind) { g_mrPending.clear(); return; }
+    const PhysPt ds = g_mapDS;
+    if (mem_readw(ds + g_m->qHead) != mem_readw(ds + g_m->qTail)) return;   // (the game's own events first)
+    const bool plus = g_mrPending.front() > 0;
+    const bool left = kind == 1 ? plus : !plus;
+    const int x = 2 * (left ? 0xCA : 0xD2), y = (kind == 1 ? 0x4C : 0x6E) + 4;
+    if (mr_queue_put(ds, 1, x, y, 1) && mr_queue_put(ds, 2, x, y, 0)) g_mrPending.erase(g_mrPending.begin());
+}
 
 // The keys: the main row's = (+, shifted or not) and -, as the keyboard gives them (its repeat while held: the
-// emulated keyboard's, 30 a second after half a second); they go on to the game too, which has no use for them here.
+// emulated keyboard's, 30 a second after half a second); they go on to the game too, which has no use for them there.
 // (Not the keypad's: on the strategy screen the game's own update takes a held keypad - (and keypad +, with its
 // flag DS:16AC set) to set the side's record's +18h)
 bool mr_key(int kbdKey, bool pressed) {
-    if (!pressed || (kbdKey != KBD_equals && kbdKey != KBD_minus) || !mr_open()) return false;
+    if (!pressed || (kbdKey != KBD_equals && kbdKey != KBD_minus) || !g_m || !g_mrOk) return false;
+    if (PIC_FullIndex() - g_mapFrameAt > 300.0 || !arrows_dialog(g_mapDS)) return false;
     if (g_mrPending.size() < 2) g_mrPending.push_back(kbdKey == KBD_equals ? 1 : -1);
     return false;
 }
@@ -1787,7 +1804,7 @@ void arm_hires_loaded(const char *exe, Bit16u loadSeg) {
     g_mapLastOwn = -1e9;
     g_mapZoomIn = false;
     g_mapWheel = 0;
-    g_mapFrameAt = g_mrAt = -1e9;
+    g_mapFrameAt = -1e9;
     g_mrOk = false;
     g_mrPending.clear();
     g_mapHalved.clear();
@@ -1798,8 +1815,8 @@ void arm_hires_loaded(const char *exe, Bit16u loadSeg) {
     if (g_m) {
         g_mapCodeOk = map_code_here();
         g_mrOk = g_mapCodeOk && mr_code_here();
-        wclog(1, "Armada: %s's strategy map %s; its Move Resources %s", exe, g_mapCodeOk ? "can be drawn at 640x400" :
-              "is not as known: the game's own", g_mrOk ? "takes + and -" : "is the game's own");
+        wclog(1, "Armada: %s's strategy map %s; its Move Resources, Dock and Move %s", exe, g_mapCodeOk ? "can be drawn at 640x400" :
+              "is not as known: the game's own", g_mrOk ? "take + and -" : "are the game's own");
     }
     if (g_b) wanted();
 }
@@ -1808,7 +1825,6 @@ void arm_hires_watch(void (*watch)(Bit16u ip)) {
     now_wanted();
     // (the arrows on the map, the wheel's knowing the map is up, and + and - in Move Resources: high resolution or not)
     if (g_m && g_mapCodeOk) watch(g_m->frame);
-    if (g_m && g_mrOk) watch(g_m->mrUpdate);
     if (!g_b || !g_used) return;
     for (int o : { 0, (int)kCleared, (int)kSetup, (int)kDrawn, (int)kCockpit }) watch((Bit16u)(g_b->top + o));
     watch(g_b->starEntry);
@@ -1833,7 +1849,6 @@ bool arm_hires_hook(Bit32u ip) {
     if (ip > 0xFFFF) return false;
     const Bit16u para = (Bit16u)(SegValue(cs) - g_load);
     if (g_m && g_mapCodeOk && para == g_m->seg && ip == g_m->frame) { map_frame(); return true; }
-    if (g_m && g_mrOk && para == g_m->dlgSeg && ip == g_m->mrUpdate) { mr_update(); return true; }
     if (!g_b || !g_used) return false;
     if (g_m && g_mapCodeOk) {
         if (para == g_m->seg) {
