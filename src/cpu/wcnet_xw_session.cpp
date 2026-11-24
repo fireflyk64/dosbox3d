@@ -1,0 +1,1802 @@
+/*
+ *  X-Wing Collector's CD-ROM's room (wcnet_xw.h, docs/xwing.md).
+ *
+ *  The TIE Fighter demo's session (wcnet_tiedemo_session.cpp, itself the CD version's), ported: the flight engine is
+ *  an earlier build of the same one, its craft the same records less a word, so a flight is shared the same way, with
+ *  the same messages (TdmHello, TdmState, TieFrame, TieOwners).  What is X-Wing's own:
+ *
+ *  * The room: up to 4 pilots.  The host is seat 0.
+ *  * The launch.  Each machine's program waits at create_createmission's entry (the mission picked in its own front
+ *    end, briefed, the pilots assigned, "into space" clicked) until every pilot of the room is there; the host then
+ *    says go with its random seed, its mission file and how many pilots fly.  A guest's game makes the HOST's mission
+ *    (the path written over its own), so the room flies one mission whatever each picked.
+ *  * The seats.  The mission's player flight group is made as large as the pilots flying (its craft count raised on
+ *    every machine alike); the host flies the craft the mission gives the player, seat 1 the group's first craft
+ *    the host does not fly, seat 2 the next: the same craft in the same object slots everywhere.
+ *  * An object has no id number in this build: a slot's new object is told by what the slot held at the last look
+ *    (empty, an explosion, another type or flight group).  A craft's flight group is in its craft data (+5).
+ *  * A dying craft's slot is an explosion by its category (5), whatever its type.
+ *  * Not ported yet: dockings (the host flies every craft with a boarding order), the warheads' counts.
+ *  * The room's end: a pilot down, or the host's flight over, ends everybody's flight 3 s later.
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <string>
+#include <vector>
+#include <algorithm>
+#include "wcnet_xw.h"
+#include "wcnet_tie_ident.h"
+#include "wcnet_transport.h"
+#include "wcnet_lobby.h"
+#include "wcnet_log.h"
+#include "wc_net.h"
+#include "net_config.h"
+#include "pic.h"
+
+extern std::string incoming_text;   // the line the emulator draws over the picture (sdlmain.cpp)
+
+namespace wc {
+
+namespace {
+
+using namespace xw;
+
+enum {
+    kMaxSeats = 4,
+    kHelloWaitMs = 20000,
+    kPollMs = 4,
+    kStateEveryMs = 500,            // our TdmState outside the flight
+    kStaleMs = 1500,                // a TdmState older than this: the pilot not at the launch
+    kNoticeMs = 8000,
+    kLaunchWaitMs = 120000,         // the host waits this long at most for a guest still in the opening
+    kReliableEveryMs = 1000,
+    // the CD's step 5 (world units: 40,960 a km)
+    kReach = 102400,                // 2.5 km, the lasers' reach: within it a craft is near
+    kTargetReach = 163840,          // 4 km: a pilot's target within it is that pilot's to fly
+    kMidReach = 409600,             // 10 km: a craft within it is reported every kMidEvery frames
+    kMidEvery = 10,
+    kFarEvery = 30,                 // one far craft every this many frames, in turn
+    kOwnerHoldMs = 1000,            // a craft changes owner at most this often
+    kOwnersEveryMs = 2000,          // the host's whole table, this often
+    kDecideEveryMs = 250,
+    kPilotStaleMs = 3000,           // a pilot whose frames stopped this long is not counted
+    kLocalAiIn = 204800,            // 5 km: within it another machine's craft is held here, beyond kLocalAiOut our AI flies it
+    kLocalAiOut = 225280,           // 5.5 km
+    kExactError = 400,              // a near craft's report this close is written as it is
+    kRoomEndMs = 3000,
+    kShownMaxMs = 2000,             // a hit of ours shown on another's craft is kept over its owner's figures until
+    kShownOldPeerMs = 600,          //   the owner has dealt with it (its frames' hit_acks), this long at most; an
+                                    //   owner that sends none (a machine of before them): this long
+    kAckStuckMs = 1000,             // hits queued for the game's call and not come back this long: counted dealt with
+    kWpnSlots = 0x114,              // CraftData: the weapon slots, 6 bytes each (+0 its type: from 0x18 a launcher;
+    kWpnSlotSize = 6,               //   +2 its warheads, a word)
+    kWpnSlotCount = 0,              // (not ported: no warheads sent)
+    kShotReach = 2 * kReach,
+    kKillCalls = 12,
+    kCatExplosion = 5,              // a dying craft's slot becomes its explosion: its category
+    kHitsIn = 64,
+    kUnknownToHostMs = 4000,        // a craft here that the host's owners have gone without this long: flown here
+};
+const double kCorrectSpeed = 12288.0;       // a place pulled to its owner's at most this fast, units a second (300 m/s)
+const double kFarBlendS = 10.0;             // a craft our AI flies: its first report blended in over this many seconds,
+const double kFarBlendMinS = 1.0;           // ... the next ones over the time since the one before, at least this
+const double kFarBlendMaxS = 15.0;          // ... and at most this
+const double kTicksPerSecond = 236.0;       // (the game's clock: frameticks)
+const char kMissionName[] = "XWING";
+
+struct Peer {
+    Connection conn;
+    int player;
+    std::string callsign;
+    bool hello;
+    bool flying;
+    Peer() : player(-1), hello(false), flying(false) {}
+};
+
+struct Remote {                     // a pilot's TdmState
+    bool known, atLaunch, inFlight;
+    double at;
+    std::string callsign;
+    Bit32u go, seed, seed2, pilots;
+    std::string mission;            // (the host's go: its mission file, how many pilots fly)
+    Remote() : known(false), atLaunch(false), inFlight(false), at(-1e9), go(0), seed(0), seed2(0), pilots(0) {}
+};
+
+struct Puppet {
+    bool used;
+    int owner;
+    bool fresh;                     // a report not yet written into the game
+    TieCraft state;
+    double at, prevAt;
+    bool localAi;                   // far from our pilot: flown by our AI, pulled to its owner's reports
+    double ex, ey, ez, blendTicks;
+};
+
+// A hit of ours shown on a craft another machine flies (its owner applies it for good): kept until the owner's
+// figures have it.
+struct Shown {
+    Bit32u serial;                  // its TieHit's (0: none)
+    Bit32u ident;                   // the craft
+    long dmg;
+    int side;
+    double at;
+};
+
+struct Net {
+    bool host;
+    int self, seats;
+    std::string callsign;
+    Listener *listener;
+    std::vector<Peer *> peers;
+    Remote remotes[kMaxSeats];
+    // the launch
+    bool atLaunch;
+    double launchSince;
+    Bit32u launchSerial, flownGo;
+    Bit32u hostSeed, hostSeed2, pilots;
+    std::string hostMission;
+    std::string hostGoals;          // the host's flight groups' status, its latest (fg_table)
+    double goalsSentAt;
+    bool hostFlew;                  // the host's frames seen this flight (its flight over then ends ours)
+    int gen[kCraftSlots], genType[kCraftSlots], genCat[kCraftSlots], genFg[kCraftSlots];    // (the slots' objects told apart: slot_id)
+    bool alone;                     // this flight flown alone (nobody came)
+    bool roomEnded;                 // this flight ended by the room (room_end), not by its pilot
+    bool soloNext;                  // a guest's launch, held for a host already flying: flown alone (Esc)
+    bool lateSaid;                  // ... and told so, once a launch
+    // the flight
+    Bit64u frame;
+    double lastReliableAt, endAt;
+    Puppet puppets[kObjectCount];
+    int owner[kCraftSlots];
+    double ownerAt[kCraftSlots];
+    int pilotObj[kMaxSeats], pilotTarget[kMaxSeats];
+    double pilotSeenAt[kMaxSeats];
+    double decidedAt, ownersSentAt;
+    int farCursor;
+    std::vector<TieShot> shotsOut;
+    std::vector<TieHit> hitsOut;
+    std::vector<TieEvent> eventsOut;
+    TieIdents ids;                      // each craft slot's identity (wcnet_tie_ident.h: the CD's session's too)
+    Bit32u deathSent[kCraftSlots];      // the identity whose death was sent (no exit for it then)
+    Bit32u killIdent[kCraftSlots];      // the identity a kill under way here is for
+    TieHit hitsIn[kHitsIn];             // (target and shooter as this machine's slots)
+    Bit32u hitsInIdent[kHitsIn];        // ... the target's identity, checked when the hit is applied
+    int hitsInFrom[kHitsIn];            // ... and the seat that sent it
+    int hitsInNext;
+    // Our hits on the others' craft and theirs on ours, counted (TieHit.serial, TieFrame.hit_acks)
+    std::vector<Shown> shown;
+    Bit32u hitSerial;                   // the hits we have sent (never reset: a later flight's are higher)
+    int lastHitBolt, lastHitTarget;     // the hit just sent (collide_laserhitcraft's entry): its damage call follows
+    Bit32u ackLatest[kMaxSeats];        // by sender: the highest serial taken in here,
+    Bit32u ackDone[kMaxSeats];          //   and the highest dealt with (sent back with our frames)
+    int ackPending[kMaxSeats];          //   (hits queued for the game's call)
+    double ackPendingAt[kMaxSeats];
+    Bit32u ackSeen[kMaxSeats];          // by owner: the highest of our serials it says it has dealt with
+    bool ackKnown[kMaxSeats];           //   (it sends them)
+    int killing[kCraftSlots], killer[kCraftSlots];
+    // the report's
+    unsigned sentCraft, sentNear, sentMid, sentFar, sentBytes, ownerChanges, shotsSent, shotsMade, hitsSent, hitsApplied,
+        damageSkipped, kills, credited, localAiNow, localAiStarts, localAiEnds, localShots, farReports, nearBlends, hitsShown, phantoms;
+    double farErrSum, farErrMax;
+    Net() : host(false), self(-1), seats(2), listener(NULL), atLaunch(false), launchSince(0), launchSerial(0), flownGo(0),
+            hostSeed(0), hostSeed2(0), pilots(1), goalsSentAt(-1e9), hostFlew(false), alone(false), roomEnded(false), soloNext(false), lateSaid(false), frame(0),
+            lastReliableAt(0), endAt(0), decidedAt(-1e9), ownersSentAt(-1e9), farCursor(0), hitsInNext(0), hitSerial(0), lastHitBolt(-1), lastHitTarget(-1) {
+        for (int o = 0; o < kCraftSlots; o++) gen[o] = genType[o] = genCat[o] = genFg[o] = 0;
+        zero_counts();
+        clear_flight();
+    }
+    void zero_counts() {
+        sentCraft = sentNear = sentMid = sentFar = sentBytes = ownerChanges = shotsSent = shotsMade = hitsSent = hitsApplied = 0;
+        damageSkipped = kills = credited = localAiNow = localAiStarts = localAiEnds = localShots = farReports = nearBlends = hitsShown = phantoms = 0;
+        farErrSum = farErrMax = 0;
+    }
+    // A puppet table and owners for a new flight (a Puppet holds a protobuf message: never memset).
+    void clear_flight() {
+        for (int o = 0; o < kObjectCount; o++) {
+            Puppet &p = puppets[o];
+            p.used = false;
+            p.owner = -1;
+            p.fresh = false;
+            p.state.Clear();
+            p.at = p.prevAt = 0;
+            p.localAi = false;
+            p.ex = p.ey = p.ez = p.blendTicks = 0;
+        }
+        shown.clear();
+        lastHitBolt = lastHitTarget = -1;
+        for (int k = 0; k < kMaxSeats; k++) {
+            ackLatest[k] = ackDone[k] = ackSeen[k] = 0;
+            ackPending[k] = 0;
+            ackPendingAt[k] = 0;
+            ackKnown[k] = false;
+        }
+        for (int o = 0; o < kCraftSlots; o++) {
+            owner[o] = 0;
+            ownerAt[o] = -1e9;
+            deathSent[o] = killIdent[o] = 0;
+            killing[o] = killer[o] = 0;
+        }
+        ids.clear();
+        for (int k = 0; k < kMaxSeats; k++) {
+            pilotObj[k] = -1;
+            pilotTarget[k] = 0xFFFF;
+            pilotSeenAt[k] = -1e9;
+        }
+        for (int o = 0; o < kCraftSlots; o++) genType[o] = genCat[o] = 0;     // (gen itself never goes back)
+        hostFlew = false;
+        farCursor = 0;
+        shotsOut.clear();
+        hitsOut.clear();
+        eventsOut.clear();
+        endAt = 0;
+        frame = 0;
+    }
+    ~Net() {
+        for (size_t i = 0; i < peers.size(); i++) delete peers[i];
+        delete listener;
+    }
+};
+
+Net *g_net = NULL;
+double g_nextTryMs = 0, g_pollAt = -1e9, g_stateAt = -1e9, g_noticeAt = -1;
+bool g_tried = false;
+
+void begin_kill(int obj, int killer);
+void room_end(int seat, const char *what);
+void end_for_room(const std::string &line);
+
+// --- memory ---------------------------------------------------------------------------------------------------------
+
+inline Bit8u o8(int o, int k) { return mem_readb(xw_obj(o) + (PhysPt)k); }
+inline Bit16u o16(int o, int k) { return mem_readw(xw_obj(o) + (PhysPt)k); }
+inline Bit32s o32(int o, int k) { return (Bit32s)mem_readd(xw_obj(o) + (PhysPt)k); }
+inline void wo8(int o, int k, Bit8u v) { mem_writeb(xw_obj(o) + (PhysPt)k, v); }
+inline void wo16(int o, int k, Bit16u v) { mem_writew(xw_obj(o) + (PhysPt)k, v); }
+inline void wo32(int o, int k, Bit32u v) { mem_writed(xw_obj(o) + (PhysPt)k, v); }
+inline Bit16u ds16(Bit16u off) { return mem_readw(xw_ds(off)); }
+
+// What happens in the room: to the log.  Over the picture (show) only a launch held for the others (the user,
+// 2026-11-15: "We need to minimize the added output text using the overlay in the game").
+void notice(const std::string &text) {
+    wclog(1, "X-Wing: %s", text.c_str());
+}
+void show(const std::string &text) {
+    incoming_text = text;
+    g_noticeAt = PIC_FullIndex();
+    wclog(1, "X-Wing: %s", text.c_str());
+}
+
+std::string pilot_name(int seat) {
+    if (!g_net || seat < 0 || seat >= kMaxSeats) return "a pilot";
+    if (seat == g_net->self) return g_net->callsign;
+    return g_net->remotes[seat].callsign.empty() ? std::string("pilot ") + (char)('1' + seat) : g_net->remotes[seat].callsign;
+}
+
+std::string host_name() {
+    return g_net && !g_net->remotes[0].callsign.empty() ? g_net->remotes[0].callsign : std::string("the host");
+}
+
+bool configured() {
+    const char *off = getenv("WCNET");
+    if (off && off[0] == '0') return false;
+    if (getenv("WCSOLO") && getenv("WCSOLO")[0] == '1') return false;
+    return getenv("WCROOM") || getenv("WCHOST") || getenv("WCPORT");
+}
+
+std::string own_callsign() {
+    const char *env = getenv("WCCALLSIGN");
+    return env && env[0] ? env : "Pilot";
+}
+
+// --- the room ---------------------------------------------------------------------------------------------------
+
+bool start() {
+    net_config.reset_from_env();
+    Net *n = new Net();
+    n->callsign = own_callsign();
+    n->seats = net_config.lobby_players > 0 ? std::min((int)kMaxSeats, net_config.lobby_players) : 2;
+    std::string where;
+    bool client;
+    if (net_config.use_lobby()) {
+#ifdef C_LOBBYLINK
+        if (!g_lobby) g_lobby = LobbyHub::join(net_config);
+        if (!g_lobby) {
+            delete n;
+            return false;
+        }
+        client = !g_lobby->is_host();
+        if (g_lobby->max_players() > 0) n->seats = std::min((int)kMaxSeats, g_lobby->max_players());
+        where = "room " + g_lobby->code();
+#else
+        delete n;
+        return false;
+#endif
+    } else {
+#ifdef __EMSCRIPTEN__
+        wclog(0, "X-Wing: the browser build has no TCP transport: set WCROOM (a room code) to play");
+        delete n;
+        return false;
+#endif
+        client = net_config.host && net_config.host[0];
+        where = client ? std::string(net_config.host) + ":" + net_config.portstr : std::string("port ") + net_config.portstr;
+    }
+    if (client) {
+        Stream *s = NULL;
+#ifdef C_LOBBYLINK
+        if (g_lobby) {
+            // The wait for the host's channel (up to kHelloWaitMs, the emulator standing still) is made once.  After
+            // it, a host that is not connected is only looked for: the user, 2026-11-19, of a guest whose host had
+            // closed its page: "the guest keeps getting these intermittent waits for a host that is never coming
+            // back" (the game stopped for 20 s out of every 30).
+            static bool waited = false;
+            if (waited && !g_lobby->peer_up(0)) {
+                delete n;
+                return false;
+            }
+            waited = true;
+            s = g_lobby->open_peer(0, kHelloWaitMs);
+        } else
+#endif
+            s = tcp_connect(net_config.host, net_config.portstr);
+        if (!s) {
+            wclog(0, "X-Wing: could not reach the host at %s", where.c_str());
+            delete n;
+            return false;
+        }
+        Peer *p = new Peer();
+        p->conn.adopt(s);
+        p->player = 0;
+        n->peers.push_back(p);
+        NetworkMessage msg;
+        msg.mutable_tdm_hello()->set_callsign(n->callsign);
+        p->conn.send(msg);
+    } else {
+        Listener *l = NULL;
+#ifdef C_LOBBYLINK
+        if (g_lobby) l = g_lobby->make_listener();
+        else
+#endif
+            l = tcp_listen(net_config.portstr);
+        if (!l) {
+            wclog(0, "X-Wing: could not listen on %s", where.c_str());
+            delete n;
+            return false;
+        }
+        n->listener = l;
+        n->host = true;
+        n->self = 0;
+    }
+    g_net = n;
+    wclog(1, "X-Wing: %s at %s, %d seats, callsign %s", n->host ? "HOST" : "GUEST", where.c_str(), n->seats, n->callsign.c_str());
+    if (n->host) notice("Room open: the others fly your mission with you in your flight group, launched together");
+    return true;
+}
+
+int free_player() {
+    for (int p = 1; p < g_net->seats; p++) {
+        bool taken = false;
+        for (size_t i = 0; i < g_net->peers.size() && !taken; i++) taken = g_net->peers[i]->player == p;
+        if (!taken) return p;
+    }
+    return -1;
+}
+
+template <class Send> void relay(Peer *from, Send send) {
+    if (!g_net->host) return;
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        Peer *to = g_net->peers[i];
+        if (to != from && to->hello && to->conn.is_open()) send(to);
+    }
+}
+
+void send_all(NetworkMessage &msg, bool bestEffort) {
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        Peer *to = g_net->peers[i];
+        if (!to->hello || !to->conn.is_open()) continue;
+        if (bestEffort) to->conn.send_best_effort(msg); else to->conn.send(msg);
+    }
+}
+
+// the pilots with us in the room (said hello)
+int others() {
+    if (!g_net) return 0;
+    int n = 0;
+    for (size_t i = 0; i < g_net->peers.size(); i++) n += g_net->peers[i]->hello && g_net->peers[i]->conn.is_open();
+    return n;
+}
+
+// The flight groups' status as this game has it (DS:C80E, 20 bytes a group: what each group's craft have done and had
+// done to them, which the mission's goals are judged by when the flight is over, 18C4:2754).
+std::string fg_table() {
+    std::string t;
+    if (!xw_flight_loaded()) return t;
+    const int n = std::min((int)kFgMax, (int)ds16(kNumFgs));
+    for (int i = 0; i < n * kFgStatusSize; i++) t += (char)mem_readb(xw_ds((Bit16u)(kFgStatus + i)));
+    return t;
+}
+
+void send_state(bool reliable) {
+    NetworkMessage msg;
+    TdmState *st = msg.mutable_tdm_state();
+    st->set_player((Bit32u)(g_net->self < 0 ? 0 : g_net->self));
+    st->set_in_flight(xw_in_flight());
+    st->set_at_launch(g_net->atLaunch);
+    if (g_net->host && g_net->launchSerial) {
+        st->set_go(g_net->launchSerial);
+        st->set_seed(g_net->hostSeed);
+        st->set_seed2(g_net->hostSeed2);
+        st->set_mission_name(g_net->hostMission);
+        st->set_pilots(g_net->pilots);
+    }
+    if (g_net->host && g_net->flownGo && !g_net->atLaunch) st->set_rec(fg_table());
+    send_all(msg, !reliable);
+    g_stateAt = PIC_FullIndex();
+}
+
+void take_state(const TdmState &st, int seat) {
+    if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) return;
+    Remote &r = g_net->remotes[seat];
+    r.known = true;
+    r.at = PIC_FullIndex();
+    if (!g_net->host && seat == 0 && st.has_rec() && !st.rec().empty()) g_net->hostGoals = st.rec();
+    const bool wasAtLaunch = r.atLaunch, wasInFlight = r.inFlight;
+    r.atLaunch = st.at_launch();
+    r.inFlight = st.in_flight();
+    // The host's flight over (its frames stop with it, never saying so: its state does): ours ends too.
+    if (!g_net->host && seat == 0 && wasInFlight && !r.inFlight && g_net->hostFlew && g_net->flownGo && !g_net->alone && xw_in_flight()) {
+        end_for_room(pilot_name(0) + "'s flight is over: the flight ends for everybody");
+    }
+    // The host at a launch again while we still fly the one before with it: its program ended without its verdict
+    // (its pilot's own Esc, the demo's end at once), and it now waits for us.  The room's rule, the host's flight
+    // over: ours ends too, and the next launch is together.  (The user, 2026-11-19: "the host exited and went back to
+    // the neon showroom and got stuck waiting for the other to join--but the guest was in the mission".)
+    if (!g_net->host && seat == 0 && r.atLaunch && g_net->flownGo && !g_net->alone && xw_in_flight() &&
+        (!st.has_go() || st.go() <= g_net->flownGo)) {
+        end_for_room(pilot_name(0) + " is at the launch again: the flight ends for everybody");
+    }
+    // (a guest come to its launch while this host flies: it launches with the next mission; said here)
+    if (g_net->host && r.atLaunch && !wasAtLaunch && xw_in_flight()) {
+        notice(pilot_name(seat) + " is waiting to launch: you fly the next mission together");
+    }
+    if (st.has_go() && st.go() > r.go) {
+        r.go = st.go();
+        r.seed = st.seed();
+        r.seed2 = st.seed2();
+        r.mission = st.mission_name();
+        r.pilots = st.has_pilots() ? st.pilots() : 2;
+    }
+}
+
+// --- the flight (the CD port's) -----------------------------------------------------------------------------------
+
+bool is_craft(int obj) {
+    return obj >= 0 && obj < kCraftSlots && o8(obj, kOType) != 0 && o8(obj, kOCat) == 0;
+}
+bool dying(int obj) {
+    return o16(obj, kODeath) != 0 || o8(obj, kOCat) == kCatExplosion;
+}
+double distance(int a, int b) {
+    const double dx = (double)o32(a, kOPos) - (double)o32(b, kOPos), dy = (double)o32(a, kOPos + 4) - (double)o32(b, kOPos + 4),
+                 dz = (double)o32(a, kOPos + 8) - (double)o32(b, kOPos + 8);
+    return sqrt(dx * dx + dy * dy + dz * dz);
+}
+// The pilots flying this mission now (their frames seen lately), ourselves among them.
+bool pilot_present(int seat, double now) {
+    if (seat == g_net->self) return xw_player_object() >= 0;
+    return seat >= 0 && seat < kMaxSeats && g_net->pilotObj[seat] >= 0 && now - g_net->pilotSeenAt[seat] < kPilotStaleMs;
+}
+int pilot_object(int seat) { return seat == g_net->self ? xw_player_object() : g_net->pilotObj[seat]; }
+
+// Who flies a craft for this machine: the table's word, but a craft whose owner is not in this flight is ours.
+int owner_of(int obj) {
+    if (obj < 0 || obj >= kCraftSlots) return g_net->self;
+    const int o = g_net->owner[obj];
+    return o == g_net->self || pilot_present(o, PIC_FullIndex()) ? o : g_net->self;
+}
+bool mine(int obj) { return owner_of(obj) == g_net->self || obj == xw_player_object(); }
+
+// A craft this machine is to fly from now on: its AI to plan at once.
+void release_ai(int obj) {
+    const PhysPt craft = xw_craft(obj);
+    if (craft) mem_writew(craft + kCraftAiCountdown, 0);
+    g_net->puppets[obj].used = false;
+    // (our hits shown on it are in its figures here, which are the craft's from now on)
+    const Bit32u id = g_net->ids.ident(obj);
+    std::vector<Shown> &sh = g_net->shown;
+    sh.erase(std::remove_if(sh.begin(), sh.end(), [id](const Shown &h) { return h.ident == id; }), sh.end());
+}
+// This machine's AI kept off a puppet: the planner runs a craft only when its countdown has run out.
+void hold_ai(int obj) {
+    const PhysPt craft = xw_craft(obj);
+    if (craft) mem_writew(craft + kCraftAiCountdown, 0x7FFF);
+}
+
+// --- which craft: the identities -----------------------------------------------------------------------------------
+
+// A craft of ours gone from its slot without its death sent (through hyperspace, into a hangar): gone everywhere.
+void departed(int o) {
+    const Bit32u id = g_net->ids.ident(o);
+    if (!id || g_net->deathSent[o] == id || o == xw_player_object() || owner_of(o) != g_net->self) return;
+    TieEvent e;
+    e.set_kind(4);
+    e.set_obj(id);
+    e.set_type(g_net->ids.type(o));
+    e.set_fg((Bit32u)g_net->ids.fg(o));
+    g_net->eventsOut.push_back(e);
+    wclog(1, "X-Wing: obj %d (flight group %d, type %d) of ours gone: sent", o, g_net->ids.fg(o), g_net->ids.type(o));
+}
+
+// Each craft slot as the game has it now: a new craft there (another object id) is given its identity, and nothing of
+// the slot's last craft is kept (its owner: the host's until the host says; its report; a kill under way).  Only where
+// the game is between its own steps (the frame's top, a hooked call's entry), never from the clock's tick: a craft
+// half made has its type and not yet its flight group.
+int craft_fg(int o) {
+    const PhysPt craft = xw_craft(o);
+    return craft ? mem_readb(craft + kCraftFg) : -1;
+}
+// The object in a slot, numbered (this build's objects have no id of their own): another number when the slot was
+// empty at the last look, held an explosion and now a craft, or holds a craft of another type or flight group.  A
+// craft dying keeps its number through its explosion.
+int slot_id(int o) {
+    const int type = o8(o, kOType), cat = o8(o, kOCat), fg = type && cat == 0 ? craft_fg(o) : -1;
+    if (!type) {
+        g_net->genType[o] = 0;
+        return -1;
+    }
+    const int was = g_net->genType[o], wasCat = g_net->genCat[o];
+    if (!was || (wasCat == kCatExplosion && cat != kCatExplosion) || (cat == 0 && wasCat == 0 && (type != was || fg != g_net->genFg[o]))) g_net->gen[o]++;
+    g_net->genType[o] = type;
+    g_net->genCat[o] = cat;
+    if (cat == 0) g_net->genFg[o] = fg;
+    return g_net->gen[o];
+}
+void scan_idents() {
+    const double now = PIC_FullIndex();
+    for (int o = 0; o < kCraftSlots; o++) {
+        const Bit8u type = o8(o, kOType);
+        TieSlotNow slot;
+        slot.id = slot_id(o);
+        slot.type = type;
+        slot.fg = type ? craft_fg(o) : -1;
+        slot.arrival = type && o8(o, kOCat) == 0;
+        if (!g_net->ids.changed(o, slot)) continue;   // (the same object: a craft dying keeps its id through its explosion)
+        departed(o);
+        g_net->ids.take(o, slot, now);
+        g_net->owner[o] = 0;
+        g_net->ownerAt[o] = -1e9;
+        Puppet &p = g_net->puppets[o];
+        p.used = p.fresh = p.localAi = false;
+        p.owner = -1;
+        p.state.Clear();
+        p.at = p.prevAt = 0;
+        p.ex = p.ey = p.ez = p.blendTicks = 0;
+        g_net->killing[o] = g_net->killer[o] = 0;
+    }
+}
+
+// A craft named for the others: its identity (0xFFFF: not a craft, or none given yet).
+Bit32u wire(int o) {
+    return o < kCraftSlots ? g_net->ids.wire(o) : TieIdents::kNone;
+}
+
+// A craft another machine names: our slot for it (-1: none here, or its slot taken by another since the last scan).
+int local(Bit32u id) {
+    return g_net->ids.local(id, kCraftSlots, [](int o) { return o8(o, kOType) ? g_net->gen[o] : -1; });
+}
+
+bool someone_near(int obj, double reach) {
+    const double now = PIC_FullIndex();
+    for (int k = 0; k < kMaxSeats; k++) {
+        if (k != g_net->self && pilot_present(k, now) && is_craft(pilot_object(k)) && distance(obj, pilot_object(k)) < reach) return true;
+    }
+    return false;
+}
+bool others_flying() {
+    const double now = PIC_FullIndex();
+    for (int k = 0; k < kMaxSeats; k++) {
+        if (k != g_net->self && pilot_present(k, now)) return true;
+    }
+    return false;
+}
+
+void fill_craft(TieCraft *c, int obj) {
+    c->set_obj(wire(obj));
+    c->set_owner((Bit32u)g_net->self);
+    c->set_type(o8(obj, kOType));
+    c->set_x(o32(obj, kOPos));
+    c->set_y(o32(obj, kOPos + 4));
+    c->set_z(o32(obj, kOPos + 8));
+    c->set_heading(o16(obj, kOHeading));
+    c->set_pitch(o16(obj, kOPitch));
+    c->set_roll(o16(obj, kORoll));
+    c->set_speed((Bit16s)o16(obj, kOSpeed));
+    c->set_mx((Bit16s)o16(obj, kOMove));
+    c->set_my((Bit16s)o16(obj, kOMove + 2));
+    c->set_mz((Bit16s)o16(obj, kOMove + 4));
+    char axes[18];
+    for (int k = 0; k < 18; k++) axes[k] = (char)o8(obj, kOAxes + k);
+    c->set_axes(std::string(axes, sizeof(axes)));
+    if (obj < kCraftSlots && dying(obj)) {
+        c->set_dying(true);
+        if (g_net->killer[obj]) c->set_killer(wire(g_net->killer[obj] - 1));
+    } else if (obj < kCraftSlots) {
+        g_net->killer[obj] = 0;
+    }
+    const PhysPt craft = xw_craft(obj);
+    if (craft) {
+        c->set_hull(mem_readw(craft + kCraftHull));
+        c->set_shield_front((Bit16s)mem_readw(craft + kCraftShieldFront));
+        c->set_shield_rear((Bit16s)mem_readw(craft + kCraftShieldRear));
+        c->set_systems(mem_readw(craft + kCraftSystems));
+        for (int k = 0; k < kWpnSlotCount; k++) {
+            const PhysPt slot = craft + kWpnSlots + (PhysPt)(k * kWpnSlotSize);
+            if (mem_readb(slot) >= 0x18) c->add_warheads(mem_readw(slot + 2));
+        }
+    }
+}
+
+// A hit of a bolt of ours on another machine's craft, shown here at once (its owner applies it for good): the game's
+// own sums, the struck side's shield first, then the hull, never its death here.
+//   And kept: the owner's figures written over the copy do not have the hit until the owner has taken it, and under
+// fire from here they never caught up with the old rule (the owner's figures left out for 0.6 s after a hit of ours:
+// with a hit every half second the copy ran on this machine's sums alone, for as long as the fire lasted).  Measured,
+// two machines at the repair yard's parked craft, the craft's owner changing every 2 or 3 s as the pilots turned: the
+// same Y-wing at 2,701 of 4,200 hull damage and no shields on one machine and at none with shields on the other, for
+// seconds, and whichever machine flew it next went on from its own figures.  Now a report's figures are always
+// written, and our hits the owner has not dealt with yet (its frames say how far it has: hit_acks) are summed again
+// over them.
+void apply_shown(int target, long dmg, int side) {
+    const PhysPt craft = xw_craft(target);
+    if (!craft || side < 0 || side > 1) return;
+    const PhysPt shieldAt = craft + kCraftShieldFront + 2 * (PhysPt)side;
+    const long shield = (Bit16s)mem_readw(shieldAt);
+    if (shield > dmg) {
+        mem_writew(shieldAt, (Bit16u)(Bit16s)(shield - dmg));
+    } else {
+        const long over = dmg - shield;
+        mem_writew(shieldAt, 0);
+        if (over > 0) {
+            const long hullMax = mem_readw(craft + kCraftHullMax);
+            long hull = (long)mem_readw(craft + kCraftHull) + over;
+            if (hullMax > 0 && hull >= hullMax) hull = hullMax - 1;     // (its death is its owner's to say)
+            mem_writew(craft + kCraftHull, (Bit16u)hull);
+        }
+    }
+}
+void show_hit(int target, int bolt, int side, Bit32u serial) {
+    if (!xw_craft(target) || side < 0 || side > 1) return;
+    long dmg = o16(bolt, kORadius);
+    const int genus = o8(target, kOGenus);
+    if (genus == 4 || genus == 5) dmg >>= 4;
+    if (genus == 3) dmg >>= 2;
+    if (dmg >= 0x7FFF) dmg = 32766;
+    apply_shown(target, dmg, side);
+    Shown h;
+    h.serial = serial;
+    h.ident = g_net->ids.ident(target);
+    h.dmg = dmg;
+    h.side = side;
+    h.at = PIC_FullIndex();
+    if (h.ident && g_net->shown.size() < 256) g_net->shown.push_back(h);
+    g_net->hitsShown++;
+}
+// A craft's figures just written from its owner's report: our hits on it the owner has not dealt with summed again.
+void reshow(int obj, int owner) {
+    const Bit32u id = g_net->ids.ident(obj);
+    if (!id || owner < 0 || owner >= kMaxSeats) return;
+    const double now = PIC_FullIndex();
+    const double keep = g_net->ackKnown[owner] ? kShownMaxMs : kShownOldPeerMs;
+    std::vector<Shown> &sh = g_net->shown;
+    for (size_t i = 0; i < sh.size();) {
+        if (sh[i].ident != id) {
+            i++;
+        } else if ((sh[i].serial && sh[i].serial <= g_net->ackSeen[owner]) || now - sh[i].at > keep) {
+            sh.erase(sh.begin() + (long)i);
+        } else {
+            apply_shown(obj, sh[i].dmg, sh[i].side);
+            i++;
+        }
+    }
+}
+
+// A puppet into the game, just before the game moves its objects (move_moveobjects): whatever this machine's AI and
+// dynamics did to it this frame is overwritten, and the game's own integration then carries it one frame along the
+// owner's move vector at the owner's speed.  The place is written only from a report not yet written.
+void write_puppet(Puppet &p) {
+    const TieCraft &c = p.state;
+    const int obj = (int)c.obj();
+    if (o8(obj, kOType) == 0 || c.type() == 0 || o8(obj, kOType) != c.type() || o16(obj, kODeath) != 0) return;
+    const PhysPt craft = xw_craft(obj);
+    if (p.fresh) {
+        const double ex = (double)c.x() - (double)o32(obj, kOPos), ey = (double)c.y() - (double)o32(obj, kOPos + 4), ez = (double)c.z() - (double)o32(obj, kOPos + 8);
+        const double err = sqrt(ex * ex + ey * ey + ez * ez);
+        double seconds = err / kCorrectSpeed;
+        if (p.localAi) {
+            const double interval = p.prevAt > 0 ? (p.at - p.prevAt) / 1000.0 : kFarBlendS;
+            seconds = fmin(kFarBlendMaxS, fmax(kFarBlendMinS, interval));
+            g_net->farReports++;
+            g_net->farErrSum += err;
+            g_net->farErrMax = fmax(g_net->farErrMax, err);
+        } else if (err <= kExactError) {
+            seconds = 0;
+        }
+        if (seconds <= 0) {
+            wo32(obj, kOPos, (Bit32u)c.x());
+            wo32(obj, kOPos + 4, (Bit32u)c.y());
+            wo32(obj, kOPos + 8, (Bit32u)c.z());
+            p.blendTicks = 0;
+        } else {
+            p.ex = ex;
+            p.ey = ey;
+            p.ez = ez;
+            p.blendTicks = seconds * kTicksPerSecond;
+            if (!p.localAi) g_net->nearBlends++;
+        }
+        if (craft && c.has_hull()) {
+            mem_writew(craft + kCraftHull, (Bit16u)c.hull());
+            mem_writew(craft + kCraftShieldFront, (Bit16u)(Bit16s)c.shield_front());
+            mem_writew(craft + kCraftShieldRear, (Bit16u)(Bit16s)c.shield_rear());
+            mem_writew(craft + kCraftSystems, (Bit16u)c.systems());
+            reshow(obj, p.owner);
+        }
+        // (its warheads, its owner's count: a launcher's shot made here from a report takes none off the copy's, and
+        // the machine that flew it next had them all again.  Measured: the T/Bs at 2 on the host and 4 on the guest
+        // for the rest of the flight)
+        for (int k = 0, i = 0; craft && k < kWpnSlotCount && i < c.warheads_size(); k++) {
+            const PhysPt slot = craft + kWpnSlots + (PhysPt)(k * kWpnSlotSize);
+            if (mem_readb(slot) >= 0x18) mem_writew(slot + 2, (Bit16u)c.warheads(i++));
+        }
+        p.fresh = false;
+    }
+    if (p.blendTicks > 0) {
+        const double ticks = fmax(1.0, (double)ds16(kFrameticks));
+        const double f = fmin(1.0, ticks / p.blendTicks);
+        wo32(obj, kOPos, (Bit32u)(Bit32s)lround((double)o32(obj, kOPos) + p.ex * f));
+        wo32(obj, kOPos + 4, (Bit32u)(Bit32s)lround((double)o32(obj, kOPos + 4) + p.ey * f));
+        wo32(obj, kOPos + 8, (Bit32u)(Bit32s)lround((double)o32(obj, kOPos + 8) + p.ez * f));
+        p.ex *= 1 - f;
+        p.ey *= 1 - f;
+        p.ez *= 1 - f;
+        p.blendTicks -= ticks;
+    }
+    if (p.localAi) return;              // (our AI flies it: its attitude, speed and course are its own here)
+    wo16(obj, kOHeading, (Bit16u)c.heading());
+    wo16(obj, kOPitch, (Bit16u)c.pitch());
+    wo16(obj, kORoll, (Bit16u)c.roll());
+    wo16(obj, kOSpeed, (Bit16u)(Bit16s)c.speed());
+    wo16(obj, kOMove, (Bit16u)(Bit16s)c.mx());
+    wo16(obj, kOMove + 2, (Bit16u)(Bit16s)c.my());
+    wo16(obj, kOMove + 4, (Bit16u)(Bit16s)c.mz());
+    const std::string &axes = c.axes();
+    for (size_t k = 0; k < axes.size() && k < 18; k++) wo8(obj, kOAxes + (int)k, (Bit8u)axes[k]);
+}
+
+// A pilot's own craft (a human flies it: never this machine's AI, however far).
+bool pilot_flies(int obj) {
+    const double now = PIC_FullIndex();
+    for (int k = 0; k < kMaxSeats; k++) {
+        if (k != g_net->self && pilot_present(k, now) && g_net->pilotObj[k] == obj) return true;
+    }
+    return false;
+}
+
+// --- shots, hits, deaths ----------------------------------------------------------------------------------------
+
+void shot_made(int tag, Bit16u ax) {
+    if (ax != 0xFFFF) {
+        g_net->shotsMade++;
+        static unsigned logged = 0;
+        if (logged < 12) {
+            logged++;
+            wclog(2, "X-Wing: a shot of obj %d made here: bolt %u of type %u", tag, ax, ax < kObjectCount ? o8(ax, kOType) : 0);
+        }
+    }
+}
+void make_shot(const TieShot &shot, int owner) {
+    const int obj = local(shot.obj());
+    if (obj < 0 || owner_of(obj) != owner || !is_craft(obj) || o16(obj, kODeath) != 0) return;
+    xw_queue_call(XW_CREATE_PROJECTILE, 3, (Bit16u)obj, (Bit16u)shot.hardpoint(), (Bit16u)shot.type(), 0, NULL, shot_made, obj);
+}
+
+// A hit for us to apply: a stand-in bolt with the shooter's figures in a free projectile slot, then the game's own
+// collide_laserhitcraft (damage, shields, components, its attacker, messages).
+//   The game's routine takes the bolt's way and the impact from the collision test's globals (kLaserX.., kLaserXOld..,
+// kCollideXOff..), not from the bolt: called from here, between the frame's collisions and its moves, they held what
+// the test last looked at, which with no bolt of the game's own about is our own craft (collide_collisions begins with
+// the player's).  So the flash of every hit another machine sent was drawn on our own cockpit (the user, 2026-11-19:
+// "whenever the host hits an object nearby the little explosion animations play directly on the guests cockpit as if
+// the guest were hit"; measured, 50 hits: the flash 350 to 2,300 units from our craft, the target up to 9,600 away),
+// and a hit on our own craft took the shield its side by that stale way.  Now they are written as the shooter's
+// machine had them (the impact sent with the hit, as the CD's session does), and put back after the call.
+int g_standin = -1;
+// A hit of a seat's dealt with (applied, or left): once none of its hits waits for the game's call, every one taken in
+// so far is in our craft's figures, and our frames say so.
+void hit_finished(int tag) {
+    const int from = g_net->hitsInFrom[tag];
+    if (from < 0 || from >= kMaxSeats) return;
+    if (g_net->ackPending[from] > 0) g_net->ackPending[from]--;
+    if (g_net->ackPending[from] == 0) g_net->ackDone[from] = g_net->ackLatest[from];
+}
+const Bit16u kHitGlobals32[6] = { kLaserX, kLaserY, kLaserZ, kLaserXOld, kLaserYOld, kLaserZOld };
+const Bit16u kHitGlobals16[3] = { kCollideXOff, kCollideYOff, kCollideZOff };
+Bit32u g_hitSaved32[6];
+Bit16u g_hitSaved16[3];
+Bit16u impact16(Bit32s v) { return (Bit16u)(Bit16s)std::max(-32768, std::min(32767, (int)v)); }
+bool hit_before_inner(int tag, Bit16u *args);
+bool hit_before(int tag, Bit16u *args) {
+    if (hit_before_inner(tag, args)) return true;
+    hit_finished(tag);          // (not made: dealt with all the same)
+    return false;
+}
+bool hit_before_inner(int tag, Bit16u *args) {
+    const TieHit &h = g_net->hitsIn[tag];
+    g_standin = -1;
+    if (g_net->ids.ident((int)h.target()) != g_net->hitsInIdent[tag]) return false;     // (another craft in its slot since)
+    for (int s = kCraftSlots; s < kObjectCount; s++) {
+        if (o8(s, kOType) == 0) {
+            g_standin = s;
+            break;
+        }
+    }
+    if (g_standin < 0 || !is_craft((int)h.target()) || !mine((int)h.target())) {
+        g_standin = -1;
+        return false;
+    }
+    const int b = g_standin;
+    for (int k = 0; k < kObjectSize; k += 2) wo16(b, k, 0);
+    wo8(b, kOCat, 1);                                   // category: a projectile
+    wo8(b, kOGenus, (Bit8u)h.bolt_genus());
+    wo8(b, kOType, (Bit8u)h.bolt_type());
+    wo32(b, kOPos, (Bit32u)h.x());
+    wo32(b, kOPos + 4, (Bit32u)h.y());
+    wo32(b, kOPos + 8, (Bit32u)h.z());
+    wo32(b, kOPrev, (Bit32u)h.ox());
+    wo32(b, kOPrev + 4, (Bit32u)h.oy());
+    wo32(b, kOPrev + 8, (Bit32u)h.oz());
+    wo16(b, kORadius, (Bit16u)h.bolt_radius());
+    wo16(b, kOAge, 1);                               // age
+    wo16(b, kOSelf, (Bit16u)h.shooter());
+    wo8(b, kOSide, o8((int)h.shooter(), kOSide));      // the shooter's side
+    wo16(b, kOCraft, (Bit16u)(kWarheads + 4 * (b - kCraftSlots)));
+    wo16(b, kOCraft + 2, (Bit16u)(xw_ds(0) >> 4));
+    for (int k = 0; k < 6; k++) g_hitSaved32[k] = mem_readd(xw_ds(kHitGlobals32[k]));
+    for (int k = 0; k < 3; k++) g_hitSaved16[k] = mem_readw(xw_ds(kHitGlobals16[k]));
+    const Bit32s at[6] = { h.x(), h.y(), h.z(), h.ox(), h.oy(), h.oz() };
+    for (int k = 0; k < 6; k++) mem_writed(xw_ds(kHitGlobals32[k]), (Bit32u)at[k]);
+    // (the impact from the bolt's start: the shooter's machine's; a machine of before it was sent: the bolt's place)
+    const Bit32s impact[3] = { h.has_cx() ? h.cx() : h.x() - h.ox(), h.has_cx() ? h.cy() : h.y() - h.oy(), h.has_cx() ? h.cz() : h.z() - h.oz() };
+    for (int k = 0; k < 3; k++) mem_writew(xw_ds(kHitGlobals16[k]), impact16(impact[k]));
+    args[0] = (Bit16u)b;
+    wclog(2, "X-Wing: applying a hit on obj %u from obj %u: stand-in bolt %d (type %u, radius %u, offset %u)", h.target(), h.shooter(),
+          b, h.bolt_type(), h.bolt_radius(), h.offset());
+    return true;
+}
+void hit_done(int tag, Bit16u ax) {
+    (void)ax;
+    const TieHit &h = g_net->hitsIn[tag];
+    if (g_standin >= 0) {
+        for (int k = 0; k < 6; k++) mem_writed(xw_ds(kHitGlobals32[k]), g_hitSaved32[k]);
+        for (int k = 0; k < 3; k++) mem_writew(xw_ds(kHitGlobals16[k]), g_hitSaved16[k]);
+        if (o8(g_standin, kOType) == (Bit8u)h.bolt_type()) {
+            wo8(g_standin, kOType, 0);       // (not turned into its flash: gone)
+        } else {
+            const int own = xw_player_object();
+            wclog(2, "X-Wing: the hit's flash (obj %d, type %02X) %.0f units from its target obj %u, %.0f from our own craft", g_standin,
+                  o8(g_standin, kOType), distance(g_standin, (int)h.target()), h.target(), own >= 0 ? distance(g_standin, own) : -1.0);
+        }
+        g_net->hitsApplied++;
+        const PhysPt craft = xw_craft((int)h.target());
+        wclog(2, "X-Wing: the hit on obj %u applied (its hull's damage %u of %u)", h.target(), craft ? mem_readw(craft + kCraftHull) : 0,
+              craft ? mem_readw(craft + kCraftHullMax) : 0);
+    }
+    g_standin = -1;
+    hit_finished(tag);
+    const int t = (int)h.target();
+    if (t < kCraftSlots && !g_net->killer[t] && h.shooter() < (Bit32u)kObjectCount && dying(t)) {
+        g_net->killer[t] = (int)h.shooter() + 1;     // (the hit that began its death: its shooter's machine credits the kill)
+        wclog(2, "X-Wing: obj %d dying of obj %u's hit, applied here", t, h.shooter());
+    }
+}
+void take_hit(const TieHit &hit, int from) {
+    // (counted, whether it is ours to apply or not: with none of this seat's hits waiting for the game's call, all of
+    // them so far are dealt with)
+    if (from >= 0 && from < kMaxSeats) {
+        if (hit.serial() > g_net->ackLatest[from]) g_net->ackLatest[from] = hit.serial();
+        if (g_net->ackPending[from] == 0) g_net->ackDone[from] = g_net->ackLatest[from];
+    }
+    const int target = local(hit.target()), shooter = local(hit.shooter());
+    if (target < 0 || !is_craft(target) || !mine(target)) return;
+    if (shooter < 0) {
+        wclog(2, "X-Wing: a hit on obj %d by a craft not here (%05X): left", target, hit.shooter());
+        return;
+    }
+    const int tag = g_net->hitsInNext;
+    g_net->hitsInNext = (g_net->hitsInNext + 1) % kHitsIn;
+    g_net->hitsInFrom[tag] = from;
+    if (from >= 0 && from < kMaxSeats) {
+        if (g_net->ackPending[from]++ == 0) g_net->ackPendingAt[from] = PIC_FullIndex();
+    }
+    g_net->hitsIn[tag] = hit;
+    g_net->hitsIn[tag].set_target((Bit32u)target);      // (this machine's slots from here on)
+    g_net->hitsIn[tag].set_shooter((Bit32u)shooter);
+    g_net->hitsInIdent[tag] = hit.target();
+    xw_queue_call(XW_LASER_HIT, 3, 0, (Bit16u)target, (Bit16u)hit.offset(), 0, hit_before, hit_done, tag);
+}
+
+// A copy whose owner reports it dying is killed here by the game's own damage (a collision's, called until its death
+// is under way); its flight flag cleared first unless a death's (3, 4).
+bool kill_before(int tag, Bit16u *args) {
+    (void)args;
+    if (g_net->ids.ident(tag) != g_net->killIdent[tag]) return false;      // (another craft in its slot since: left be)
+    const PhysPt craft = xw_craft(tag);
+    if (craft) {
+        const Bit8u flag = mem_readb(craft + kCraftFlightFlag);
+        if (flag != 0 && flag != 3 && flag != 4) mem_writeb(craft + kCraftFlightFlag, 0);
+    }
+    return true;
+}
+void kill_done(int tag, Bit16u ax) {
+    (void)ax;
+    const int obj = tag;
+    if (g_net->ids.ident(obj) != g_net->killIdent[obj]) return;
+    if (!is_craft(obj) || o16(obj, kODeath) != 0 || g_net->killing[obj] >= kKillCalls) {
+        if (g_net->killing[obj] > 0) {
+            g_net->kills++;
+            wclog(2, "X-Wing: obj %d killed here after %d calls: %s", obj, g_net->killing[obj],
+                  !is_craft(obj) ? "gone" : o16(obj, kODeath) != 0 ? "dying" : "NOT dying");
+        }
+        g_net->killing[obj] = 0;
+        return;
+    }
+    g_net->killing[obj]++;
+    xw_queue_call(XW_DAMAGE, 4, (Bit16u)obj, 0xFFFF, 0xFFFF, 0, kill_before, kill_done, obj);
+}
+bool credit_before(int tag, Bit16u *args) {
+    (void)args;
+    return g_net->ids.ident(tag) == g_net->killIdent[tag];
+}
+void credit_done(int tag, Bit16u ax) {
+    (void)ax;
+    g_net->credited++;
+    wclog(1, "X-Wing: obj %d's kill credited to us (our shot began its death on its owner's machine)", tag);
+}
+void begin_kill(int obj, int killer) {
+    if (mine(obj) || g_net->killing[obj] != 0 || !is_craft(obj) || o16(obj, kODeath) != 0) return;
+    g_net->killing[obj] = 1;
+    g_net->killIdent[obj] = g_net->ids.ident(obj);     // (the calls go to this craft alone: checked as each is made)
+    if (killer >= 0 && killer == xw_player_object()) {
+        xw_queue_call(XW_UPDATE_KILLS, 3, (Bit16u)killer, (Bit16u)obj, 1, 0, credit_before, credit_done, obj);
+    }
+    xw_queue_call(XW_DAMAGE, 4, (Bit16u)obj, 0xFFFF, 0xFFFF, 0, kill_before, kill_done, obj);
+}
+
+
+// Our craft's deaths, sent once, reliably (their exits: departed, at the scan).
+void watch_events() {
+    const int own = xw_player_object();
+    for (int o = 0; o < kCraftSlots; o++) {
+        const Bit32u id = g_net->ids.ident(o);
+        if (!id || o == own || g_net->deathSent[o] == id || !o8(o, kOType) || !dying(o) || !mine(o)) continue;
+        g_net->deathSent[o] = id;
+        TieEvent e;
+        e.set_kind(3);
+        e.set_obj(id);
+        e.set_type(g_net->ids.type(o));
+        e.set_fg((Bit32u)g_net->ids.fg(o));
+        if (g_net->killer[o]) e.set_killer(wire(g_net->killer[o] - 1));
+        g_net->eventsOut.push_back(e);
+        wclog(2, "X-Wing: obj %d (flight group %d, type %d) of ours dying: sent", o, g_net->ids.fg(o), g_net->ids.type(o));
+    }
+}
+
+// A craft whose flight group has a boarding order (the mission files' 0x0C..0x11: board to give, take, exchange,
+// capture, destroy) is the host's to fly: its docking runs where its AI runs (dockings are not sent yet).
+bool docking_craft(int o) {
+    const int fg = craft_fg(o);
+    if (fg < 0 || fg >= kFgMax) return false;
+    const PhysPt rec = ((PhysPt)(xw_load_segment() + kMissionPara) << 4) + kFgBase + (PhysPt)fg * kFgSize;
+    const int order = mem_readw(rec + kFgOrder);
+    const PhysPt craft = xw_craft(o);
+    return (order >= 0x0C && order <= 0x11) || (craft && mem_readb(craft + kCraftMode) == 0x12);
+}
+
+void take_event(const TieEvent &e, int from) {
+    const int o = local(e.obj());
+    if (o < 0) {
+        wclog(2, "X-Wing: a %s on pilot %d's machine of a craft not here (flight group %u, type %u)", e.kind() == 3 ? "death" : "exit",
+              from + 1, e.fg(), e.type());
+        return;
+    }
+    if (e.kind() == 3) {
+        begin_kill(o, e.has_killer() ? local(e.killer()) : -1);
+    } else if (e.kind() == 4 && !mine(o)) {
+        wo8(o, kOType, 0);
+        wclog(1, "X-Wing: obj %d gone as on pilot %d's machine", o, from + 1);
+    }
+}
+
+// --- who flies each craft (the host's) ---------------------------------------------------------------------------
+
+void send_owners() {
+    NetworkMessage msg;
+    TieOwners *t = msg.mutable_tie_owners();
+    for (int o = 0; o < kCraftSlots; o++) {
+        if (!is_craft(o) || !g_net->ids.ident(o)) continue;
+        t->add_owner((Bit32u)g_net->owner[o]);
+        t->add_craft(g_net->ids.ident(o));
+    }
+    t->set_mission(kMissionName);
+    send_all(msg, false);
+}
+
+// The host's table, by the craft's identities.  A craft here that the host's table has gone without for a while (the
+// host has none such: arrived here only, or gone there unseen here) is ours to fly: held for an owner who never reports
+// it, it would fly on straight forever.
+void take_owners(const TieOwners &t) {
+    if (!xw_in_flight() || t.craft_size() != t.owner_size()) return;
+    const int own = xw_player_object();
+    const double now = PIC_FullIndex();
+    bool named[kCraftSlots] = { false };
+    for (int i = 0; i < t.craft_size(); i++) {
+        const int o = local(t.craft(i));
+        if (o < 0) continue;
+        named[o] = true;
+        const int who = (int)t.owner(i);
+        if (o == own || who == g_net->owner[o]) continue;
+        if (who == g_net->self) release_ai(o);
+        g_net->owner[o] = who;
+    }
+    for (int o = 0; o < kCraftSlots; o++) {
+        if (named[o] || o == own || !g_net->ids.ident(o) || !is_craft(o) || g_net->owner[o] == g_net->self || pilot_flies(o) ||
+            now - g_net->ids.arrivedAt(o) < kUnknownToHostMs) continue;
+        g_net->owner[o] = g_net->self;
+        release_ai(o);
+        wclog(1, "X-Wing: obj %d (flight group %d) not in the host's game: flown here", o, g_net->ids.fg(o));
+    }
+}
+
+// Is a craft in a pilot's view?  Within the cone of the nose (its move vector, +0x3A: a TIE craft does not slide).
+bool in_view(int pilotObj, int obj, double cone) {
+    const double fx = (Bit16s)o16(pilotObj, kOMove), fy = (Bit16s)o16(pilotObj, kOMove + 2), fz = (Bit16s)o16(pilotObj, kOMove + 4);
+    const double dx = (double)o32(obj, kOPos) - o32(pilotObj, kOPos), dy = (double)o32(obj, kOPos + 4) - o32(pilotObj, kOPos + 4),
+                 dz = (double)o32(obj, kOPos + 8) - o32(pilotObj, kOPos + 8);
+    const double fl = sqrt(fx * fx + fy * fy + fz * fz), dl = sqrt(dx * dx + dy * dy + dz * dz);
+    if (fl < 1 || dl < 1) return dl < 1;
+    return (fx * dx + fy * dy + fz * dz) / (fl * dl) >= cone;
+}
+
+// The host's rule (the user's, for the CD version): "host should own most craft except the ones both within range and
+// on the guests viewport or specifically targeted by guest and not targeted by the host".
+enum { kViewCone45 = 7071, kViewCone60 = 5000 };
+bool guest_wants(int k, int o, bool keep) {
+    const int po = pilot_object(k);
+    const double d = distance(o, po);
+    if (g_net->pilotTarget[k] == o && d < kTargetReach * (keep ? 1.25 : 1.0)) return true;
+    return d < kReach * (keep ? 1.25 : 1.0) && in_view(po, o, (keep ? kViewCone60 : kViewCone45) / 10000.0);
+}
+void decide_owners(double now) {
+    if (!g_net->host || now - g_net->decidedAt < kDecideEveryMs) return;
+    g_net->decidedAt = now;
+    int guests[kMaxSeats], n = 0;
+    for (int k = 0; k < kMaxSeats; k++) {
+        if (k != g_net->self && pilot_present(k, now) && is_craft(pilot_object(k))) guests[n++] = k;
+    }
+    const int hostObj = xw_player_object();
+    const int hostTarget = ds16(kTarget);
+    bool changed = false;
+    for (int o = 0; o < kCraftSlots; o++) {
+        bool someonesOwn = o == hostObj;
+        for (int i = 0; i < n; i++) someonesOwn = someonesOwn || pilot_object(guests[i]) == o;
+        if (someonesOwn || !is_craft(o) || dying(o)) continue;     // (a dying craft stays its owner's: its death is sent once)
+        const int cur = g_net->owner[o];
+        const bool hostOnly = docking_craft(o);     // (a craft that boards: ours at once)
+        int want = 0;
+        if (!hostOnly && o != hostTarget) {
+            int bestScore = -1;
+            double bestDist = 1e30;
+            for (int i = 0; i < n; i++) {
+                const int k = guests[i];
+                if (!guest_wants(k, o, k == cur)) continue;
+                const int score = (g_net->pilotTarget[k] == o ? 2 : 0) + (k == cur ? 1 : 0);
+                const double d = distance(o, pilot_object(k));
+                if (score > bestScore || (score == bestScore && d < bestDist)) {
+                    bestScore = score;
+                    bestDist = d;
+                    want = k;
+                }
+            }
+        }
+        bool curPresent = cur == 0;
+        for (int i = 0; i < n; i++) curPresent = curPresent || guests[i] == cur;
+        if (want != cur && (now - g_net->ownerAt[o] >= kOwnerHoldMs || !curPresent || hostOnly)) {
+            g_net->owner[o] = want;
+            g_net->ownerAt[o] = now;
+            g_net->ownerChanges++;
+            changed = true;
+            if (want == g_net->self) release_ai(o);
+            wclog(2, "X-Wing: obj %d to pilot %d (was pilot %d)", o, want + 1, cur + 1);
+        }
+    }
+    if (changed || now - g_net->ownersSentAt >= kOwnersEveryMs) {
+        g_net->ownersSentAt = now;
+        send_owners();
+    }
+}
+
+// --- the frames --------------------------------------------------------------------------------------------------
+
+void make_shot_list(const TieFrame &f, int owner) {
+    for (int i = 0; i < f.shots_size() && xw_in_flight(); i++) make_shot(f.shots(i), owner);
+}
+
+void take_frame(Peer *from, const TieFrame &f) {
+    const int owner = g_net->host ? from->player : (f.has_player() ? (int)f.player() : 0);
+    if (owner == g_net->self || owner < 0 || owner >= kMaxSeats) return;
+    // (the host's flight over: every guest's ends too)
+    const bool hostEnded = owner == 0 && !g_net->host && from->flying && !f.flying() && from->player == 0;
+    if (!g_net->host || owner == from->player) from->flying = f.flying();
+    if (hostEnded) room_end(0, "'s flight is over");
+    const int theirs = f.has_own() && xw_in_flight() ? local(f.own()) : -1;   // (the pilot's own craft, here)
+    if (f.flying() && owner == 0) g_net->hostFlew = true;
+    if (f.flying() && theirs >= 0) {
+        g_net->pilotObj[owner] = theirs;
+        const int target = f.has_target() ? local(f.target()) : -1;
+        g_net->pilotTarget[owner] = target >= 0 ? target : 0xFFFF;
+        g_net->pilotSeenAt[owner] = PIC_FullIndex();
+        g_net->owner[theirs] = owner;       // (a pilot's own craft is its own)
+    }
+    // (how far this pilot's machine has dealt with our hits: this frame's figures have those)
+    if (f.hit_acks_size() > 0) {
+        g_net->ackKnown[owner] = true;
+        if (g_net->self < f.hit_acks_size() && f.hit_acks(g_net->self) > g_net->ackSeen[owner]) g_net->ackSeen[owner] = f.hit_acks(g_net->self);
+    }
+    for (int i = 0; i < f.craft_size() && xw_in_flight(); i++) {
+        const TieCraft &c = f.craft(i);
+        const int o = local(c.obj());
+        if (o < 0 || (g_net->owner[o] != owner && o != theirs)) continue;
+        Puppet &p = g_net->puppets[o];
+        p.used = true;
+        p.owner = owner;
+        p.fresh = true;
+        p.state = c;
+        p.state.set_obj((Bit32u)o);         // (this machine's slot from here on)
+        p.prevAt = p.at;
+        p.at = PIC_FullIndex();
+        if (c.dying() && (c.type() == o8(o, kOType) || o == theirs)) {
+            begin_kill(o, c.has_killer() ? local(c.killer()) : -1);
+            if (o == theirs) room_end(owner, " is down");
+        }
+    }
+    make_shot_list(f, owner);
+    for (int i = 0; i < f.hits_size() && xw_in_flight(); i++) take_hit(f.hits(i), owner);
+    for (int i = 0; i < f.events_size() && xw_in_flight(); i++) take_event(f.events(i), owner);
+    if (g_net->host) {
+        NetworkMessage msg;
+        *msg.mutable_tie_frame() = f;
+        msg.mutable_tie_frame()->set_player((Bit32u)owner);
+        relay(from, [&](Peer *to) { to->conn.send_best_effort(msg); });
+    }
+}
+
+void handle(Peer *p, NetworkMessage &msg) {
+    if (msg.has_tdm_hello()) {
+        const TdmHello &h = msg.tdm_hello();
+        if (g_net->host) {
+            if (p->hello) return;
+            const int player = free_player();
+            if (player < 0) {
+                wclog(1, "X-Wing: %s came in with no seat left: turned away", h.callsign().c_str());
+                p->conn.close();
+                return;
+            }
+            p->player = player;
+            p->callsign = h.callsign();
+            p->hello = true;
+            g_net->remotes[player] = Remote();
+            g_net->remotes[player].callsign = h.callsign();
+            NetworkMessage reply;
+            reply.mutable_tdm_hello()->set_callsign(g_net->callsign);
+            reply.mutable_tdm_hello()->set_player((Bit32u)player);
+            reply.mutable_tdm_hello()->set_seats((Bit32u)g_net->seats);
+            p->conn.send(reply);
+            char line[160];
+            snprintf(line, sizeof(line), "%s joined as pilot %d of %d", p->callsign.c_str(), player + 1, g_net->seats);
+            notice(line);
+            send_state(true);
+        } else {
+            p->callsign = h.callsign();
+            p->hello = true;
+            g_net->self = h.has_player() ? (int)h.player() : 1;
+            if (h.has_seats() && h.seats() >= 2) g_net->seats = std::min((int)kMaxSeats, (int)h.seats());
+            g_net->remotes[0].callsign = h.callsign();
+            char line[160];
+            snprintf(line, sizeof(line), "In %s's room as pilot %d of %d", p->callsign.c_str(), g_net->self + 1, g_net->seats);
+            notice(line);
+        }
+    } else if (msg.has_tdm_state()) {
+        if (!p->hello) return;
+        const int seat = g_net->host ? p->player : (msg.tdm_state().has_player() ? (int)msg.tdm_state().player() : 0);
+        if (g_net->host && seat >= 0 && seat < kMaxSeats) g_net->remotes[seat].callsign = p->callsign;
+        take_state(msg.tdm_state(), seat);
+        NetworkMessage out;
+        *out.mutable_tdm_state() = msg.tdm_state();
+        out.mutable_tdm_state()->set_player((Bit32u)seat);
+        relay(p, [&](Peer *to) { to->conn.send(out); });
+    } else if (msg.has_tie_frame()) {
+        if (p->hello) take_frame(p, msg.tie_frame());
+    } else if (msg.has_tie_owners()) {
+        if (p->hello && !g_net->host) take_owners(msg.tie_owners());
+    } else if (msg.has_chat()) {
+        // (a pilot's line, the CD's session's way: over the picture, and on from the host to the other guests)
+        if (!p->hello) return;
+        show(msg.chat().callsign() + ": " + msg.chat().message());
+        relay(p, [&](Peer *to) { to->conn.send(msg); });
+    }
+}
+
+void poll_peers() {
+    if (g_net->host && g_net->listener) {
+        for (int n = 0; n < 4; n++) {
+            Stream *s = g_net->listener->accept(false);
+            if (!s) break;
+            Peer *p = new Peer();
+            p->conn.adopt(s);
+            g_net->peers.push_back(p);
+            wclog(1, "X-Wing: a guest at %s", s->describe().c_str());
+        }
+    }
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        Peer *p = g_net->peers[i];
+        NetworkMessage msg;
+        for (int n = 0; n < 64; n++) {
+            RecvStatus st = p->conn.poll(CAT_GAME, msg);
+            if (!st.ok()) {
+                if (st.failed()) p->conn.close();
+                break;
+            }
+            handle(p, msg);
+        }
+        for (int n = 0; n < 64 && p->conn.is_open(); n++) {
+            RecvStatus st = p->conn.poll(CAT_CHAT, msg);        // (the pilots' lines)
+            if (!st.ok()) break;
+            handle(p, msg);
+        }
+        for (int n = 0; n < 256 && p->conn.is_open(); n++) {
+            RecvStatus st = p->conn.poll_best_effort(msg);
+            if (!st.ok()) break;
+            handle(p, msg);
+        }
+    }
+    for (size_t i = 0; i < g_net->peers.size();) {
+        Peer *p = g_net->peers[i];
+        if (p->conn.is_open()) {
+            i++;
+            continue;
+        }
+        if (p->hello) {
+            notice(p->callsign + (g_net->host ? " left the room" : " (the host) is gone: the room is closed"));
+            if (p->player >= 0 && p->player < kMaxSeats) {
+                g_net->remotes[p->player] = Remote();
+                g_net->pilotObj[p->player] = -1;
+            }
+        }
+        delete p;
+        g_net->peers.erase(g_net->peers.begin() + i);
+    }
+}
+
+// The room's end of a flight: a pilot down or the host's flight over ends every pilot's, after a moment.
+void end_for_room(const std::string &line) {
+    if (!xw_in_flight() || g_net->endAt > 0) return;
+    g_net->endAt = PIC_FullIndex() + kRoomEndMs;
+    wclog(1, "X-Wing: %s", line.c_str());
+    notice(line);
+}
+void room_end(int seat, const char *what) {
+    if (!xw_in_flight() || g_net->endAt > 0 || !others_flying()) return;
+    const std::string who = seat == g_net->self ? std::string("You") : pilot_name(seat);
+    const bool youDown = seat == g_net->self && !strcmp(what, " is down");
+    end_for_room(who + (youDown ? " are down" : what) + ": the flight ends for everybody");
+}
+void room_end_frame() {
+    const int own = xw_player_object();
+    if (own >= 0 && own < kCraftSlots && o8(own, kOType) != 0 && dying(own) && others_flying()) room_end(g_net->self, " is down");
+    if (g_net->endAt > 0 && PIC_FullIndex() >= g_net->endAt) {
+        g_net->endAt = 0;
+        g_net->roomEnded = true;
+        mem_writeb(xw_ds(kMissionEnd), 1);
+        wclog(1, "X-Wing: the flight ended for the room (the mission's end flag set)");
+    }
+}
+
+// A line a second: our craft, the others' as this game has them, the craft we fly for them, the counts.
+void report_frame(double now) {
+    static double reportAt = 0;
+    if (now - reportAt < 1000 && now >= reportAt) return;
+    reportAt = now;
+    std::string line;
+    const int own = xw_player_object();
+    const int tgt = ds16(kTarget);
+    if (tgt < kCraftSlots && is_craft(tgt) && xw_craft(tgt)) {
+        const PhysPt cr = xw_craft(tgt);
+        char one[120];
+        snprintf(one, sizeof(one), " target obj %d (%s): hull damage %u of %u;", tgt, mine(tgt) ? "ours" : "another's",
+                 mem_readw(cr + kCraftHull), mem_readw(cr + kCraftHullMax));
+        line += one;
+    }
+    for (int o = 0; o < kObjectCount; o++) {
+        const Puppet &p = g_net->puppets[o];
+        if (!p.used && o != own) continue;
+        char one[220];
+        if (o == own) {
+            snprintf(one, sizeof(one), " own obj %d: %d %d %d hpr %u %u %u speed %d;", o, o32(o, kOPos), o32(o, kOPos + 4), o32(o, kOPos + 8), o16(o, kOHeading),
+                     o16(o, kOPitch), o16(o, kORoll), (Bit16s)o16(o, kOSpeed));
+        } else if (o < kCraftSlots && g_net->owner[o] == g_net->self) {
+            continue;
+        } else {
+            snprintf(one, sizeof(one), " obj %d of pilot %d: here %d %d %d speed %d type %u, reported %d %d %d %.0f ms ago;", o, p.owner + 1,
+                     o32(o, kOPos), o32(o, kOPos + 4), o32(o, kOPos + 8), (Bit16s)o16(o, kOSpeed), o8(o, kOType), p.state.x(), p.state.y(), p.state.z(), now - p.at);
+        }
+        line += one;
+    }
+    int owned[kMaxSeats] = { 0 };
+    int craft = 0;
+    for (int o = 0; o < kCraftSlots; o++) {
+        if (!is_craft(o)) continue;
+        craft++;
+        if (g_net->owner[o] >= 0 && g_net->owner[o] < kMaxSeats) owned[g_net->owner[o]]++;
+        if (o == own || g_net->owner[o] != g_net->self) continue;
+        char one[160];
+        snprintf(one, sizeof(one), " mine obj %d: %d %d %d speed %d type %u;", o, o32(o, kOPos), o32(o, kOPos + 4), o32(o, kOPos + 8), (Bit16s)o16(o, kOSpeed), o8(o, kOType));
+        line += one;
+    }
+    char sums[640];
+    snprintf(sums, sizeof(sums), " %d craft, owners %d/%d/%d/%d; sent %u craft (%u near, %u mid, %u far) in %u bytes, %u owner changes; guns: %u shots"
+             " sent, %u made, %u hits sent, %u applied, %u damage skipped, %u kills, %u credited; far: %u flown by our AI, %u reports pulled"
+             " in, %u near ones blended, %u hits of ours shown, %u others' shots passed through ours;",
+             craft, owned[0], owned[1], owned[2], owned[3], g_net->sentCraft, g_net->sentNear,
+             g_net->sentMid, g_net->sentFar, g_net->sentBytes, g_net->ownerChanges, g_net->shotsSent, g_net->shotsMade, g_net->hitsSent,
+             g_net->hitsApplied, g_net->damageSkipped, g_net->kills, g_net->credited, g_net->localAiNow, g_net->farReports, g_net->nearBlends,
+             g_net->hitsShown, g_net->phantoms);
+    g_net->zero_counts();
+    wclog(2, "X-Wing: %.1fs: frame %llu as pilot %d (%.1f ms a frame);%s%s", now / 1000.0, (unsigned long long)g_net->frame,
+          g_net->self + 1, xw_frame_ms(), sums, line.c_str());
+}
+
+}  // namespace
+
+// --- the game's hooks ---------------------------------------------------------------------------------------------
+
+void xw_session_tick() {
+    const double now = PIC_FullIndex();
+    if (g_noticeAt > 0 && now - g_noticeAt > kNoticeMs) {
+        incoming_text.clear();
+        g_noticeAt = -1;
+    }
+    if (!g_net) {
+        if (g_tried && now < g_nextTryMs) return;
+        g_tried = true;
+        g_nextTryMs = now + (getenv("WCHOST") && getenv("WCHOST")[0] ? 1000 : 10000);   // (a TCP guest early for its host: soon)
+        if (!configured() || !start()) return;
+    }
+    if (now - g_pollAt >= kPollMs || now < g_pollAt) {
+        g_pollAt = now;
+        poll_peers();
+        if (!g_net->host && g_net->peers.empty()) {
+            xw_session_shutdown();     // (the host gone: tried again later, as at the start)
+            return;
+        }
+    }
+    if (!xw_in_flight() && now - g_stateAt >= kStateEveryMs) send_state(false);
+}
+
+unsigned xw_session_ident(int obj) {
+    return g_net && obj >= 0 && obj < kCraftSlots ? g_net->ids.ident(obj) & 0xFFFFF : 0;
+}
+
+bool xw_session_fly_alone() {
+    if (!g_net || g_net->host || !g_net->atLaunch || g_net->self < 1) return false;
+    g_net->soloNext = true;
+    notice("Flying alone: the room's next launch takes you in again");
+    wclog(1, "X-Wing: Esc at the launch: flown alone (the host was flying)");
+    return true;
+}
+
+
+// The comms prompt (the 0 key in flight, the emulator's: sdlmain.cpp), as the CD's room has it: until 2026-11-19 the
+// demo's room had none, and its 0 went to the game (the "12:00 high" view).
+bool xw_session_active() { return g_net != NULL && (g_net->host || g_net->self >= 0); }
+void xw_session_chat(const std::string &text) {
+    if (!g_net || text.empty()) return;
+    NetworkMessage msg;
+    Chat *chat = msg.mutable_chat();
+    chat->set_ship_id(0);
+    chat->set_message(text);
+    chat->set_callsign(g_net->callsign);
+    int told = 0;
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        Peer *to = g_net->peers[i];
+        if (to->hello && to->conn.is_open() && to->conn.send(msg)) told++;
+    }
+    wclog(1, "X-Wing: comms: a line to %d pilot%s", told, told == 1 ? "" : "s");
+    show(g_net->callsign + ": " + text);
+}
+
+void xw_session_shutdown() {
+    if (!g_net) return;
+    wclog(1, "X-Wing: session closed");
+    delete g_net;
+    g_net = NULL;
+    g_tried = false;
+}
+
+// The launch (create_createmission's entry, polled while held): every pilot of the room there, then the host's go.
+bool xw_session_launch_hold() {
+    if (!g_net) return false;
+    const double now = PIC_FullIndex();
+    if (!g_net->atLaunch) {
+        g_net->atLaunch = true;
+        g_net->launchSince = now;
+        g_net->alone = false;
+        send_state(true);
+        if (others()) show(g_net->host ? "Waiting for the others to launch" : "Waiting for " + host_name() + " to launch");
+    }
+    if (now - g_stateAt >= kStateEveryMs) send_state(false);
+    if (g_net->host) {
+        if (!others()) {
+            g_net->alone = true;
+            return false;
+        }
+        bool all = true;
+        std::string late;
+        for (size_t i = 0; i < g_net->peers.size(); i++) {
+            const Peer *p = g_net->peers[i];
+            if (!p->hello || !p->conn.is_open() || p->player < 0) continue;
+            const Remote &r = g_net->remotes[p->player];
+            if (!(r.atLaunch && now - r.at < kStaleMs)) {
+                all = false;
+                late += (late.empty() ? "" : ", ") + p->callsign;
+            }
+        }
+        if (!all && now - g_net->launchSince < kLaunchWaitMs) return true;
+        if (!all) notice("Launching without " + late + " (not at the launch after two minutes)");
+        g_net->launchSerial++;
+        g_net->flownGo = g_net->launchSerial;
+        g_net->hostSeed = ds16(kSeed);
+        g_net->hostSeed2 = ds16(kSeedOut);
+        g_net->hostMission = xw_mission_path();
+        g_net->pilots = 1;
+        for (size_t i = 0; i < g_net->peers.size(); i++) {
+            const Peer *p = g_net->peers[i];
+            if (!p->hello || !p->conn.is_open() || p->player < 0) continue;
+            const Remote &r = g_net->remotes[p->player];
+            if (r.atLaunch && now - r.at < kStaleMs) g_net->pilots = std::max(g_net->pilots, (Bit32u)p->player + 1);
+        }
+        send_state(true);
+        wclog(1, "X-Wing: launch %u: everybody there, the seed %04X %04X, mission %s, %u pilots", g_net->launchSerial, g_net->hostSeed,
+              g_net->hostSeed2, g_net->hostMission.c_str(), g_net->pilots);
+        return false;
+    }
+    if (g_net->peers.empty() || g_net->soloNext) {
+        g_net->alone = true;
+        g_net->soloNext = false;
+        return false;
+    }
+    const Remote &h = g_net->remotes[0];
+    if (h.inFlight && h.go <= g_net->flownGo && !g_net->lateSaid) {
+        g_net->lateSaid = true;
+        show("Waiting for " + host_name() + "'s next launch (Esc: fly alone)");
+    }
+    if (h.go > g_net->flownGo) {
+        g_net->lateSaid = false;
+        g_net->flownGo = h.go;
+        g_net->hostSeed = h.seed;
+        g_net->hostSeed2 = h.seed2;
+        g_net->hostMission = h.mission;
+        g_net->pilots = h.pilots;
+        g_net->hostGoals.clear();
+        xw_set_mission_path(h.mission);
+        return false;
+    }
+    if (g_net->self >= 0 && now - g_net->launchSince >= kLaunchWaitMs * 2) {
+        g_net->alone = true;            // (the host never launched: flown alone)
+        return false;
+    }
+    return true;
+}
+
+// The mission file read, its craft not yet made: a guest's game given the host's seed; the player's flight group made
+// as large as the pilots flying, and a guest's own craft of it (the group's player-craft number).
+void xw_session_before_create() {
+    if (!g_net) return;
+    g_net->atLaunch = false;
+    g_net->roomEnded = false;
+    g_net->clear_flight();
+    send_state(true);
+    if (g_net->alone || g_net->self < 0) return;
+    if (!g_net->host) {
+        mem_writew(xw_ds(kSeed), (Bit16u)g_net->hostSeed);
+        mem_writew(xw_ds(kSeedOut), (Bit16u)g_net->hostSeed2);
+    }
+    const int fgs = std::min((int)kFgMax, (int)ds16(kNumFgs));
+    const PhysPt base = ((PhysPt)(xw_load_segment() + kMissionPara) << 4) + kFgBase;
+    for (int fg = 0; fg < fgs; fg++) {
+        const PhysPt rec = base + (PhysPt)fg * kFgSize;
+        const int hostCraft = mem_readw(rec + kFgPlayerCraft);
+        if (hostCraft <= 0 || hostCraft > 16) continue;
+        int count = mem_readw(rec + kFgCraft);
+        const int pilots = std::max(1, std::min((int)kMaxSeats, (int)g_net->pilots));
+        if (count < pilots) {
+            mem_writew(rec + kFgCraft, (Bit16u)pilots);
+            wclog(1, "X-Wing: flight group %d made %d craft for the room's %d pilots (the mission's %d)", fg, pilots, pilots, count);
+            count = pilots;
+        }
+        std::vector<int> spare;
+        for (int k = 1; k <= count; k++) {
+            if (k != hostCraft) spare.push_back(k);
+        }
+        if (g_net->host) {
+            wclog(1, "X-Wing: we fly craft %d of flight group %d (%d craft)", hostCraft, fg, count);
+        } else if (g_net->self - 1 < (int)spare.size()) {
+            mem_writew(rec + kFgPlayerCraft, (Bit16u)spare[(size_t)(g_net->self - 1)]);
+            wclog(1, "X-Wing: the host's seed %04X %04X; we fly craft %d of flight group %d (the host craft %d of %d)",
+                  g_net->hostSeed, g_net->hostSeed2, spare[(size_t)(g_net->self - 1)], fg, hostCraft, count);
+        } else {
+            wclog(1, "X-Wing: flight group %d has no craft left for seat %d (%d craft): we fly the host's", fg, g_net->self + 1, count);
+        }
+        break;
+    }
+}
+
+void xw_session_frame() {
+    if (!g_net || g_net->self < 0 || !xw_in_flight()) return;
+    scan_idents();          // (before the messages: the craft that arrived this frame named)
+    poll_peers();
+    room_end_frame();
+    report_frame(PIC_FullIndex());
+    const int own = xw_player_object();
+    if (own < 0 || own >= kCraftSlots) return;
+    scan_idents();
+    const double now = PIC_FullIndex();
+    decide_owners(now);
+    g_net->owner[own] = g_net->self;
+    if (g_net->host && now - g_net->goalsSentAt >= 2000) {
+        g_net->goalsSentAt = now;
+        send_state(true);       // (the flight groups' status, for the guests' judging)
+    }
+    NetworkMessage msg;
+    TieFrame *f = msg.mutable_tie_frame();
+    f->set_player((Bit32u)g_net->self);
+    f->set_frame(++g_net->frame);
+    f->set_ticks(ds16(kFrameticks));
+    f->set_flying(true);
+    f->set_mission(kMissionName);
+    f->set_own(wire(own));
+    f->set_target(wire(ds16(kTarget)));
+    for (int k = 0; k < kMaxSeats; k++) {
+        // (hits queued for the game's call that never came back, the calls given up: counted dealt with)
+        if (g_net->ackPending[k] > 0 && now - g_net->ackPendingAt[k] > kAckStuckMs) {
+            g_net->ackPending[k] = 0;
+            g_net->ackDone[k] = g_net->ackLatest[k];
+        }
+        f->add_hit_acks(g_net->ackDone[k]);
+    }
+    {   // (our shown hits on craft gone since: forgotten)
+        std::vector<Shown> &sh = g_net->shown;
+        sh.erase(std::remove_if(sh.begin(), sh.end(), [now](const Shown &h) { return now - h.at > 2 * kShownMaxMs; }), sh.end());
+    }
+    fill_craft(f->add_craft(), own);
+    g_net->sentCraft++;
+    int othersSeats[kMaxSeats], n = 0;
+    for (int k = 0; k < kMaxSeats; k++) {
+        if (k != g_net->self && pilot_present(k, now) && is_craft(pilot_object(k))) othersSeats[n++] = k;
+    }
+    bool far = false;
+    if (n > 0) {
+        int farPick = -1;
+        if (g_net->frame % kFarEvery == 0) {
+            for (int step = 1; step <= kCraftSlots && farPick < 0; step++) {
+                const int o = (g_net->farCursor + step) % kCraftSlots;
+                if (o == own || g_net->owner[o] != g_net->self || !is_craft(o)) continue;
+                double d = 1e30;
+                for (int i = 0; i < n; i++) d = fmin(d, distance(o, pilot_object(othersSeats[i])));
+                if (d >= kMidReach) farPick = o;
+            }
+            if (farPick >= 0) g_net->farCursor = farPick;
+        }
+        for (int o = 0; o < kCraftSlots; o++) {
+            if (o == own || g_net->owner[o] != g_net->self || !is_craft(o)) continue;
+            double d = 1e30;
+            for (int i = 0; i < n; i++) d = fmin(d, distance(o, pilot_object(othersSeats[i])));
+            if (d < kReach) {
+                g_net->sentNear++;
+            } else if (d < kMidReach && (g_net->frame + o) % kMidEvery == 0) {
+                g_net->sentMid++;
+            } else if (o == farPick) {
+                g_net->sentFar++;
+                far = true;
+            } else {
+                continue;
+            }
+            fill_craft(f->add_craft(), o);
+            g_net->sentCraft++;
+        }
+    }
+    for (size_t i = 0; i < g_net->shotsOut.size(); i++) *f->add_shots() = g_net->shotsOut[i];
+    for (size_t i = 0; i < g_net->hitsOut.size(); i++) *f->add_hits() = g_net->hitsOut[i];
+    watch_events();
+    for (size_t i = 0; i < g_net->eventsOut.size(); i++) *f->add_events() = g_net->eventsOut[i];
+    g_net->shotsSent += (unsigned)g_net->shotsOut.size();
+    g_net->hitsSent += (unsigned)g_net->hitsOut.size();
+    const bool hits = !g_net->hitsOut.empty() || !g_net->eventsOut.empty();
+    g_net->shotsOut.clear();
+    g_net->hitsOut.clear();
+    g_net->eventsOut.clear();
+    const bool reliable = far || hits || now - g_net->lastReliableAt >= kReliableEveryMs;
+    if (reliable) g_net->lastReliableAt = now;
+    const unsigned bytes = (unsigned)msg.ByteSizeLong();
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        Peer *p = g_net->peers[i];
+        if (!p->hello || !p->conn.is_open()) continue;
+        g_net->sentBytes += bytes;
+        if (reliable) p->conn.send(msg); else p->conn.send_best_effort(msg);
+    }
+    // This machine's AI kept off every craft another flies near our pilot (before the planner runs this frame); a far
+    // one is our AI's to fly (its place pulled to its owner's).
+    g_net->localAiNow = 0;
+    for (int o = 0; o < kCraftSlots; o++) {
+        Puppet &p = g_net->puppets[o];
+        if (o == own || mine(o) || !is_craft(o)) {
+            p.localAi = false;
+            continue;
+        }
+        if (pilot_flies(o)) {
+            p.localAi = false;      // (another pilot's own craft: its reports alone move it)
+            hold_ai(o);
+            continue;
+        }
+        const bool was = p.localAi;
+        const double d = distance(o, own);
+        p.localAi = was ? d >= kLocalAiIn : d >= kLocalAiOut;
+        if (p.localAi) {
+            g_net->localAiNow++;
+            if (!was) {
+                const PhysPt craft = xw_craft(o);
+                if (craft) mem_writew(craft + kCraftAiCountdown, 0);
+                g_net->localAiStarts++;
+            }
+        } else {
+            if (was) g_net->localAiEnds++;
+            hold_ai(o);
+        }
+    }
+}
+
+void xw_session_before_move() {
+    if (!g_net || g_net->self < 0 || !xw_in_flight()) return;
+    const int own = xw_player_object();
+    for (int o = 0; o < kObjectCount; o++) {
+        Puppet &p = g_net->puppets[o];
+        if (p.used && p.owner != g_net->self && o != own && (o >= kCraftSlots || owner_of(o) == p.owner)) write_puppet(p);
+    }
+}
+
+// laser_createprojectile(shooter, hardpoint, type): a shot of a craft we fly, near another pilot, goes with our next
+// frame; a craft another machine flies does not shoot here (its owner's shots are made from reports).
+void xw_session_shot() {
+    if (!g_net || g_net->self < 0 || !xw_in_flight() || xw_in_call()) return;
+    const int shooter = xw_arg(0);
+    if (shooter >= kCraftSlots) return;
+    if (!mine(shooter)) {
+        if (g_net->puppets[shooter].localAi) {
+            g_net->localShots++;    // (a far craft our AI flies: its shot made here for show; it damages nothing here)
+            return;
+        }
+        xw_skip_call(0xFFFF);      // (no slot: its callers expect that)
+        return;
+    }
+    scan_idents();
+    if (g_net->shotsOut.size() < 32 && wire(shooter) != 0xFFFF && someone_near(shooter, kShotReach)) {
+        TieShot shot;
+        shot.set_obj(wire(shooter));
+        shot.set_hardpoint(xw_arg(1));
+        shot.set_type(xw_arg(2));
+        g_net->shotsOut.push_back(shot);
+    }
+}
+
+// collide_laserhitcraft(bolt, target, offset): a hit by a bolt of a craft we fly on a craft another machine flies is
+// that machine's to apply: sent with our next frame (the damage is skipped at collide_damagecraft).
+void xw_session_laser_hit() {
+    if (!g_net || g_net->self < 0 || !xw_in_flight() || xw_in_call()) return;
+    const int bolt = xw_arg(0), target = xw_arg(1);
+    if (bolt < kCraftSlots || bolt >= kObjectCount || !is_craft(target)) return;
+    const int shooter = o16(bolt, kOSelf);
+    if (!mine(shooter) && mine(target)) {
+        // (a shot made here from another machine's report, on a craft we fly: whether it hit is its shooter's machine's
+        // to say, and its word (take_hit) brings the hit and its flash.  Here it passes: no flash on our craft for a
+        // hit that never was, the user's "blast animations on my ship ... they didn't originate from anywhere")
+        g_net->phantoms++;
+        xw_skip_call(0);
+        return;
+    }
+    if (!mine(shooter) || mine(target) || g_net->hitsOut.size() >= 32) return;
+    scan_idents();
+    if (wire(target) == 0xFFFF || wire(shooter) == 0xFFFF) return;
+    TieHit h;
+    h.set_target(wire(target));
+    h.set_offset(xw_arg(2));
+    h.set_bolt_type(o8(bolt, kOType));
+    h.set_bolt_genus(o8(bolt, kOGenus));
+    h.set_bolt_radius(o16(bolt, kORadius));
+    h.set_shooter(wire(shooter));
+    h.set_x(o32(bolt, kOPos));
+    h.set_y(o32(bolt, kOPos + 4));
+    h.set_z(o32(bolt, kOPos + 8));
+    h.set_ox(o32(bolt, kOPrev));
+    h.set_oy(o32(bolt, kOPrev + 4));
+    h.set_oz(o32(bolt, kOPrev + 8));
+    h.set_cx((Bit16s)ds16(kCollideXOff));       // (the impact, from the bolt's start: the collision test's, just made)
+    h.set_cy((Bit16s)ds16(kCollideYOff));
+    h.set_cz((Bit16s)ds16(kCollideZOff));
+    h.set_serial(++g_net->hitSerial);
+    g_net->lastHitBolt = bolt;      // (its damage call comes next: shown on our copy under this serial)
+    g_net->lastHitTarget = target;
+    g_net->hitsOut.push_back(h);
+}
+
+// collide_damagecraft(target, component, attacker, side): this game damages only the craft it flies, and from a bolt
+// only one whose shooter it flies.  Our own calls (a hit taken in, a kill) go through.
+void xw_session_damage() {
+    if (!g_net || g_net->self < 0 || !xw_in_flight() || xw_in_call()) return;
+    const int target = xw_arg(0), attacker = xw_arg(2);
+    bool skip = target < kCraftSlots && !mine(target);
+    if (skip && attacker >= kCraftSlots && attacker < kObjectCount && mine(o16(attacker, kOSelf)) && attacker == g_net->lastHitBolt &&
+        target == g_net->lastHitTarget) {
+        // (a hit just sent to the craft's owner: shown here meanwhile; one not sent is not shown either)
+        const int genus = o8(target, kOGenus);
+        if (xw_arg(1) == 0xFFFF || (genus != 4 && genus != 5)) show_hit(target, attacker, xw_arg(3), g_net->hitSerial);
+        g_net->lastHitBolt = g_net->lastHitTarget = -1;
+    }
+    if (!skip && attacker >= kCraftSlots && attacker < kObjectCount) skip = !mine(o16(attacker, kOSelf));
+    if (skip) {
+        g_net->damageSkipped++;
+        xw_skip_call(0);
+    }
+}
+
+// The flight's frames over, its goals not yet judged (0920:04B8).  The host says so with its flight groups' status; a
+// guest's game is given the host's: what was done in the mission is what the host's game saw done (a boarding runs
+// only where the boarder's AI does), so every pilot of the room is told the same result.
+void xw_session_flight_over() {
+    if (!g_net || g_net->self < 0 || g_net->alone || !g_net->flownGo) return;
+    if (g_net->host) {
+        send_state(true);
+        return;
+    }
+    poll_peers();
+    if (!g_net) return;
+    const int n = std::min((int)kFgMax, (int)ds16(kNumFgs));
+    if (!g_net->hostFlew || (int)g_net->hostGoals.size() != n * kFgStatusSize) {
+        wclog(1, "X-Wing: the flight over: no status of the host's flight groups to judge it by (%d bytes for %d groups)", (int)g_net->hostGoals.size(), n);
+        return;
+    }
+    int changed = 0;
+    for (int i = 0; i < n * kFgStatusSize; i++) {
+        const PhysPt a = xw_ds((Bit16u)(kFgStatus + i));
+        if (mem_readb(a) != (Bit8u)g_net->hostGoals[(size_t)i]) changed++;
+        mem_writeb(a, (Bit8u)g_net->hostGoals[(size_t)i]);
+    }
+    wclog(1, "X-Wing: the flight over: judged by the host's flight groups' status (%d of %d bytes were not the same here)", changed, n * kFgStatusSize);
+}
+
+void xw_session_flight_ended() {
+    if (!g_net) return;
+    wclog(1, "X-Wing: our flight is over");
+    send_state(true);
+    g_net->clear_flight();
+}
+
+}  // namespace wc

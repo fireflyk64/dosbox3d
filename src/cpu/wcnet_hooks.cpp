@@ -35,9 +35,12 @@
 #include "wcnet_rap.h"
 #include "wcnet_priv_hires.h"
 #include "wcnet_tiedemo.h"
+#include "wcnet_xw.h"
+#include "wcnet_xw640.h"
 #include "wcnet_armada.h"
 #include "wcnet_armada_hires.h"
 #include "wcnet_ipx.h"
+#include "wcnet_tie640.h"
 #include "paging.h"
 #include "callback.h"
 #include "cpu.h"
@@ -52,6 +55,7 @@
 extern std::string incoming_text;
 
 bool wc_net_watch[0x10000];   // IPs with a hook, whatever the segment (tested in line by the CPU cores)
+Bit16u wc_net_watch_cs[0x10000];   // the segment a watched IP is watched in (0: any), wc::watch_at
 bool wc_net_watch32[0x10000]; // ... and the low words of a 32-bit program's EIPs (TIE Fighter: wcnet_tie.cpp)
 Bit32s wc_net_countdown = 0;  // instructions until the next periodic call
 
@@ -62,7 +66,16 @@ static bool g_watchReady = false;
 static int g_asyncCounter = 0;
 static bool g_skipBarracks = false;
 
-static void watch(Bit16u ip) { g_watch[ip] = true; }
+static void watch(Bit16u ip) { g_watch[ip] = true; wc_net_watch_cs[ip] = 0; }
+// ... in one code segment only; a second segment asking for the same IP (or a plain watch) makes it any segment's
+void watch_at(Bit16u seg, Bit16u ip) {
+    if (!g_watch[ip]) {
+        g_watch[ip] = true;
+        wc_net_watch_cs[ip] = seg;
+    } else if (wc_net_watch_cs[ip] != seg) {
+        wc_net_watch_cs[ip] = 0;
+    }
+}
 
 // Between "mission about to start" and "mission ended", and once the first
 // in-flight frame has run: what the test aids mean by "in space".  It does
@@ -74,7 +87,7 @@ static bool g_frameSeen = false;
 static int g_flightCount = 0;  // missions that reached their first frame
 static bool in_flight() { return g_inMission && g_frameSeen; }
 // ... for the key script's clock and its "wait" item: a game module's flight counts too (the TIE demo's)
-static bool script_in_flight() { return in_flight() || (tdm_found() && tdm_in_flight()); }
+static bool script_in_flight() { return in_flight() || (tdm_found() && tdm_in_flight()) || (xw_found() && xw_in_flight()); }
 // The page's stick steers in a flight and moves a pointer in a menu.  A simulator's flight is flown like any other but is no
 // mission (the hooks stand aside for it: in_simulation, g_rvSimulator), and in_flight says no: so the stick drifted the
 // pointer like a mouse's, a turn that never stopped (WC1's TrainSim, RetroVega's simulator).  WC1's simulator has screens
@@ -285,6 +298,8 @@ static int rock_onto(int target) {
 // shows of video memory: TIE Fighter's 640x480).  A text mode goes to the
 // same name with .txt instead: its 80 x 25 characters.
 static bool write_screenshot(const std::string &path) {
+    if (wc::xw640_on()) return wc::xw640_shot(path);       // (X-Wing's)
+    if (wc::tie640_on()) return wc::tie640_shot(path);     // (the TIE demo's 640x400 picture; !low= the game's own)
     if (vga.mode == M_TEXT) {
         std::string txt = path.size() > 4 && path.compare(path.size() - 4, 4, ".ppm") == 0 ? path.substr(0, path.size() - 4) + ".txt" : path + ".txt";
         FILE *f = fopen(txt.c_str(), "wb");
@@ -1235,7 +1250,7 @@ static void key_script() {
         wr16(ds::missionStatus, (Bit16u)status);
     } else if (tv_script_item(item, t)) {
         // (Terminal Velocity's aids: wcnet_tv.cpp)
-    } else if (rap_script_item(item, t) || tdm_script_item(item, t)) {
+    } else if (rap_script_item(item, t) || tdm_script_item(item, t) || xw_script_item(item, t)) {
         // (Raptor's aids: wcnet_rap.cpp; the TIE Fighter demo's: wcnet_tiedemo.cpp)
     } else if (priv_script_item(item, t)) {
         // (Privateer's aids: wcnet_priv.cpp)
@@ -1285,6 +1300,7 @@ static void build_watch_list() {
     if (priv_found()) {
         priv_watch_list(watch);
     }
+    xw_watch_list(watch);       // (X-Wing Collector's CD's, wcnet_xw.cpp)
     tdm_watch_list(watch);      // (the TIE Fighter demo's, wcnet_tiedemo.cpp)
     arm_watch_list(watch);      // (Armada's arrows, wcnet_armada.cpp)
     g_watchReady = true;
@@ -2294,6 +2310,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_link(int what) {
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_in_flight() {
     return wc::stick_flying() || wc::rap_in_wave()          // (Raptor's: a wave under way, flown by the arrows)
            || (wc::tie_found() && wc::tie_in_flight()) || (wc::tdm_found() && wc::tdm_in_flight())
+           || (wc::xw_found() && wc::xw_in_flight())
            || (wc::priv_found() && wc::priv_flight_frame_recent()) ? 1 : 0;
 }
 // the page's keys and mouse buttons, into DOSBox's keyboard and mouse driver: every game's (RetroVega's too)
@@ -2561,6 +2578,9 @@ bool wc_net_key_filter(int kbdKey, bool pressed) {
     if (priv_controls_key(kbdKey, pressed)) {
         return true;    // (Privateer's flight: the arrows ramped, wcnet_priv_controls.cpp)
     }
+    if (xw_key(kbdKey, pressed)) {
+        return true;    // (X-Wing: Esc while a guest's launch waits for the host flies alone)
+    }
     if (tdm_key(kbdKey, pressed)) {
         return true;    // (the TIE Fighter demo: Esc never takes it to DOS, wcnet_tiedemo.cpp)
     }
@@ -2722,12 +2742,22 @@ Bitu wc_net_hook_exit(Bit32u ip) {
     if (ip < 0x10000 && wc_net_countdown >= 0 && wc_net_watch[ip] && wc::priv_core_hook(ip)) {
         return 0;
     }
+    // (a watched offset passed by another segment's code: not a hook's place)
+    if (ip < 0x10000 && wc_net_countdown >= 0 && wc_net_watch_cs[ip] && wc_net_watch_cs[ip] != SegValue(cs)) {
+        return 0;
+    }
     PhysPt at = SegPhys(cs) + ip;
     for (int i = g_nHooksRan - 1; i >= 0; i--) {
         if (g_hooksRan[i] == at) {          // back at it, its hooks done: on with the instruction
             g_hooksRan[i] = g_hooksRan[--g_nHooksRan];
             return 0;
         }
+    }
+    // (the TIE demo's 640 picture in one pass: the renderer's calls are taken down some hundreds of times a frame,
+    // waiting on nothing: made here in the core.  After the test above: an arrival the main loop has dealt with
+    // -- the periodic call fell on it -- is not dealt with again)
+    if (ip < 0x10000 && wc_net_countdown >= 0 && wc::tie640_fast_trip(ip)) {
+        return 0;
     }
     if (!g_hookCb) {
         g_hookCb = CALLBACK_Allocate();
@@ -2740,6 +2770,9 @@ Bitu wc_net_hook_exit(Bit32u ip) {
 
 void wc_net_check_cpu_hooks() {
     using namespace wc;
+    if (wc_net_countdown >= 0 && reg_eip < 0x10000 && wc_net_watch_cs[reg_eip] && wc_net_watch_cs[reg_eip] != SegValue(cs)) {
+        return;     // (a watched offset passed by another segment's code)
+    }
     if (g_build == BUILD_RV && (!rv_shared() || solo())) {
         // RetroVega alone (a room of one), with shared flights switched off, or
         // of an interface this emulator was not built for: only watched.
@@ -2787,6 +2820,7 @@ void wc_net_check_cpu_hooks() {
         tv_tick();
         rap_tick();
         tdm_tick();
+        xw_tick();
         arm_tick();
 #ifdef __EMSCRIPTEN__
         escape_tap();
@@ -2832,6 +2866,10 @@ void wc_net_check_cpu_hooks() {
     }
     if (arm_found()) {
         arm_check_hooks(ip);    // (Armada and Proving Grounds: their arrows, wcnet_armada.cpp; nothing else of theirs)
+        return;
+    }
+    if (xw_found()) {
+        xw_check_hooks(ip);     // (X-Wing Collector's CD: its own places, wcnet_xw.cpp)
         return;
     }
     if (tdm_watching()) {

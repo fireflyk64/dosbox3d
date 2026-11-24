@@ -24,6 +24,7 @@ void tdm_tick();                                    // every ~1000 instructions
 bool tdm_found();                                   // TIEMISS.EXE loaded and known
 bool tdm_watching();                                // ... or the first release's Neon showroom (NEON.EXE) running
 bool tdm_check_hooks(Bit32u ip);                    // a watched IP came up: true when it was one of ours
+void watch_at(Bit16u seg, Bit16u ip);                // (wcnet_hooks.cpp: a place watched in its own code segment only)
 void tdm_watch_list(void (*watch)(Bit16u ip));      // our IPs, for the dispatcher's table
 bool tdm_script_item(const std::string &item, double t);   // key-script aids (!tdm...)
 bool tdm_key(int key, bool pressed);                // a key on its way to the game: true to keep it (Esc in TIEMISS)

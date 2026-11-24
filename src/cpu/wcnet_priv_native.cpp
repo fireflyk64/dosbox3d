@@ -9,6 +9,9 @@
  *  What a twin cannot do exactly goes to the game's own code before anything is written: code that is not the
  *  game's, memory not mapped, operands overlapping, the game's own error path, a loop that would not end.
  *
+ *  A planet filling the window was half the emulated CPU again (section 29): the turned shape's runs (eight near
+ *  routines of seg197) and the loop that unpacks a shape's row (22 copies, seg197 to seg204) are twins too.
+ *
  *  The flight's loop waits for its next frame by spinning on the 600 Hz clock (seg075:062B), two thirds of the
  *  emulated CPU in quiet space: there the rest of the emulated slice is skipped, as a hlt's is.
  *
@@ -557,6 +560,121 @@ void copy_spans(Run &r) {       // seg205:0002 (from, to, spans far): the cockpi
     low16(r.a, 0xFFFF);
 }
 
+// ---- seg197: a turned shape's runs ------------------------------------------------------------------------------------
+// A planet in the cockpit's window is half the emulated CPU of its frame (measured at Oxford, 2026-11-23: 53 in 100 of
+// the instructions in seg197, 35 of them in these loops).  seg202's turned and scaled shape is drawn a source row's
+// run at a time by one of sixteen near routines (DGROUP:4222, by the turn's octant): ah pixels from ds:si go to es:bx
+// along a line stepped by two 8-bit fractions (dl by cl: a pixel along the row, dh by ch: a row, DGROUP:47F5 bytes).
+// The eight below are the ones without a clip's count (the other eight jump to these when the run cannot leave the
+// clip, DGROUP:47DA).  The first kind skips a source pixel that steps nowhere; the second kind reads every one and
+// fills the corner of a diagonal step with the pixel before.  Near routines: nothing is left on the stack.
+void shape_run(Run &r, int xStep, bool rowsDown, bool fills, bool rowFirst) {
+    if (GETFLAG(DF)) { r.ok = false; return; }
+    const Bit16u stride = get16(r, r.ss, 0x47F5);
+    const Bit16u yStep = rowsDown ? stride : (Bit16u)(0 - stride);
+    const Bit8u cl = (Bit8u)r.c, ch = (Bit8u)(r.c >> 8);
+    Bit8u al = (Bit8u)r.a, ah = (Bit8u)(r.a >> 8), dl = (Bit8u)r.d, dh = (Bit8u)(r.d >> 8);
+    Bit16u bx = (Bit16u)r.b, si = (Bit16u)r.si;
+    const PhysPt src = lin(r.ds, 0), dst = lin(r.es, 0);
+    PhysPt readLo = 0xFFFFFFFFu, readHi = 0, wroteLo = 0xFFFFFFFFu, wroteHi = 0;
+#define RUN_READ() { const PhysPt at_ = src + si; if (at_ < readLo) readLo = at_; if (at_ > readHi) readHi = at_; al = get8(r, at_); si++; }
+#define RUN_WRITE() { const PhysPt at_ = dst + bx; if (at_ < wroteLo) wroteLo = at_; if (at_ > wroteHi) wroteHi = at_; put8(r, at_, al); }
+    bool draw = true;
+    for (;;) {
+        if (draw) {
+            RUN_READ();
+            RUN_WRITE();
+            if (!--ah) break;
+        }
+        draw = true;
+        unsigned t = (unsigned)dl + cl;
+        dl = (Bit8u)t;
+        if (t > 0xFF) {
+            t = (unsigned)dh + ch;
+            dh = (Bit8u)t;
+            if (!fills) {
+                bx = (Bit16u)(bx + xStep);
+                if (t > 0xFF) bx = (Bit16u)(bx + yStep);
+            } else if (rowFirst) {
+                if (t > 0xFF) {
+                    bx = (Bit16u)(bx + yStep);
+                    RUN_WRITE();
+                }
+                bx = (Bit16u)(bx + xStep);
+            } else {
+                bx = (Bit16u)(bx + xStep);
+                if (t > 0xFF) {
+                    RUN_WRITE();
+                    bx = (Bit16u)(bx + yStep);
+                }
+            }
+            continue;
+        }
+        t = (unsigned)dh + ch;
+        dh = (Bit8u)t;
+        if (t > 0xFF) {
+            bx = (Bit16u)(bx + yStep);
+            continue;
+        }
+        if (fills) RUN_READ() else si++;
+        if (!--ah) break;
+        draw = false;
+    }
+#undef RUN_READ
+#undef RUN_WRITE
+    if (wroteLo <= readHi && readLo <= wroteHi) r.ok = false;   // (a run drawn over its own source: as the game's code has it)
+    low16(r.a, al);             // (ah counted down to 0)
+    low16(r.b, bx);
+    low16(r.d, (u32)dh << 8 | dl);
+    low16(r.si, si);
+    low16(r.di, stride);
+}
+
+void run_a_pp(Run &r) { shape_run(r, 1, true, false, false); }      // seg197:0C15
+void run_b_pp(Run &r) { shape_run(r, 1, true, true, false); }       // seg197:0C75
+void run_a_pm(Run &r) { shape_run(r, 1, false, false, false); }     // seg197:0D0D
+void run_b_pm(Run &r) { shape_run(r, 1, false, true, true); }       // seg197:0D6D
+void run_a_mp(Run &r) { shape_run(r, -1, true, false, false); }     // seg197:0E1B
+void run_b_mp(Run &r) { shape_run(r, -1, true, true, false); }      // seg197:0E7B
+void run_a_mm(Run &r) { shape_run(r, -1, false, false, false); }    // seg197:0F0E
+void run_b_mm(Run &r) { shape_run(r, -1, false, true, true); }      // seg197:0F6E
+
+// ---- a shape's row unpacked -------------------------------------------------------------------------------------------
+// Every scaled or turned shape's packed row is first unpacked into DGROUP:47F8 by the same 39 bytes of loop, 22 copies
+// of it in seg197 to seg204: bx pixels from ds:si to es:di, a byte of count each time -- odd: (count >> 1) of the next
+// byte; even: as many bytes as they are.  The twin is entered at the loop's first instruction and leaves at the one
+// after it (no stack, no return), with the registers as the loop leaves them.
+void row_decode(Run &r) {
+    if (GETFLAG(DF)) { r.ok = false; return; }
+    Bit16u bx = (Bit16u)r.b, si = (Bit16u)r.si, di = (Bit16u)r.di, ax = (Bit16u)r.a;
+    const PhysPt src = lin(r.ds, 0), dst = lin(r.es, 0);
+    const Bit16u si0 = si, di0 = di;
+    for (int turns = 0;; turns++) {
+        if (turns == 2048 || si > 0xFF00 || di > 0xFF00) { r.ok = false; return; }
+        const Bit8u head = get8(r, src + si++);
+        const Bit16u n = head >> 1;
+        if (head & 1) {
+            const Bit8u c = get8(r, src + si++);
+            for (Bit16u i = 0; i < n; i++) put8(r, dst + di++, c);
+            ax = (Bit16u)(c * 0x101);
+            bx = (Bit16u)(bx - n);
+        } else {
+            for (Bit16u i = 0; i < n; i++) put8(r, dst + di++, get8(r, src + si++));
+            ax = n;
+            bx = (Bit16u)(bx - n);
+        }
+        if (!r.ok) return;
+        if (!bx) break;
+    }
+    const PhysPt readLo = src + si0, readHi = src + si, wroteLo = dst + di0, wroteHi = dst + di;
+    if (wroteLo < readHi && readLo < wroteHi) { r.ok = false; return; }    // (unpacked over itself: the game's own)
+    low16(r.a, ax);
+    low16(r.b, 0);
+    low16(r.c, 0);
+    low16(r.si, si);
+    low16(r.di, di);
+}
+
 // ---- the hooks ------------------------------------------------------------------------------------------------------
 
 struct Twin {
@@ -565,23 +683,55 @@ struct Twin {
     Bit16u moved[4];            // the words DOS relocates in it (0 none): the load segment taken off to compare
     void (*make)(Run &);
     const char *name;
+    int pop;                    // what its return takes off the stack: 4 a far routine, 2 a near one; 0: a loop inside
+                                // a routine, left at the instruction after its len bytes
     int state;                  // 0 not seen yet, 1 the game's code as we know it, -1 not
     unsigned made, left, checked, differ;
 };
 
 Twin g_twins[] = {
-    { 0x4C5B, 0x0296, 0x060, 0xCA8867CF, { 0x0000, 0x0000, 0x0000, 0x0000 }, length,            "seg128:0296", 0, 0, 0, 0, 0 },
-    { 0x4C5B, 0x02F6, 0x056, 0xE5DFD2C5, { 0x0000, 0x0000, 0x0000, 0x0000 }, root,              "seg128:02F6", 0, 0, 0, 0, 0 },
-    { 0x4C5B, 0x0390, 0x0C0, 0xEE187329, { 0x0000, 0x0000, 0x0000, 0x0000 }, transform_rows,    "seg128:0390", 0, 0, 0, 0, 0 },
-    { 0x4C5B, 0x0450, 0x0C0, 0xFD1772F9, { 0x0000, 0x0000, 0x0000, 0x0000 }, transform_columns, "seg128:0450", 0, 0, 0, 0, 0 },
-    { 0x3B4B, 0x02DC, 0x04F, 0x00FF0769, { 0x0000, 0x0000, 0x0000, 0x0000 }, absolute,          "seg095:02DC", 0, 0, 0, 0, 0 },
-    { 0x3B4B, 0x0247, 0x053, 0x04763F20, { 0x0265, 0x0272, 0x0000, 0x0000 }, root_of,           "seg095:0247", 0, 0, 0, 0, 0 },
-    { 0x4563, 0x0133, 0x0E1, 0x7F20D540, { 0x0000, 0x0000, 0x0000, 0x0000 }, normalise_up,      "seg115:0133", 0, 0, 0, 0, 0 },
-    { 0x4563, 0x0217, 0x0C3, 0x974F18A6, { 0x0000, 0x0000, 0x0000, 0x0000 }, normalise_down,    "seg115:0217", 0, 0, 0, 0, 0 },
-    { 0x4563, 0x0962, 0x0F6, 0xE94D348F, { 0x0976, 0x0995, 0x09B4, 0x0000 }, shift_within,      "seg115:0962", 0, 0, 0, 0, 0 },
-    { 0x4563, 0x02DD, 0x11C, 0xEEA1D99E, { 0x03A8, 0x0000, 0x0000, 0x0000 }, distance,          "seg115:02DD", 0, 0, 0, 0, 0 },
-    { 0x54D1, 0x000A, 0x04D, 0x28E4BB71, { 0x0000, 0x0000, 0x0000, 0x0000 }, clear,             "seg181:000A", 0, 0, 0, 0, 0 },
-    { 0x5D17, 0x0002, 0x06B, 0x0B790087, { 0x0000, 0x0000, 0x0000, 0x0000 }, copy_spans,        "seg205:0002", 0, 0, 0, 0, 0 },
+    { 0x4C5B, 0x0296, 0x060, 0xCA8867CF, { 0x0000, 0x0000, 0x0000, 0x0000 }, length,            "seg128:0296", 4, 0, 0, 0, 0, 0 },
+    { 0x4C5B, 0x02F6, 0x056, 0xE5DFD2C5, { 0x0000, 0x0000, 0x0000, 0x0000 }, root,              "seg128:02F6", 4, 0, 0, 0, 0, 0 },
+    { 0x4C5B, 0x0390, 0x0C0, 0xEE187329, { 0x0000, 0x0000, 0x0000, 0x0000 }, transform_rows,    "seg128:0390", 4, 0, 0, 0, 0, 0 },
+    { 0x4C5B, 0x0450, 0x0C0, 0xFD1772F9, { 0x0000, 0x0000, 0x0000, 0x0000 }, transform_columns, "seg128:0450", 4, 0, 0, 0, 0, 0 },
+    { 0x3B4B, 0x02DC, 0x04F, 0x00FF0769, { 0x0000, 0x0000, 0x0000, 0x0000 }, absolute,          "seg095:02DC", 4, 0, 0, 0, 0, 0 },
+    { 0x3B4B, 0x0247, 0x053, 0x04763F20, { 0x0265, 0x0272, 0x0000, 0x0000 }, root_of,           "seg095:0247", 4, 0, 0, 0, 0, 0 },
+    { 0x4563, 0x0133, 0x0E1, 0x7F20D540, { 0x0000, 0x0000, 0x0000, 0x0000 }, normalise_up,      "seg115:0133", 4, 0, 0, 0, 0, 0 },
+    { 0x4563, 0x0217, 0x0C3, 0x974F18A6, { 0x0000, 0x0000, 0x0000, 0x0000 }, normalise_down,    "seg115:0217", 4, 0, 0, 0, 0, 0 },
+    { 0x4563, 0x0962, 0x0F6, 0xE94D348F, { 0x0976, 0x0995, 0x09B4, 0x0000 }, shift_within,      "seg115:0962", 4, 0, 0, 0, 0, 0 },
+    { 0x4563, 0x02DD, 0x11C, 0xEEA1D99E, { 0x03A8, 0x0000, 0x0000, 0x0000 }, distance,          "seg115:02DD", 4, 0, 0, 0, 0, 0 },
+    { 0x54D1, 0x000A, 0x04D, 0x28E4BB71, { 0x0000, 0x0000, 0x0000, 0x0000 }, clear,             "seg181:000A", 4, 0, 0, 0, 0, 0 },
+    { 0x5D17, 0x0002, 0x06B, 0x0B790087, { 0x0000, 0x0000, 0x0000, 0x0000 }, copy_spans,        "seg205:0002", 4, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0C15, 0x025, 0x73994C45, { 0x0000, 0x0000, 0x0000, 0x0000 }, run_a_pp,          "seg197:0C15", 2, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0C75, 0x028, 0xC6F9AEF2, { 0x0000, 0x0000, 0x0000, 0x0000 }, run_b_pp,          "seg197:0C75", 2, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0D0D, 0x025, 0x2D746B8D, { 0x0000, 0x0000, 0x0000, 0x0000 }, run_a_pm,          "seg197:0D0D", 2, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0D6D, 0x033, 0x7BA84D77, { 0x0000, 0x0000, 0x0000, 0x0000 }, run_b_pm,          "seg197:0D6D", 2, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0E1B, 0x025, 0xA922C09D, { 0x0000, 0x0000, 0x0000, 0x0000 }, run_a_mp,          "seg197:0E1B", 2, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0E7B, 0x028, 0x773E863A, { 0x0000, 0x0000, 0x0000, 0x0000 }, run_b_mp,          "seg197:0E7B", 2, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0F0E, 0x025, 0x4CFBCC55, { 0x0000, 0x0000, 0x0000, 0x0000 }, run_a_mm,          "seg197:0F0E", 2, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0F6E, 0x033, 0x79648DC6, { 0x0000, 0x0000, 0x0000, 0x0000 }, run_b_mm,          "seg197:0F6E", 2, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0226, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg197:0226", 0, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0291, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg197:0291", 0, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x04B7, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg197:04B7", 0, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0522, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg197:0522", 0, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0744, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg197:0744", 0, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x07AF, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg197:07AF", 0, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x09D4, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg197:09D4", 0, 0, 0, 0, 0, 0 },
+    { 0x5680, 0x0A3F, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg197:0A3F", 0, 0, 0, 0, 0, 0 },
+    { 0x579E, 0x011B, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg198:011B", 0, 0, 0, 0, 0, 0 },
+    { 0x579E, 0x027B, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg198:027B", 0, 0, 0, 0, 0, 0 },
+    { 0x579E, 0x1A42, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg198:1A42", 0, 0, 0, 0, 0, 0 },
+    { 0x579E, 0x1B58, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg198:1B58", 0, 0, 0, 0, 0, 0 },
+    { 0x5A57, 0x03F3, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg199:03F3", 0, 0, 0, 0, 0, 0 },
+    { 0x5A57, 0x0505, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg199:0505", 0, 0, 0, 0, 0, 0 },
+    { 0x5AB6, 0x04C7, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg200:04C7", 0, 0, 0, 0, 0, 0 },
+    { 0x5AB6, 0x066F, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg200:066F", 0, 0, 0, 0, 0, 0 },
+    { 0x5C3D, 0x0238, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg203:0238", 0, 0, 0, 0, 0, 0 },
+    { 0x5C3D, 0x03D8, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg203:03D8", 0, 0, 0, 0, 0, 0 },
+    { 0x5C9D, 0x0306, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg204:0306", 0, 0, 0, 0, 0, 0 },
+    { 0x5C9D, 0x03BC, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg204:03BC", 0, 0, 0, 0, 0, 0 },
+    { 0x5C9D, 0x0474, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg204:0474", 0, 0, 0, 0, 0, 0 },
+    { 0x5C9D, 0x0615, 0x027, 0xEC304514, { 0x0000, 0x0000, 0x0000, 0x0000 }, row_decode,        "seg204:0615", 0, 0, 0, 0, 0, 0 },
 };
 enum { kTwinCount = sizeof(g_twins) / sizeof(g_twins[0]) };
 
@@ -662,7 +812,7 @@ bool code_known(Twin &t) {
     return t.state > 0;
 }
 
-void apply(const Run &r, Bit16u retIp, Bit16u retCs) {
+void apply(const Run &r, Bit16u retIp, Bit16u retCs, int pop) {
     for (int i = 0; i < r.writes; i++) {
         if (r.size[i] == 4) mem_writed_checked(r.at[i], r.val[i]);
         else if (r.size[i] == 2) mem_writew_checked(r.at[i], (Bit16u)r.val[i]);
@@ -680,8 +830,8 @@ void apply(const Run &r, Bit16u retIp, Bit16u retCs) {
     reg_esi = r.si;
     reg_edi = r.di;
     if (r.es != (Bit16u)SegValue(es)) SegSet16(es, r.es);
-    reg_sp = (Bit16u)(r.sp + 4);
-    SegSet16(cs, retCs);
+    reg_sp = (Bit16u)(r.sp + pop);
+    if (pop == 4) SegSet16(cs, retCs);
     reg_eip = retIp;
 }
 
@@ -699,9 +849,10 @@ void report() {
 void compare_returned() {
     while (g_open) {
         Pending &p = g_pending[g_open - 1];
-        if (reg_sp < (Bit16u)(p.sp + 4)) return;        // (still inside it)
+        const int pop = p.twin->pop;
+        if (reg_sp < (Bit16u)(p.sp + pop)) return;      // (still inside it)
         g_open--;
-        if (reg_ip != p.retIp || SegValue(cs) != p.retCs || reg_sp != (Bit16u)(p.sp + 4)) continue;
+        if (reg_ip != p.retIp || SegValue(cs) != p.retCs || reg_sp != (Bit16u)(p.sp + pop)) continue;
         Twin &t = *p.twin;
         const Run &w = p.want;
         bool same = reg_eax == w.a && reg_ebx == w.b && reg_ecx == w.c && reg_edx == w.d && reg_esi == w.si
@@ -721,6 +872,7 @@ void compare_returned() {
             Bit8u b = 0;
             mem_readb_checked(p.at[i], &b);
             same = b == p.val[i];
+            for (size_t k = i + 1; !same && k < p.at.size(); k++) same = p.at[k] == p.at[i];   // (written again after)
         }
         t.checked++;
         if (!same && ++t.differ <= 5) {
@@ -736,7 +888,8 @@ void entered(Twin &t) {
     if (!code_known(t)) return;
     Run r;
     run_of(r);
-    const Bit16u retIp = get16(r, r.ss, r.sp), retCs = get16(r, r.ss, (Bit16u)(r.sp + 2));
+    const Bit16u retIp = t.pop ? get16(r, r.ss, r.sp) : (Bit16u)(t.ip + t.len);
+    const Bit16u retCs = t.pop == 4 ? get16(r, r.ss, (Bit16u)(r.sp + 2)) : r.cs;
     if (r.ok) t.make(r);
     if (!r.ok) {
         t.left++;
@@ -756,7 +909,7 @@ void entered(Twin &t) {
         wc_net_watch[retIp] = true;
         return;
     }
-    apply(r, retIp, retCs);
+    apply(r, retIp, retCs, t.pop);
     t.made++;
     static unsigned n;
     if (++n % 1000000 == 0) report();

@@ -72,6 +72,8 @@
 // raw sectors), mounted as drive D before the game runs (imgmount, an
 // ISO).  `keep`: files of the game that the installer-junk rule would drop
 // by their extension (TIE Fighter's IMUSE.INI).
+// `disc(files)`: the game's CD wherever the dropped files have it (X-Wing: an image of any name, or the disc's files
+// in a folder): { image: path } or { folder: path } among the game's files, mounted as drive D; null: none found.
 // `noRoomOptions`: the room's Conn and Collide choices are Wing Commander's (the frame exchange's mode, the asteroid
 // fields and wing bumps): none of them for this game, so the page leaves them out.  `screen`: the picture's shape on
 // the page, [width, height] (640 x 400 when none: Wing Commander's 320 x 200 doubled; TIE Fighter flies at 640 x 480,
@@ -586,6 +588,65 @@ function tdPrepare(FS, root) {
   return said.length ? `The TIE Fighter demo's settings, as its installer writes them: ${said.join(", ")}` : "";
 }
 
+// X-Wing Collector's CD-ROM (docs/xwing.md).  Its CD: an image among the game's files (GOG's game.gog, an .iso, a
+// .bin of raw sectors: the largest such file of 10 MB and more), or the disc's own files in a folder (the one that
+// holds MISSION\*.XWI: a copy of the CD beside the installed game, or the CD's own top, where the installed game's
+// files are too).
+function xwDisc(files) {
+  let image = null;
+  for (const f of files) {
+    if (!/\.(iso|gog|bin|img)$/i.test(f.path) || f.path.split("/").length > 2) continue;
+    const size = f.size !== undefined ? f.size : (f.data ? f.data.length : 0);
+    if (size >= 10e6 && (!image || size > image.size)) image = { path: f.path, size };
+  }
+  if (image) return { image: image.path };
+  let folder = null;
+  for (const f of files) {
+    const m = /^(?:(.*)\/)?mission\/[^/]+\.xwi$/i.exec(f.path);
+    if (m && (folder === null || (m[1] || "").length < folder.length)) folder = m[1] || "";
+  }
+  return folder === null ? null : { folder };
+}
+// Its settings, as its installer leaves them for a fast machine with a Sound Blaster 16: LANDRU.CFG ("fast", "ems",
+// "diff"); SETMUSE.INI's two drivers (the file's first 28 bytes: the music's driver, then the digitized sound's, 14
+// bytes each) FM4.MDR, the OPL3's, and SB16.WDR, whatever card the copy was set up for (a General MIDI or a Roland
+// has no synthesizer here; SETMUSE.NON, the installer's blank, when there is no SETMUSE.INI); OPTIONS.CFG when there
+// is none (FASTYES.CFG with the cockpit on: its byte 10).
+function xwPrepare(FS, root) {
+  const said = [];
+  const named = (want) => { try { return FS.readdir(root).find((n) => n.toUpperCase() === want) || null; } catch (e) { return null; } };
+  const read = (want) => { const n = named(want); try { return n ? FS.readFile(`${root}/${n}`) : null; } catch (e) { return null; } };
+  const write = (want, data) => FS.writeFile(`${root}/${named(want) || want}`, data);
+  const landru = "fast\r\nems\r\ndiff\r\n";
+  const had = read("LANDRU.CFG");
+  if (!had || new TextDecoder("latin1").decode(had) !== landru) {
+    write("LANDRU.CFG", new TextEncoder().encode(landru));
+    said.push("LANDRU.CFG (a fast machine, EMS)");
+  }
+  const muse = read("SETMUSE.INI") || read("SETMUSE.NON");
+  if (muse && muse.length >= 28) {
+    const out = muse.slice();
+    const put = (at, name) => { for (let i = 0; i < 14; i++) out[at + i] = i < name.length ? name.charCodeAt(i) : 0; };
+    const was = (at) => { let t = ""; for (let i = 0; i < 14 && muse[at + i]; i++) t += String.fromCharCode(muse[at + i]); return t; };
+    if (was(0) !== "FM4.MDR" || was(14) !== "SB16.WDR" || !named("SETMUSE.INI")) {
+      put(0, "FM4.MDR");
+      put(14, "SB16.WDR");
+      write("SETMUSE.INI", out);
+      said.push(`SETMUSE.INI (the music ${was(0) || "none"} -> FM4.MDR, the sound ${was(14) || "none"} -> SB16.WDR)`);
+    }
+  }
+  if (!named("OPTIONS.CFG")) {
+    const fast = read("FASTYES.CFG");
+    if (fast && fast.length > 10) {
+      const out = fast.slice();
+      out[10] = 1;
+      write("OPTIONS.CFG", out);
+      said.push("OPTIONS.CFG (the installer's FASTYES.CFG)");
+    }
+  }
+  return said.length ? `X-Wing's settings: ${said.join(", ")}` : "";
+}
+
 // Terminal Velocity's own settings made for the browser at each launch (src/cpu/wcnet_tv.cpp; docs/terminalvelocity.md):
 // the Sound Blaster 16's DIGPAK driver as SOUNDRV.COM (SETUP.EXE's Sound Setup copies the card's driver there; TV.EXE
 // loads it, the music and the effects both through it), SETUP.CFG as SETUP.EXE's "Save and launch TV" writes it (TV.EXE
@@ -897,10 +958,26 @@ export const GAMES = [
   // layer's; the game's files unchanged): docs/tiedemo.md section 8.
   { id: "tiedemo", tag: "TFD", title: "TIE Fighter (the 1994 demo)", short: "TIE Fighter demo", detect: ["TIEMISS.EXE"], run: "tiedemo", multiplayer: true, maxSeats: 3,
     build: { text: "TIE Fighter Demo V1.0 12/04/93" },
-    cycles: 30000, screen: [320, 200], noFlight: true, noRoomOptions: true, prepare: tdPrepare,
+    cycles: 30000, screen: [640, 400], noFlight: true, noRoomOptions: true, prepare: tdPrepare,
     saves: ["OPTIONS.CFG"],
     help: "The TIE Fighter demo of early 1994, the one given away with the Dodge Neon: a single mission (T/F Alpha against the Rebel repair yard at Remitik, the Rebels fleeing Hoth after), in a build from before the game's release. Here it is the first of four: win it and you fly on, the same game with new missions written in by this page: The Shuttles Run (TIE interceptors after a dozen fleeing shuttles, X-wings and Y-wings in the way), Corvette Hunt (TIE bombers with proton torpedoes against four corvettes) and Escort the Prowlers (TIE fighters against waves of Y-wings, and whatever comes after). A mission failed or a pilot down: that mission again. It opens in the Dodge Neon's showroom (click Go to game, or press any key but Esc: Esc there leaves the demo), then the opening plays (Esc skips it), then the missions, then the ending, and back to the showroom. The TIE Fighter demo button under step 1 fetches it from the Internet Archive once (TIE_Fighter_Preview__Dodge_Neon.zip, the preview's two floppies, 1.7 MB), installs it as its installer does and keeps it in this browser; its zip dropped on step 1 works too. Flown together, up to 3 pilots: everybody's mission starts at the same moment (the host's game waits at the end of the opening until everybody has got there), each pilot flies their own TIE fighter of T/F Alpha, and the battle is one battle: the same Rebels in the same places on every screen, every shot seen by everybody, every hit counted where it lands, a craft destroyed for one destroyed for all. If a pilot is shot down, the flight ends for everybody a moment later.",
     keys: "<b>TIE Fighter demo in flight:</b> the arrow keys steer (a tap turns a little, held they build to the game's own keyboard turn in a third of a second; <kbd>Shift</kbd> with an arrow is the whole stick at once, the mouse's sharpest turn; <kbd>Up</kbd> dives as a stick pushed forward), the keypad's <kbd>Ins</kbd> and <kbd>Del</kbd> roll. The mouse, as the <b>Flight</b> choice beside Controller has it: <i>point to aim</i> (the default: a ring shows the pointer; the middle is still, the further the pointer the faster the turn; the craft turns and climbs without banking, and the right button held with the mouse moved across rolls), <i>point to aim, banking</i> (the same with the game's own bank into each turn), <i>drag to steer</i> (the game's own, 1994: the right button held a moment with the mouse moved across rolls, a click picks a target), or nothing (the keyboard alone, or a joystick: a controller picked above, which also rolls and fires); <kbd>F12</kbd> in flight switches between the first four. <kbd>Space</kbd> or the left button fires; <kbd>+</kbd> and <kbd>-</kbd> the throttle, <kbd>Backspace</kbd> full, <kbd>\\</kbd> none, <kbd>[</kbd> and <kbd>]</kbd> a third and two thirds; <kbd>X</kbd> single, dual or quad fire, <kbd>F9</kbd> the lasers' recharge rate; <kbd>R</kbd> the nearest enemy fighter, <kbd>T</kbd> and <kbd>Y</kbd> the next and previous target, <kbd>U</kbd> the ship in the sight; <kbd>W</kbd> the bomber's proton torpedoes (and back to the lasers); <kbd>Space</kbd> is still the game's when the onboard computer suggests something (it approves); <kbd>Ctrl</kbd> the threat display; the keypad's digits look around. <kbd>Esc</kbd> is kept from the game (it would end the demo at once, back to DOS), so it only leaves full screen.",
+    dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
+  // X-Wing Collector's CD-ROM (LucasArts, 1994): the installed game with its CD (GOG's "X-Wing Special Edition": the
+  // 1994 game's folder with game.gog, the disc; a zip of the installed folder with the CD's files or an image of it
+  // inside; or the CD's image alone, whose top holds the installed game's files too: expandCdImages).  BWING.EXE is
+  // a 16-bit real-mode program with overlays (BFRONT.OVL the front end, BFLIGHT.OVL the flight: the TIE Fighter demo's
+  // engine in an earlier build), EMS; it looks for its CD on a drive (\BWING.EXE there).  Flown together
+  // (src/cpu/wcnet_xw*.cpp, the TIE demo's session ported; docs/xwing.md): rooms of up to 4, every pilot through
+  // its own front end to a mission, launched together into the HOST's mission, each in its own craft of the
+  // player's flight group (made as large as the pilots flying), the battle shared, the host's flight over the end
+  // for all, each pilot's result the host's.
+  { id: "xwing", tag: "XW", title: "X-Wing (Collector's CD-ROM)", short: "X-Wing CD", detect: ["BWING.EXE"], run: "bwing", multiplayer: true, maxSeats: 4,
+    build: { text: "Exiting X-Wing CD" },
+    cycles: 30000, screen: [640, 400], noFlight: true, noRoomOptions: true, prepare: xwPrepare, disc: xwDisc,
+    saves: ["*.PLT", "*.HGH", "OPTIONS.CFG"],
+    help: "X-Wing (the 1994 Collector's CD-ROM) flown together, up to four pilots. Each pilot plays their own game: register a pilot, walk to Tour of Duty, Historical Combat or the Proving Ground, sit through the briefing and click out into space. Your launch then waits for the others; when everybody is there you all fly the HOST's mission, each in your own craft of the same flight group (wingmen are added when the mission has too few). Kills, damage and the mission's goals are shared; when the host hyperspaces home or is shot down the flight ends for everybody, and each pilot's debriefing shows the same result. The page keeps your pilots in this browser.",
+    keys: "<b>X-Wing in flight:</b> the mouse or a joystick steers, the left button or <kbd>Enter</kbd> fires; <kbd>+</kbd> <kbd>-</kbd> <kbd>[</kbd> <kbd>]</kbd> <kbd>Backspace</kbd> <kbd>\\</kbd> set the throttle, <kbd>R</kbd> targets the nearest enemy, <kbd>T</kbd> <kbd>Y</kbd> the next and the one before, <kbd>W</kbd> picks the weapon, <kbd>X</kbd> links the cannons, <kbd>S</kbd> sets the shields, <kbd>F9</kbd> <kbd>F10</kbd> the lasers' and shields' recharge, <kbd>M</kbd> the map, <kbd>B</kbd> the goals, <kbd>.</kbd> the cockpit on and off, <kbd>H</kbd> hyperspace home once the work is done, <kbd>Esc</kbd> the options.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
 ];
 
@@ -1169,6 +1246,50 @@ export async function expandInnerZips(files) {
     const at = f.path.replace(/\\/g, "/").replace(/\.zip$/i, "") + "/";
     out = out.filter((g) => g !== f).concat(inside.map((g) => ({ path: at + g.path.replace(/\\/g, "/"), data: g.data })));
     n++;
+  }
+  return out;
+}
+
+// A CD's image dropped by itself, or beside nothing that is a game (an .iso of the X-Wing Collector's CD: the disc's top
+// holds the installed game's own files): the files at the image's top put beside it, when one of them is a program
+// the registry knows that comes with a disc (`disc`).  ISO 9660, 2048-byte sectors or raw 2352-byte ones.
+export function expandCdImages(files) {
+  const known = new Set(GAMES.filter((g) => g.disc).flatMap((g) => g.detect));
+  let out = files;
+  for (const f of files) {
+    const d = f.data;
+    if (!d || d.length < 2e6) continue;
+    let ss = 0, hdr = 0;
+    for (const [s, h] of [[2048, 0], [2352, 16]]) {
+      const p = 16 * s + h;
+      if (d[p] === 1 && String.fromCharCode(...d.subarray(p + 1, p + 6)) === "CD001") { ss = s; hdr = h; break; }
+    }
+    if (!ss) continue;
+    const read = (sector, size) => {
+      const o = new Uint8Array(size);
+      for (let k = 0; k * 2048 < size; k++) {
+        const from = (sector + k) * ss + hdr, n = Math.min(2048, size - k * 2048);
+        if (from + n > d.length) break;
+        o.set(d.subarray(from, from + n), k * 2048);
+      }
+      return o;
+    };
+    const u32 = (b, i) => (b[i] | b[i + 1] << 8 | b[i + 2] << 16 | b[i + 3] << 24) >>> 0;
+    const pvd = read(16, 2048);
+    const rootDir = read(u32(pvd, 158), Math.min(u32(pvd, 166), 1 << 20));
+    const top = [];
+    for (let i = 0; i < rootDir.length;) {
+      if (!rootDir[i]) { i = (Math.floor(i / 2048) + 1) * 2048; continue; }
+      const name = String.fromCharCode(...rootDir.subarray(i + 33, i + 33 + rootDir[i + 32])).replace(/;\d+$/, "").replace(/\.$/, "").toUpperCase();
+      if (!(rootDir[i + 25] & 2) && name.length > 1) top.push({ name, extent: u32(rootDir, i + 2), size: u32(rootDir, i + 10) });
+      i += rootDir[i];
+    }
+    if (!top.some((e) => known.has(e.name))) continue;
+    const at = dir(f.path.replace(/\\/g, "/"));
+    const prefix = at ? at + "/" : "";
+    const have = new Set(out.map((g) => g.path.replace(/\\/g, "/").toUpperCase()));
+    const added = top.filter((e) => !have.has((prefix + e.name).toUpperCase()) && e.size < 64e6).map((e) => ({ path: prefix + e.name, data: read(e.extent, e.size) }));
+    out = out.concat(added);
   }
   return out;
 }

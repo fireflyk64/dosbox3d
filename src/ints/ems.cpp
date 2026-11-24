@@ -693,7 +693,7 @@ static Bit8u MemoryRegion(void) {
 }
 
 
-static Bitu INT67_Handler(void) {
+static Bitu INT67_Handler2(void) {
 	Bitu i;
 	switch (reg_ah) {
 	case 0x40:		/* Get Status */
@@ -1010,6 +1010,22 @@ static Bitu INT67_Handler(void) {
 		break;
 	}
 	return CBRET_NONE;
+}
+
+// (research aid: WCNET_EMS_TRACE=1 lists every EMS call and its result)
+static Bitu INT67_Handler(void) {
+	static int trace = -1;
+	if (trace < 0) { const char *e = getenv("WCNET_EMS_TRACE"); trace = e && e[0] == '1'; }
+	if (!trace) return INT67_Handler2();
+	Bit16u ax = reg_ax, bx = reg_bx, cx = reg_cx, dx = reg_dx;
+	Bitu r = INT67_Handler2();
+	static Bit32u last = 0; static int same = 0;
+	Bit32u key = ((Bit32u)ax << 16) | reg_ah;
+	if (key == last && ++same > 3) return r;
+	if (key != last) same = 0;
+	last = key;
+	fprintf(stderr, "EMS %04x bx %04x cx %04x dx %04x -> ax %04x bx %04x dx %04x\n", ax, bx, cx, dx, reg_ax, reg_bx, reg_dx);
+	return r;
 }
 
 static Bitu VCPI_PM_Handler() {

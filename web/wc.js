@@ -16,7 +16,7 @@ import { initControls, KEY, stepped } from "./gamepad.js";
 import { initTouch } from "./touch.js";
 import { initVoice } from "./voice.js";
 import { loadSo3 } from "./so3.js";
-import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles, expandSplitZips, expandInnerZips,
+import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles, expandSplitZips, expandInnerZips, expandCdImages,
          saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild, legacyOf, legacyAdvice, GAMES } from "./gamefiles.js";
 import { newRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, CALLSIGNS, pickCallsign, givesWay, sameName } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
@@ -360,7 +360,7 @@ const rememberPick = (id) => { try { localStorage.setItem(PICK_KEY, id); } catch
 function gameParam(v) {
   const k = String(v || "").trim().toLowerCase();
   if (!k) return null;
-  const named = { raptor: "rap", retrovega: "rv", tie: "tf", tfd: "tiedemo", tiefighter: "tf", privateer: "priv", terminalvelocity: "tv" };
+  const named = { raptor: "rap", retrovega: "rv", tie: "tf", tfd: "tiedemo", tiefighter: "tf", xw: "xwing", "x-wing": "xwing", privateer: "priv", terminalvelocity: "tv" };
   let id = named[k] || k;
   if (!gameById(id)) { const byTag = GAMES.find((g) => g.tag.toLowerCase() === k); id = byTag ? byTag.id : null; }
   if (id === "tf" && !holderOf("tf")) id = "tiedemo";
@@ -458,6 +458,7 @@ const gameTag = () => (gameInfo() && gameInfo().tag) || "";
 async function useFiles(files, label, { persist = true } = {}) {
   // (a game in pieces, Terminal Velocity's shareware: its split archive unpacked)
   files = await expandSplitZips(files);
+  files = expandCdImages(files);      // (a CD's image: the game's own files at its top put beside it)
   let id = identifyGame(files);
   if (!id.game) {
     // (no game at the archive's own level: a zip inside it that holds one, a backup wrapped once more)
@@ -500,6 +501,16 @@ async function useFiles(files, label, { persist = true } = {}) {
   }
 }
 
+// Is the file an ISO 9660 image (its volume descriptor at sector 16: 2048-byte sectors, or raw 2352-byte ones)?
+async function isCdImage(file) {
+  for (const at of [16 * 2048, 16 * 2352 + 16]) {
+    if (file.size < at + 6) continue;
+    const b = new Uint8Array(await file.slice(at, at + 6).arrayBuffer());
+    if (b[0] === 1 && String.fromCharCode(...b.subarray(1, 6)) === "CD001") return true;
+  }
+  return false;
+}
+
 async function handleFile(file) {
   try {
     sourceButtons(false);
@@ -513,8 +524,12 @@ async function handleFile(file) {
     } else if (looksLikeInstaller(head)) {
       sourceStatus(`Unpacking the installer ${file.name} in your browser… (innoextract)`);
       files = await extractInstaller(file, log);
+    } else if (await isCdImage(file)) {
+      // (a CD's image by itself: X-Wing's .iso.  Its top's files are the game's: expandCdImages)
+      files = [{ path: file.name.replace(/[^A-Za-z0-9._-]/g, "_"), data: new Uint8Array(await file.arrayBuffer()) }];
+      log(`${file.name}: a CD's image (${mb(file.size)})`);
     } else {
-      throw new Error(`${file.name} is neither a .zip nor a Windows installer`);
+      throw new Error(`${file.name} is neither a .zip, a Windows installer nor a CD's image`);
     }
     await useFiles(files, file.name);
   } catch (e) {
@@ -1483,7 +1498,7 @@ const aloneInRoom = () => !!lobby.game && !soloRoom() && isHost() && !lobby.game
 // game is its own (Privateer too: another kind of game).  The room panel's "Join open ..." keeps to the series of the
 // game picked (the user, 2026-11-17: "restrict to...that series at least (eg can join TFD or TF, can join WC1 or WC2)
 // but not willy nilly"); the top button's takes any.
-const SERIES = { wc1: "wc", wc2: "wc", tf: "tie", tiedemo: "tie" };
+const SERIES = { wc1: "wc", wc2: "wc", tf: "tie", tiedemo: "tie" };     // (X-Wing is a series of its own)
 const SERIES_NAMES = { wc: "Wing Commander", tie: "TIE Fighter" };
 function seriesOf(id) {
   const g = gameById(id);
@@ -2741,6 +2756,13 @@ async function start(fromGesture) {
     const args = ["-c", `mount c ${GAME_ROOT}`];
     // The game's disc, where it comes with one (the registry's image): drive D.
     if (gameInfo() && gameInfo().image) args.push("-c", `imgmount d ${GAME_ROOT}/${gameInfo().image} -t iso`);
+    // ... or wherever these files have it (the registry's disc: an image of any name, or the disc's files in a folder)
+    if (gameInfo() && gameInfo().disc) {
+      const disc = gameInfo().disc(source.files);
+      if (disc && disc.image) args.push("-c", `imgmount d "${GAME_ROOT}/${disc.image}" -t iso`);
+      else if (disc) args.push("-c", `mount d "${GAME_ROOT}${disc.folder ? "/" + disc.folder : ""}" -t cdrom`);
+      else log(`${gameInfo().title}: no CD among its files (an image, or the disc's folders): the game will ask for it`);
+    }
     args.push("-c", "c:");
     if (autoCycles) args.push("-c", `cycles=max${cycles > 0 ? ` limit ${Math.round(cycles)}` : ""}`);
     else if (cycles > 0) args.push("-c", `cycles=${Math.round(cycles)}`);

@@ -27,6 +27,9 @@
 // speed, more than anything else the hooks do.
 extern bool wc_net_watch[0x10000];
 extern bool wc_net_watch32[0x10000];   // the same for a 32-bit program's EIPs, by their low word (wcnet_tie.h)
+// A watched IP's one code segment where the game gave it (wc::watch_at), 0 = any: other segments' code passing the
+// same offset is sent on at once (in the browser before the trip out of the core, which is the cost).
+extern Bit16u wc_net_watch_cs[0x10000];
 extern Bit32s wc_net_countdown;
 void wc_net_check_cpu_hooks();
 #if defined(EMSCRIPTEN) && defined(EM_ASYNCIFY)
