@@ -241,6 +241,7 @@ void frame_top() {
         g_rateSince = now;
         g_rateFrames = 0;
     }
+    tie640_wall_frame(false);
     tdm_session_frame();
 }
 
@@ -731,6 +732,7 @@ bool tdm_check_hooks(Bit32u ip) {
 bool tdm_script_item(const std::string &item, double t) {
     if (tdm_campaign_script_item(item, t)) return true;
     if (tie640_script_item(item, t)) return true;
+    if (item == "!wallfps") { tie640_wall_frame(true); return true; }
     if (item.compare(0, 9, "!tdmglue=") == 0) {
         g_glueAhead = false;
         g_glue = sscanf(item.c_str() + 9, "%d:%d:%d", &g_glueD[0], &g_glueD[1], &g_glueD[2]) == 3;

@@ -54,19 +54,19 @@ namespace wc {
 namespace {
 
 enum {
-    kStarPara = 0x1B66, kDataPara = 0x421F,
-    kEntry = 0x0F0E, kPlot1 = 0x116B, kPlot2 = 0x1351, kPlot3 = 0x1537, kErase = 0x15DF, kExit = 0x15E4,
-    kRowTable = 0x071E,         // CS: the rows' offsets (words)
-    kStars = 0x63D2,            // DS: 256 stars, two bytes each (the step's number, the brightness)
-    kStepX = 0x1B89, kStepY = 0x1C09, kStepZ = 0x1C89,      // DS: the 64 steps in the eye's axes
-    kEdgeU = 0x1D75, kEdgeV = 0x1DD5, kEdgeW = 0x1E35,      // DS: an edge's 16 multiples, x then y (+0x20) then z (+0x40)
-    kMatrix = 0x288C,           // DS: the camera's matrix, nine words
-    kDetail = 0x1B64,           // DS: the step along the edges
-    kGlobalBright = 0xE7C5,     // DS: added to every star's brightness (a byte)
-    kBackColour = 0x48BC, kCorner = 0x48C3, kWide = 0x48C5, kHalfWide = 0x48C9, kDeep = 0x48D1, kHalfDeep = 0x48D5,
-    kYOffset = 0x289E, kFullUpdate = 0xBF98,
-    kScreenSeg = 0x1B66,        // DS: the screen's segment (a word; by chance the number of the routine's paragraph)
-    kListNow = 0x1B85, kListLast = 0x1B87, kListCursor = 0x1B83, kHash = 0x3090,
+    kStarPara = XA(0x1B66, 0x20CE), kDataPara = XA(0x421F, 0x3F1C),
+    kEntry = XA(0x0F0E, 0x0E88), kPlot1 = XA(0x116B, 0x10E5), kPlot2 = XA(0x1351, 0x12CB), kPlot3 = XA(0x1537, 0x14B1), kErase = XA(0x15DF, 0x1559), kExit = XA(0x15E4, 0x155E),
+    kRowTable = XA(0x071E, 0x071E),         // CS: the rows' offsets (words)
+    kStars = XA(0x63D2, 0xD564),            // DS: 256 stars, two bytes each (the step's number, the brightness)
+    kStepX = XA(0x1B89, 0x26C1), kStepY = XA(0x1C09, 0x2741), kStepZ = XA(0x1C89, 0x27C1),      // DS: the 64 steps in the eye's axes
+    kEdgeU = XA(0x1D75, 0x28AD), kEdgeV = XA(0x1DD5, 0x290D), kEdgeW = XA(0x1E35, 0x296D),      // DS: an edge's 16 multiples, x then y (+0x20) then z (+0x40)
+    kMatrix = XA(0x288C, 0x33CC),           // DS: the camera's matrix, nine words
+    kDetail = XA(0x1B64, 0x269C),           // DS: the step along the edges
+    kGlobalBright = XA(0xE7C5, 0xE63D),     // DS: added to every star's brightness (a byte)
+    kBackColour = XA(0x48BC, 0x541A), kCorner = XA(0x48C3, 0x5421), kWide = XA(0x48C5, 0x5423), kHalfWide = XA(0x48C9, 0x542B), kDeep = XA(0x48D1, 0x5433), kHalfDeep = XA(0x48D5, 0x543B),
+    kYOffset = XA(0x289E, 0x33DE), kFullUpdate = XA(0xBF98, 0xC07A),
+    kScreenSeg = XA(0x1B66, 0x269E),        // DS: the screen's segment (a word; by chance the number of the routine's paragraph)
+    kListNow = XA(0x1B85, 0x26BD), kListLast = XA(0x1B87, 0x26BF), kListCursor = XA(0x1B83, 0x26BB), kHash = XA(0x3090, 0x3BD5),
     kMaxStars = 768,            // three faces of 256: no walk gives more
 };
 
@@ -320,7 +320,7 @@ bool tie640_stars_hook(Bit32u ip, Bit16u loadSeg) {
 bool tie640_stars_native() {
     if (g_native < 0) {
         const char *env = getenv("WCNET_TIE640_STARS");
-        g_native = env && env[0] ? (env[0] == '0' ? 0 : 1) : XA(1, 0);
+        g_native = env && env[0] == '0' ? 0 : 1;
     }
     return g_native != 0;
 }

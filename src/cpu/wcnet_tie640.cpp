@@ -24,6 +24,7 @@
 #include "wcnet_t640_game.h"
 #include "wcnet_tie640.h"
 #include "wcnet_log.h"
+#include "wcnet_perf.h"
 #include "regs.h"
 #include "cpu.h"
 #include "mem.h"
@@ -387,7 +388,7 @@ void tie640_watch(Bit16u loadSeg) {
     }
     // [stars] the three per-star places only when the game's own routine is run in the quarters (WCNET_TIE640_STARS=0,
     // a research aid): natively the routine's entry is the stars' one hook a call
-    if (!tie640_stars_native()) { place_at(XA(0x1B66, 0x20CE), XA(0x112A, 0x10A4)); place_at(XA(0x1B66, 0x20CE), XA(0x1310, 0xFFFF /* ? */)); place_at(XA(0x1B66, 0x20CE), XA(0x14F6, 0xFFFF /* ? */)); }
+    if (!tie640_stars_native()) { place_at(XA(0x1B66, 0x20CE), XA(0x112A, 0x10A4)); place_at(XA(0x1B66, 0x20CE), XA(0x1310, 0x128A)); place_at(XA(0x1B66, 0x20CE), XA(0x14F6, 0x1470)); }
     tie640_fast_places(place_at);   // FAST
     dump_places();      // RESEARCH AID
     if (tie640_trace_check_on()) { place_at(kRendPara, XA(0x53F3, 0x559D)); place_at(kRendPara, XA(0x13DF, 0x14FE)); place_at(kRendPara, XA(0x193D, 0x1A7D)); place_at(kRendPara, XA(0x1A1A, 0x1B5A)); tie640_trace_shapes_places(place_at); }    // TRACE
@@ -667,7 +668,7 @@ bool tie640_hook(Bit32u ip) {
             mem_writew(dsa(kFullUpdate), 1);    // (the frame has cleared it: the stars' lists are another quarter's too)
             return true;
         }
-        if (ip == XA(0x112A, 0x10A4) || ip == XA(0x1310, 0xFFFF /* ? */) || ip == XA(0x14F6, 0xFFFF /* ? */)) {     // the stars' three loops: AX, BX the star from the centre
+        if (ip == XA(0x112A, 0x10A4) || ip == XA(0x1310, 0x128A) || ip == XA(0x14F6, 0x1470)) {     // the stars' three loops: AX, BX the star from the centre
             reg_ax = (Bit16u)(reg_ax << 1);
             reg_bx = (Bit16u)(reg_bx << 1);
             return true;
@@ -720,6 +721,37 @@ void tie640_tick(bool flight, Bit16u loadSeg) {
         g_pass = g_passX = -1;
         wc_hires_watch = false;
         VGA_SetOverride(false);
+    }
+}
+
+// The flight's frames against the HOST's clock (the user, 2026-11-23: "the interesting number is the minimum framerate
+// over 30 seconds of gameplay"): a game frame counted in the wall second it came in; every 30 s, and when asked
+// (!wallfps), the fewest frames of any one second, the mean, and how much emulated time passed in that wall time (work
+// done outside the emulated clock, the sprites' scaler run inside a hook, shows here and nowhere in the game's own
+// frame rate).
+void tie640_wall_frame(bool say) {
+    static double since = 0, secAt = 0, emuAt = 0;
+    static int inSec = 0, least = 1 << 30, most = 0, total = 0, secs = 0;
+    static std::string each;
+    const double now = perf_now_ms();
+    if (since == 0) { since = secAt = now; emuAt = PIC_FullIndex(); }
+    if (!say) { inSec++; total++; }
+    while (now - secAt >= 1000) {
+        if (inSec < least) least = inSec;
+        if (inSec > most) most = inSec;
+        secs++;
+        { char b[8]; snprintf(b, sizeof(b), " %d", inSec); each += b; }
+        inSec = 0;
+        secAt += 1000;
+    }
+    if ((say && secs > 0) || now - since >= 30000) {
+        const double emu = PIC_FullIndex() - emuAt, wall = now - since;
+        wclog(1, T640_GAME ": wall clock: %d s of flight: the fewest frames in a second %d, the most %d, the mean %.1f; the emulator at %.0f%% of real time (%s); each second:%s",
+              secs, least, most, secs ? (double)total / secs : 0.0, wall > 0 ? 100.0 * emu / wall : 0.0, g_on ? "640x400" : "the game's own picture", each.c_str());
+        each.clear();
+        since = secAt = now;
+        emuAt = PIC_FullIndex();
+        least = 1 << 30; most = total = secs = inSec = 0;
     }
 }
 

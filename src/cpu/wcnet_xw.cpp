@@ -124,6 +124,7 @@ void frame_top() {
         g_rateSince = now;
         g_rateFrames = 0;
     }
+    xw640_wall_frame(false);
     xw_session_frame();
 }
 
@@ -478,6 +479,7 @@ bool xw_key(int key, bool pressed) {
 
 bool xw_script_item(const std::string &item, double t) {
     if (xw640_script_item(item, t)) return true;
+    if (item == "!wallfps") { xw640_wall_frame(true); return true; }
     if (item.compare(0, 8, "!xwkill=") == 0) {
         // (test aid) !xwkill=<object>: collide_damagecraft(object, -1, -1, 0) forty times: it blows up
         const int o = atoi(item.c_str() + 8);

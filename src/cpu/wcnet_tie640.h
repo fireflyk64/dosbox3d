@@ -23,6 +23,7 @@ namespace wc {
 
 void tie640_tick(bool flight, Bit16u loadSeg);      // every ~1000 instructions: turns the picture on and off
 bool tie640_on();
+void tie640_wall_frame(bool say);        // a flight frame, counted against the host's clock (say: the figures logged now)
 void watch_at(Bit16u seg, Bit16u ip);                // (wcnet_hooks.cpp: a place watched in its own code segment only)
 void tie640_watch(Bit16u loadSeg);                  // the places hooked, each watched in its own segment
 bool tie640_hook(Bit32u ip);

@@ -63,6 +63,7 @@
 #define tie640_trace_shapes_say xw640_trace_shapes_say
 #define tie640_trace_sprite_rows xw640_trace_sprite_rows
 #define tie640_trace_thick_line xw640_trace_thick_line
+#define tie640_wall_frame xw640_wall_frame
 #define tie640_watch xw640_watch
 #define wc_hires_write xw640_hires_write
 #define wc_hires_read xw640_hires_read

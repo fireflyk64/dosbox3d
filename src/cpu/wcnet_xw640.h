@@ -14,6 +14,7 @@ namespace wc {
 
 void xw640_tick(bool flight, Bit16u loadSeg);       // every ~1000 instructions: turns the picture on and off
 bool xw640_on();
+void xw640_wall_frame(bool say);
 void xw640_watch(Bit16u loadSeg);                   // the places hooked, each watched in its own segment
 bool xw640_hook(Bit32u ip);
 bool xw640_fast_trip(Bit32u ip);
