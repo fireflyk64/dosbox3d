@@ -349,6 +349,8 @@ unsigned g_profSamples, g_startChanges;
 Bitu g_lastStart = ~(Bitu)0;
 std::map<Bit32u, unsigned> g_profAt, g_profVga;
 std::map<Bit16u, unsigned> g_profEs, g_profCs;
+std::map<Bit32u, unsigned> g_profPass[3];      // by the hi-res pass: the quarters, the game's own, the rest
+double g_profEvery = 5000;
 
 std::string top_of(const std::map<Bit32u, unsigned> &m, size_t n) {
     std::vector<std::pair<unsigned, Bit32u> > top;
@@ -369,7 +371,12 @@ void prof_sample() {
     const Bit16u rel = (Bit16u)(code - g_load), ip = (Bit16u)reg_eip;
     const bool waiting = (rel == 0x34BD && ip >= 0x07EF && ip <= 0x0874) || (rel == 0x3FD8 && ip >= 0x0443 && ip <= 0x046E);
     static unsigned waits;
-    if (waiting) { waits++; } else { g_profAt[key]++; g_profCs[rel]++; }
+    if (waiting) { waits++; } else {
+        g_profAt[key]++;
+        g_profCs[rel]++;
+        const int pass = arm_hires_pass();
+        g_profPass[pass >= 0 && pass <= 3 ? 0 : pass == 4 ? 1 : 2][(Bit32u)rel << 16]++;
+    }
     if (SegValue(es) == 0xA000) g_profVga[key]++;
     g_profEs[(Bit16u)(SegValue(es) - g_load)]++;
     g_profSamples++;
@@ -379,7 +386,16 @@ void prof_sample() {
     }
     const double now = PIC_FullIndex();
     if (now < g_profNext) return;
-    g_profNext = now + 5000;
+    g_profNext = now + g_profEvery;
+    {
+        static const char *const kName[3] = { "the quarters", "the game's own pass", "the rest" };
+        for (int k = 0; k < 3; k++) {
+            unsigned n = 0;
+            for (std::map<Bit32u, unsigned>::const_iterator i = g_profPass[k].begin(); i != g_profPass[k].end(); ++i) n += i->second;
+            wclog(1, "Armada profile: %s %u:%s", kName[k], n, top_of(g_profPass[k], 10).c_str());
+            g_profPass[k].clear();
+        }
+    }
     wclog(1, "Armada profile: %u samples; mode %d %ux%u chained %d memory_mode %02x start %lu (changed %u times); top:%s",
           g_profSamples, (int)vga.mode, (unsigned)vga.draw.width, (unsigned)vga.draw.height, vga.config.chained ? 1 : 0,
           vga.seq.memory_mode, (unsigned long)vga.config.display_start, g_startChanges, top_of(g_profAt, 40).c_str());
@@ -493,7 +509,8 @@ void arm_tick() {
     if (g_prof < 0) {
         const char *env = getenv("WCNET_ARM_PROF");
         g_prof = env && env[0] && env[0] != '0';
-        g_profNext = PIC_FullIndex() + 5000;
+        if (g_prof && atoi(env) > 1) g_profEvery = atoi(env);
+        g_profNext = PIC_FullIndex() + g_profEvery;
     }
     if (g_prof) prof_sample();
 }

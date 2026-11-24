@@ -2221,8 +2221,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_stick(double x, double y) {
 }
 // Privateer's pointer (the page's "Kbd + mouse (shown)" or "Keyboard + mouse"): 1 a ring in flight and a white one on
 // the options screen, 0 the game's own (none, black); a negative value only asks.
-// Armada's 640x400 flight (the page's "High resolution (2x)" and "Hi-res cockpit" while flying; WCARMHIRES at the
-// launch): 0 off, 1 the space alone, 2 all; a negative value only asks.  The level shown now (0: the game's own).
+// Armada's 640x400 flight (the page's "High resolution (2x)" while flying; WCARMHIRES at the launch): 0 off, 1 on; a
+// negative value only asks.  The level shown now (0: the game's own).
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_arm_hires(int level) {
     if (level >= 0) {
         wc::arm_hires_set(level);

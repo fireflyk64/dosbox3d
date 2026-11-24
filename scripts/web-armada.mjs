@@ -1,8 +1,8 @@
 // Two browsers in one LobbyLink room, exercising the game's own network menus.
 // PLAYWRIGHT_DIR points to a directory with Playwright installed.
 // MODE=arcade or MODE=strategy exercises Proving Grounds or Armada's strategy mode.
-// HIRES=1: the host flies with High resolution (2x) ticked (its 640x400 picture checked, the ` key going through its
-// levels), Hi-res cockpit too unless HIRESCOCKPIT=0;
+// HIRES=1: the host flies with High resolution (2x) ticked (its 640x400 picture checked, the ` key flipping it off and on
+// again);
 // INVERT=1: the host's Invert mouse ticked (a drag up then dives, as a flight stick). Both pilots log the emulator's
 // sound (WCNET_AUDIOLOG): the music's OPL writes and the Sound Blaster's samples are checked, and the page's audio.
 // node scripts/web-armada.mjs PAGE_URL LOBBY_URL GOG_INSTALLER [GUEST_ZIP]
@@ -23,7 +23,6 @@ assert(["battle", "strategy", "arcade"].includes(mode), `unknown MODE ${mode}`);
 const arena = mode === "arcade";
 const strategy = mode === "strategy";
 const hires = process.env.HIRES === "1";
-const hiresCockpit = process.env.HIRESCOCKPIT !== "0";     // (HIRESCOCKPIT=0: the space alone, level 1)
 const invert = process.env.INVERT === "1";
 const program = arena ? "armadapg" : "armada";
 const room = `${arena ? "PG" : "ARM"}-${mode}-${Date.now()}`;
@@ -105,14 +104,8 @@ async function roomBoxes({ who, page }) {
   assert.equal(await page.locator("#privMouseLabel").isVisible(), true, `${who}: the Invert mouse box is shown for Armada`);
   assert.equal(await page.locator("#armHires").isChecked(), false, `${who}: High resolution is off unless ticked`);
   assert.equal(await page.locator("#privMouseInvert").isChecked(), false, `${who}: the mouse is not inverted unless ticked`);
-  assert.equal(await page.locator("#armHiresCockpitLabel").isVisible(), true, `${who}: the Hi-res cockpit box is shown`);
-  assert.equal(await page.locator("#armHiresCockpit").isChecked(), true, `${who}: Hi-res cockpit is ticked by default`);
-  assert.equal(await page.locator("#armHiresCockpit").isDisabled(), true, `${who}: Hi-res cockpit greyed while High resolution is unticked`);
-  if (who === "host" && hires) {
-    await page.check("#armHires");
-    assert.equal(await page.locator("#armHiresCockpit").isDisabled(), false, "Hi-res cockpit can be changed once High resolution is ticked");
-    if (!hiresCockpit) await page.uncheck("#armHiresCockpit");
-  }
+  assert.equal(await page.locator("#armHiresCockpit").count(), 0, `${who}: no Hi-res cockpit box (one level: the space)`);
+  if (who === "host" && hires) await page.check("#armHires");
   if (who === "host" && invert) await page.check("#privMouseInvert");
 }
 
@@ -236,9 +229,8 @@ try {
       assert(host.logs.some((line) => line.includes(said)), `the host's emulator said "${said}"`);
     }
     assert(!guest.logs.some((line) => line.includes("the first frame at 640x400")), "the guest's picture stayed the game's own");
-    // the ` key: all -> the space alone -> off -> all (from the space alone: off -> all -> the space alone)
-    const order = hiresCockpit ? ["the space alone", "off", "all"] : ["off", "all", "the space alone"];
-    for (const level of order) {
+    // the ` key: off, then on again
+    for (const level of ["off", "on"]) {
       await host.page.locator("#canvas").press("Backquote");
       await host.page.waitForTimeout(800);
       await host.page.locator("#canvas").screenshot({ path: path.join(out, `host-hires-${level.replace(/ /g, "-")}.png`) });
