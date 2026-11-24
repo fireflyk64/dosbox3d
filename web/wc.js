@@ -2940,7 +2940,9 @@ const isTf = () => !!(gameInfo() && gameInfo().id === "tf");
 // (TIE Fighter or its 1994 demo: the same Flight choice and controller, the user: "point to aim mouse mode should be
 // default. They can select drag to aim just like on cd version. also joystick should be like cd version too")
 const isTfd = () => !!(gameInfo() && gameInfo().id === "tiedemo");
-const isTie = () => isTf() || isTfd();
+// (X-Wing Collector's CD: the demo's engine, the same flight keys and Flight choice: wcnet_tiedemo_controls.cpp built for it)
+const isXw = () => !!(gameInfo() && gameInfo().id === "xwing");
+const isTie = () => isTf() || isTfd() || isXw();
 const isPriv = () => !!(gameInfo() && (gameInfo().id === "priv" || gameInfo().id === "privrf"));
 const isTv = () => !!(gameInfo() && gameInfo().id === "tv");
 const isRap = () => !!(gameInfo() && gameInfo().id === "rap");
@@ -2957,7 +2959,7 @@ $("tfFlight").addEventListener("change", (e) => {
   try { localStorage.setItem(TF_FLIGHT_KEY, v); } catch (err) { /* this browser keeps nothing */ }
   const M = running && window.DOSBox;
   if (M && M._wc_web_tie_mouse) M._wc_web_tie_mouse(TF_FLIGHT.indexOf(v));
-  log(`${isTfd() ? "The TIE Fighter demo's" : "TIE Fighter's"} flight controls: ${e.target.selectedOptions[0].textContent}`);
+  log(`${isXw() ? "X-Wing's" : isTfd() ? "The TIE Fighter demo's" : "TIE Fighter's"} flight controls: ${e.target.selectedOptions[0].textContent}`);
 });
 
 // TIE Fighter's own meanings for a controller's buttons where Wing Commander's keys mean another thing there, or
@@ -2985,7 +2987,18 @@ const TFD_PAD = {
   lock: { keys: ["r"], label: "Lock target (the TIE Fighter demo: the nearest enemy fighter)" },
   comms: { keys: [], label: "Communications (nothing in the TIE Fighter demo)" },
 };
-const tiePad = () => (isTfd() ? TFD_PAD : TF_PAD);
+// X-Wing's: W the torpedoes (or the lasers again), Backspace full throttle, M the map, X the cannons linked, R the
+// nearest enemy fighter.
+const XW_PAD = {
+  missile: { keys: ["w"], label: "Fire missile (X-Wing: W picks the torpedoes, or the lasers again; the trigger fires them)" },
+  burner: { keys: ["backspace"], label: "Afterburner (X-Wing: full throttle)" },
+  nav: { keys: ["m"], label: "Navigation map (X-Wing: the in-flight map)" },
+  auto: { keys: [], label: "Autopilot (nothing in X-Wing)" },
+  gunsel: { keys: ["x"], label: "Change guns (X-Wing: the cannons linked or not)" },
+  lock: { keys: ["r"], label: "Lock target (X-Wing: the nearest enemy fighter)" },
+  comms: { keys: [], label: "Communications (nothing in X-Wing)" },
+};
+const tiePad = () => (isXw() ? XW_PAD : isTfd() ? TFD_PAD : TF_PAD);
 // Raptor's keys for a controller's buttons (the user: "Please add gamepad support if selected on the menu"): Ctrl fires,
 // Alt the special weapon, Space picks the next special, the right Shift the mega bomb (its own keys, SETUP.INI's
 // defaults); Start is Enter in its menus and P (pause) in a wave, Back is Esc.  The stick and the D-pad are its arrows

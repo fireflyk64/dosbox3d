@@ -37,7 +37,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string>
-#include "wcnet_tiedemo.h"
+#include "wcnet_tdm_game.h"
 #include "wcnet_tie.h"
 #include "wcnet_log.h"
 #include "keyboard.h"
@@ -49,9 +49,9 @@ namespace wc {
 
 namespace {
 
-const Bit16u kSpaceConfirm = 0xCD98;    // pstate+0x20: what Space confirms (0 nothing)
-const Bit16u kLastButtons = 0xCDA2;     // pstate+0x2A: last frame's buttons
-const Bit16u kRightHeld = 0xCDA4;       // pstate+0x2C: frame ticks the right button alone has been held
+const Bit16u kSpaceConfirm = XG(0xCD98, 0xBFC7);    // pstate+0x20: what Space confirms (0 nothing)
+const Bit16u kLastButtons = XG(0xCDA2, 0xBFD0);     // pstate+0x2A: last frame's buttons
+const Bit16u kRightHeld = XG(0xCDA4, 0xBFD2);       // pstate+0x2C: frame ticks the right button alone has been held
 const Bit16u kRightHold = 0x4E;         // ... from which it is the X-roll (and no click when let go)
 // (mickeys: the ramp's first step and its most, the whole stick)
 const int kLeastX = 17, kMostX = 96, kLeastY = 25, kMostY = 127, kMostRoll = 69, kWholeX = 191;
@@ -89,13 +89,13 @@ bool g_god;             // !tdmsteer=god / nogod: our craft's hull damage kept a
 PhysPt obj_at(int o) { return tdm_obj(o); }
 bool obj_alive(int o) {
     const PhysPt a = obj_at(o);
-    const Bit8u type = mem_readb(a + 4);
-    return type && type < 127 && mem_readb(a + 2) == 0 && mem_readw(a + 0x2C) == 0;
+    const Bit8u type = mem_readb(a + TDM_NS::kOType);
+    return type && type < 127 && mem_readb(a + TDM_NS::kOCat) == 0 && mem_readw(a + TDM_NS::kODeath) == 0;
 }
 double obj_km(int a, int b) {
     double d = 0;
     for (int i = 0; i < 3; i++) {
-        const double v = (double)(Bit32s)mem_readd(obj_at(a) + 6 + 4 * i) - (Bit32s)mem_readd(obj_at(b) + 6 + 4 * i);
+        const double v = (double)(Bit32s)mem_readd(obj_at(a) + TDM_NS::kOPos + 4 * i) - (Bit32s)mem_readd(obj_at(b) + TDM_NS::kOPos + 4 * i);
         d += v * v;
     }
     return sqrt(d) / 40960.0;
@@ -104,13 +104,13 @@ double obj_km(int a, int b) {
 // where `target`'s lead point lies off our nose: right and climb (radians), how far (km)
 bool steer_aim(int own, int target, double *right, double *climb, double *km) {
     const PhysPt a = obj_at(own), b = obj_at(target);
-    double dx = (double)(Bit32s)mem_readd(b + 6) - (Bit32s)mem_readd(a + 6);
-    double dy = (double)(Bit32s)mem_readd(b + 0xA) - (Bit32s)mem_readd(a + 0xA);
-    double dz = (double)(Bit32s)mem_readd(b + 0xE) - (Bit32s)mem_readd(a + 0xE);
+    double dx = (double)(Bit32s)mem_readd(b + TDM_NS::kOPos) - (Bit32s)mem_readd(a + TDM_NS::kOPos);
+    double dy = (double)(Bit32s)mem_readd(b + TDM_NS::kOPos + 4) - (Bit32s)mem_readd(a + TDM_NS::kOPos + 4);
+    double dz = (double)(Bit32s)mem_readd(b + TDM_NS::kOPos + 8) - (Bit32s)mem_readd(a + TDM_NS::kOPos + 8);
     *km = sqrt(dx * dx + dy * dy + dz * dz) / 40960.0;
-    const double k = 4660.0 / 256.0, vt = (Bit16s)mem_readw(b + 0x26) * k / 32768.0;
-    const double vx = vt * (Bit16s)mem_readw(b + 0x3A), vy = vt * (Bit16s)mem_readw(b + 0x3C), vz = vt * (Bit16s)mem_readw(b + 0x3E);
-    const double sb = ((Bit16s)mem_readw(a + 0x26) + 1000) * k;
+    const double k = 4660.0 / 256.0, vt = (Bit16s)mem_readw(b + TDM_NS::kOSpeed) * k / 32768.0;
+    const double vx = vt * (Bit16s)mem_readw(b + TDM_NS::kOMove), vy = vt * (Bit16s)mem_readw(b + TDM_NS::kOMove + 2), vz = vt * (Bit16s)mem_readw(b + TDM_NS::kOMove + 4);
+    const double sb = ((Bit16s)mem_readw(a + TDM_NS::kOSpeed) + 1000) * k;
     const double qa = vx * vx + vy * vy + vz * vz - sb * sb, qb = 2 * (dx * vx + dy * vy + dz * vz), qc = dx * dx + dy * dy + dz * dz;
     const double disc = qb * qb - 4 * qa * qc;
     if (qa < 0 && disc >= 0) {
@@ -122,8 +122,8 @@ bool steer_aim(int own, int target, double *right, double *climb, double *km) {
         }
     }
     double ax[9];
-    for (int i = 0; i < 9; i++) ax[i] = (Bit16s)mem_readw(a + 0x42 + 2 * i) / 32768.0;
-    const double mv = ax[0] * (Bit16s)mem_readw(a + 0x3A) + ax[1] * (Bit16s)mem_readw(a + 0x3C) + ax[2] * (Bit16s)mem_readw(a + 0x3E);
+    for (int i = 0; i < 9; i++) ax[i] = (Bit16s)mem_readw(a + TDM_NS::kOAxes + 2 * i) / 32768.0;
+    const double mv = ax[0] * (Bit16s)mem_readw(a + TDM_NS::kOMove) + ax[1] * (Bit16s)mem_readw(a + TDM_NS::kOMove + 2) + ax[2] * (Bit16s)mem_readw(a + TDM_NS::kOMove + 4);
     const double sf = mv < 0 ? -1 : 1;
     const double f = sf * (dx * ax[0] + dy * ax[1] + dz * ax[2]), sd = dx * ax[3] + dy * ax[4] + dz * ax[5], u = dx * ax[6] + dy * ax[7] + dz * ax[8];
     *right = atan2(sd, f);
@@ -132,12 +132,12 @@ bool steer_aim(int own, int target, double *right, double *climb, double *km) {
 }
 
 int steer_pick(int own) {
-    const Bit8u side = mem_readb(obj_at(own) + 0x33);
+    const Bit8u side = mem_readb(obj_at(own) + TDM_NS::kOSide);
     int best = -1;
     double bestKm = 1e9;
-    for (int o = 0; o < tdm::kCraftSlots; o++) {
+    for (int o = 0; o < TDM_NS::kCraftSlots; o++) {
         if (o == own || !obj_alive(o)) continue;
-        const Bit8u type = mem_readb(obj_at(o) + 4), s = mem_readb(obj_at(o) + 0x33);
+        const Bit8u type = mem_readb(obj_at(o) + TDM_NS::kOType), s = mem_readb(obj_at(o) + TDM_NS::kOSide);
         const bool want = g_ds.mode == 1 ? type == g_ds.type : g_ds.mode == 2 ? s != side && (!g_ds.type || type == g_ds.type) : s == side;
         if (!want) continue;
         const double km = obj_km(own, o);
@@ -160,7 +160,7 @@ void steer_frame(int *mx, int *my) {
         const bool keep = g_ds.target >= 0 && obj_alive(g_ds.target) && o0 >= 0 &&
                           obj_km(own, o0) > obj_km(own, g_ds.target) / 2;
         const int o = keep ? g_ds.target : o0;
-        if (o != g_ds.target) wclog(1, "TIE demo: the steering aid flies at obj %d (type %u)", o, o >= 0 ? mem_readb(obj_at(o) + 4) : 0);
+        if (o != g_ds.target) wclog(1, TDM_GAME ": the steering aid flies at obj %d (type %u)", o, o >= 0 ? mem_readb(obj_at(o) + TDM_NS::kOType) : 0);
         g_ds.target = o;
         g_ds.pickedAt = now;
     }
@@ -181,7 +181,7 @@ void steer_frame(int *mx, int *my) {
     g_ds.sy += fmax(-0.06, fmin(0.06, wantY - g_ds.sy));
     *mx = fabs(g_ds.sx) < 0.02 ? 0 : tie_stick_mickeys(g_ds.sx, kLeastX, kWholeX);
     *my = fabs(g_ds.sy) < 0.02 ? 0 : tie_stick_mickeys(g_ds.sy, kLeastY, kMostY);
-    const bool hostile = have && mem_readb(obj_at(g_ds.target) + 0x33) != mem_readb(obj_at(own) + 0x33);
+    const bool hostile = have && mem_readb(obj_at(g_ds.target) + TDM_NS::kOSide) != mem_readb(obj_at(own) + TDM_NS::kOSide);
     const bool fire = hostile && !breaking && g_ds.mode != 3 && km <= g_ds.km && fabs(right) < 0.035 && fabs(climb) < 0.035;
     if (fire != g_ds.firing) {
         if (fire) Mouse_ButtonPressed(0);
@@ -251,7 +251,9 @@ bool tdm_controls_key(int key, bool pressed) {
     case KBD_f12:                                           // the mouse's mode (the CD port's: aim, banking, drag, keys)
         if (pressed) tie_controls_next_mode();
         return true;
+#ifndef TDM_XWING
     case KBD_q: return true;    // (the game's eject, Q then Space, and Space is our trigger: never passed in flight)
+#endif
     default: return false;
     }
 }
@@ -268,7 +270,7 @@ void tdm_controls_frame() {
         // the CD's laser_power: 2 as made, F9 to 3, 4, then 0, measured)
         const int own = flying ? tdm_player_object() : -1;
         const PhysPt craft = own >= 0 ? tdm_craft(own) : 0;
-        const int step = tie_controls_touch_step(flying && craft, craft ? mem_readb(craft + 0xC9) : -1);
+        const int step = tie_controls_touch_step(flying && craft, craft ? mem_readb(craft + XG(0xC9, 0xBD)) : -1);
         if (step) {
             KEYBOARD_AddKey(KBD_f9, step == 1);
         }
@@ -276,7 +278,16 @@ void tdm_controls_frame() {
     if (!flying) {
         return;
     }
+#ifdef TDM_XWING
+    {   // (the gunsight's middle is the projection's centre, each cockpit's own: the window's corner, half its width,
+        // half its depth and the rows added to the centre, DS:5421, 542B, 543B, 33DE)
+        const int corner = mem_readw(tdm_ds(0x5421));
+        tie_controls_sight((corner % 320 + (Bit16s)mem_readw(tdm_ds(0x542B)) + 0.5) / 320.0,
+                           (corner / 320 + (Bit16s)mem_readw(tdm_ds(0x543B)) + (Bit32s)mem_readd(tdm_ds(0x33DE)) + 0.5) / 200.0);
+    }
+#else
     tie_controls_sight(kSightX, kSightY);
+#endif
     const bool shift = g_shiftL || g_shiftR;
     const int rollDir = (g_rollRight ? 1 : 0) - (g_rollLeft ? 1 : 0);
     if (++g_frames % 2 == 0) {              // (a notch further every other frame: full in some 0.3 s)
@@ -317,7 +328,7 @@ void tdm_controls_frame() {
     if (g_god) {
         const int own = tdm_player_object();
         const PhysPt craft = own >= 0 ? tdm_craft(own) : 0;
-        if (craft) mem_writew(craft + tdm::kCraftHull, 0);
+        if (craft) mem_writew(craft + TDM_NS::kCraftHull, 0);
     }
     if (mx || my) {
         Mouse_AddMickeys((float)mx, (float)my);
@@ -330,7 +341,7 @@ void tdm_controls_steer(const std::string &spec) {
     const std::string rest = c == std::string::npos ? "" : spec.substr(c + 1);
     if (what == "god" || what == "nogod") {
         g_god = what == "god";
-        wclog(1, "TIE demo: our craft %s", g_god ? "takes no hull damage (the video rig)" : "takes damage again");
+        wclog(1, TDM_GAME ": our craft %s", g_god ? "takes no hull damage (the video rig)" : "takes damage again");
         return;
     }
     if (g_ds.firing) {
@@ -356,7 +367,7 @@ void tdm_controls_steer(const std::string &spec) {
         g_ds.mode = 0;
         g_ds.sx = g_ds.sy = 0;
     }
-    wclog(1, "TIE demo: the steering aid: %s", spec.c_str());
+    wclog(1, TDM_GAME ": the steering aid: %s", spec.c_str());
 }
 
 // At the bank into a turn (user_inputforplane's `sub [roll],turn` at image 0x15818, the turn not the X-roll's): true to

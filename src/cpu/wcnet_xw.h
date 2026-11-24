@@ -26,7 +26,11 @@ bool xw_check_hooks(Bit32u ip);                    // a watched IP came up: true
 void watch_at(Bit16u seg, Bit16u ip);              // (wcnet_hooks.cpp: a place watched in its own code segment only)
 void xw_watch_list(void (*watch)(Bit16u ip));      // our IPs, for the dispatcher's table
 bool xw_script_item(const std::string &item, double t);   // key-script aids (!xw...)
-bool xw_key(int key, bool pressed);                // a key on its way to the game: true to keep it
+bool xw_key(int key, bool pressed);
+bool xw_controls_key(int key, bool pressed);       // the flight's keys (wcnet_tiedemo_controls.cpp built for X-Wing): arrows, Ins/Del, Space
+void xw_controls_frame();                          // the top of each flight frame: the keys' mickeys
+void xw_controls_steer(const std::string &spec);   // (test aid, !xwsteer=)
+bool xw_controls_no_bank();                // a key on its way to the game: true to keep it
 
 // The flight's tables: offsets in the data segment (DGROUP), and fields (docs/xwing.md section 3).
 namespace xw {

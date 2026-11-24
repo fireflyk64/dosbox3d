@@ -13,3 +13,14 @@ cd "$(dirname "$0")/../src/cpu" || exit 1
   echo "#endif"
 } > wcnet_xw640_names.h
 wc -l wcnet_xw640_names.h
+# ... and the room's and the flight keys' (src/cpu/wcnet_tdm_game.h): tdm_... as xw_..., the calls' kinds and types
+{
+  echo "// (made by scripts/t640-names.sh from the names in wcnet_tiedemo_session.cpp and wcnet_tiedemo_controls.cpp: do not edit)"
+  echo "#ifndef WCNET_XW_TDM_NAMES_H_"
+  echo "#define WCNET_XW_TDM_NAMES_H_"
+  grep -oh "\btdm_[A-Za-z0-9_]*" wcnet_tiedemo_session.cpp wcnet_tiedemo_controls.cpp | grep -v "^tdm_hello$\|^tdm_state$" | sort -u | sed 's/^tdm_\(.*\)$/#define tdm_\1 xw_\1/'
+  for n in CREATE_PROJECTILE LASER_HIT DAMAGE UPDATE_KILLS BOARD SOLO HOST GUEST; do echo "#define TDM_$n XW_$n"; done
+  for n in Fn CallBefore CallDone Role; do echo "#define Tdm$n Xw$n"; done
+  echo "#endif"
+} > wcnet_xw_tdm_names.h
+wc -l wcnet_xw_tdm_names.h

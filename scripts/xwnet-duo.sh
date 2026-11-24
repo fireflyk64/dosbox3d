@@ -9,6 +9,7 @@
 #   PORT=        the TCP port (default 7493)
 #   PLAYERS=     machines (default 2; up to 4)
 #   GUEST_LATE=  seconds each guest starts after the one before (default 1)
+#   ROUTE=       the route to the flight (default tod1; trench: Historical Combat, the B-Wing, see scripts/xwrun.sh)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/xwduo}; mkdir -p $OUT
 DUR=${1:-150}; HX=${2:-}; GX=${3:-}
@@ -20,7 +21,7 @@ for i in $(seq 0 $((N-1))); do
   if [ $i = 0 ]; then W=host; E="WCPORT=$PORT WCCALLSIGN=HOST WCPLAYERS=$N ${HOSTENV:-}"; X=$HX
   else W=guest$([ $i -gt 1 ] && echo $i); E="WCHOST=127.0.0.1 WCPORT=$PORT WCCALLSIGN=GUEST$i ${GUESTENV:-}"; X=$GX; fi
   mkdir -p $OUT/$W
-  FRESH=1 OUT=$OUT/$W DOSBOX=$BIN ENV="$E" $ROOT/scripts/xwrun.sh $DUR "tod1${X:+,$X}" > /dev/null &
+  FRESH=1 OUT=$OUT/$W DOSBOX=$BIN ENV="$E" $ROOT/scripts/xwrun.sh $DUR "${ROUTE:-tod1}${X:+,$X}" > /dev/null &
   PIDS="$PIDS $!"
   sleep ${GUEST_LATE:-1}
 done

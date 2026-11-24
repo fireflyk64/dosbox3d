@@ -84,6 +84,7 @@ bool g_edgeDirty = true;
 
 inline int win(int x, int y) { return x >= 0 && y >= 0 && x < LW && y < LH ? g_window[y * LW + x] : -1; }
 
+void find_islands();
 void smooth_edge() {
     memset(g_from, 0, sizeof(g_from));
     // edges along a row: between rows y and y + 1, a run of columns [x0, x1] where W differs
@@ -138,7 +139,81 @@ void smooth_edge() {
             y0 = y1 + 1;
         }
     }
+    find_islands();
     g_edgeDirty = false;
+}
+
+// What the game draws over the scene inside the window (the gunsight, a target's brackets) is 320 art: doubled, its
+// one-pixel strokes are two wide over a scene drawn at the finer grid (the user: "fix ... the reticle specifically to
+// be thinner").  So it is drawn as its own picture at the finer grid instead: each of its pixels one fine pixel at its
+// cell's corner, joined to its neighbours (right, below, and across a diagonal when nothing else joins them) by the
+// fine pixel between.  A stroke one pixel wide is one fine pixel wide, the same length; a filled patch stays filled.
+// The scene shows through the rest.  WCNET_T640_THINSIGHT=0: doubled as before.
+bool thin_sight() {
+    static int on = -1;
+    if (on < 0) { const char *e = getenv("WCNET_T640_THINSIGHT"); on = e && e[0] == '0' ? 0 : 1; }
+    return on == 1;
+}
+Bit8u g_island[LW * LH];     // 1: a closed pixel of the mask that is no part of the cockpit (the gunsight)
+bool g_anyIsland = false;
+// The mask's closed pixels in patches that do not reach the window's sides, none wider than a quarter of it: the
+// gunsight (the game closes it in the mask and draws it itself).  Found when the mask changes.
+void find_islands() {
+    memset(g_island, 0, sizeof(g_island));
+    g_anyIsland = false;
+    int x0 = LW, y0 = LH, x1 = -1, y1 = -1;
+    for (int y = 0; y < LH; y++) for (int x = 0; x < LW; x++) if (g_window[y * LW + x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) return;
+    static Bit8u seen[LW * LH];
+    static int stack[LW * LH];
+    memset(seen, 0, sizeof(seen));
+    for (int y = y0 + 1; y < y1; y++) {
+        for (int x = x0 + 1; x < x1; x++) {
+            if (g_window[y * LW + x] || seen[y * LW + x]) continue;
+            int n = 0, top = 0, bx0 = x, bx1 = x, by0 = y, by1 = y;
+            bool cockpit = false;
+            stack[top++] = y * LW + x; seen[y * LW + x] = 1;
+            const int first = n;
+            static int members[LW * LH];
+            while (top) {
+                const int e = stack[--top], ex = e % LW, ey = e / LW;
+                members[n++] = e;
+                if (ex <= x0 || ex >= x1 || ey <= y0 || ey >= y1) { cockpit = true; continue; }
+                if (ex < bx0) bx0 = ex; if (ex > bx1) bx1 = ex; if (ey < by0) by0 = ey; if (ey > by1) by1 = ey;
+                for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+                    const int q = (ey + dy) * LW + ex + dx;
+                    if (!g_window[q] && !seen[q]) { seen[q] = 1; stack[top++] = q; }
+                }
+            }
+            if (cockpit || bx1 - bx0 > LW / 4 || by1 - by0 > LH / 4) continue;
+            for (int k = first; k < n; k++) g_island[members[k]] = 1;
+            g_anyIsland = true;
+        }
+    }
+}
+void thin_overlay(const Bit8u *L) {
+    if (!g_anyIsland) return;
+    auto isle = [&](int x, int y) { return x >= 0 && y >= 0 && x < LW && y < LH && g_island[y * LW + x]; };
+    for (int y = 0; y < LH; y++) {
+        for (int x = 0; x < LW; x++) {
+            const int e = y * LW + x;
+            Bit8u *o = g_out + (2 * y) * HW + 2 * x;
+            const Bit8u *h = g_hi + (2 * y) * HW + 2 * x;
+            const bool right = isle(x + 1, y), below = isle(x, y + 1), across = isle(x + 1, y + 1);
+            if (g_island[e]) {
+                o[0] = L[e];
+                o[1] = right ? L[e] : h[1];
+                o[HW] = below ? L[e] : h[HW];
+                o[HW + 1] = across && right == below ? L[e] : h[HW + 1];
+            } else if (g_window[e] && (right || below || across || isle(x - 1, y) || isle(x, y - 1) || isle(x - 1, y - 1) || isle(x + 1, y - 1) || isle(x - 1, y + 1))) {
+                // beside the sight: the scene, or what the game drew over it, whole (no edge rule here); and the
+                // other diagonal's joint
+                const bool scene = L[e] == g_key;
+                o[0] = scene ? h[0] : L[e]; o[1] = scene ? h[1] : L[e]; o[HW] = scene ? h[HW] : L[e]; o[HW + 1] = scene ? h[HW + 1] : L[e];
+                if (right && below && !across) o[HW + 1] = L[e + 1];
+            }
+        }
+    }
 }
 
 // The frame, composed into g_out.
@@ -160,6 +235,7 @@ void compose() {
             else out[X] = L[s];
         }
     }
+    if (g_haveHi && thin_sight()) thin_overlay(L);
 }
 
 // --- the scene in quarters -----------------------------------------------------------------------------------------
