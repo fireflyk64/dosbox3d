@@ -1287,7 +1287,7 @@ enum : u16 {
     kSpriteX = XA(0xC448, 0xC282), kSpriteY = XA(0xC44C, 0xC286), kSpriteZ = XA(0xC458, 0xC28A),                         // longs: where the sprite is
     kRowOffsets = XA(0xCFE0, 0xD400),       // in the CODE segment: [2 * row] the row's offset in the background buffer
 };
-enum { kNoFlatLeft = 0x77 };
+enum { kNoFlatLeft = XA(0x77, 0x6F) };
 
 struct Shapes : Tracer {
     int kind;       // what the call turned out to be (for the check's table)
@@ -1759,8 +1759,9 @@ struct Shapes : Tracer {
     // the box grown by two pixels each way and cut to the window: kBoxLeft = its left, kBoxRight = its WIDTH,
     // kBoxTop = its top row (the box's y runs upwards: turned over), kBoxBottom = its ROWS.  False: nothing of it.
     bool sprite_box() {
-        m.D16(kBoxRight, (u16)(m.d16(kBoxRight) + 2)); m.D16(kBoxBottom, (u16)(m.d16(kBoxBottom) - 2));
-        m.D16(kBoxLeft, (u16)(m.d16(kBoxLeft) - 2)); m.D16(kBoxTop, (u16)(m.d16(kBoxTop) + 2));
+        // (grown by two pixels each way; X-Wing's by four)
+        m.D16(kBoxRight, (u16)(m.d16(kBoxRight) + XA(2, 4))); m.D16(kBoxBottom, (u16)(m.d16(kBoxBottom) - XA(2, 4)));
+        m.D16(kBoxLeft, (u16)(m.d16(kBoxLeft) - XA(2, 4))); m.D16(kBoxTop, (u16)(m.d16(kBoxTop) + XA(2, 4)));
         const s16 w = (s16)wide(), d = (s16)deep();
         s16 left = (s16)m.d16(kBoxLeft);
         if (left >= w) return false;

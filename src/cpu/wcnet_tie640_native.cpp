@@ -67,6 +67,7 @@ enum {
     // the lists' segment: edges that run over several rows {record, long x}
     kLeftNew = 0x000C, kLeft = 0x05DC,   // left of the window
     kRightNew = 0x0BAC, kRight = 0x117C, // right of it
+    kMarkOpen = XA(0x0A, 0x12), // a marking's record: the layers open now (after {object, face} and a colour for each of 8 layers; X-Wing's 16)
     kShades = XA(0x07A0, 0x07A0),           // the renderer's code segment: 16 colours a material
 };
 
@@ -811,19 +812,19 @@ struct Native {
         const u8 pos = (u8)(0x100 - obj);
         const u16 mark = d16((u16)(kMarkPtr + 2 * edge));
         const u8 mo = t8(mark), mf = t8((u16)(mark + 1));
-        const u8 top = t8((u16)(mark + 0xA));
+        const u8 top = t8((u16)(mark + kMarkOpen));
         u16 with;       // the colour's place to swap with the face's
         if (pos == top) {
-            const u8 under = t8((u16)(mark + 0xB));
+            const u8 under = t8((u16)(mark + kMarkOpen + 1));
             u16 p = mark;
             if (!under) {
-                T8((u16)(mark + 0xA), 0);
+                T8((u16)(mark + kMarkOpen), 0);
                 D8((u16)(kMarkOn + edge), 0);
                 D8(XA(0x26D8, 0x3210), (u8)(d8(XA(0x26D8, 0x3210)) - 1));
                 with = (u16)(mark + pos);
             } else {
                 u8 c;
-                do { c = t8((u16)(p + 0xB)); T8((u16)(p + 0xA), c); p++; } while (c);
+                do { c = t8((u16)(p + kMarkOpen + 1)); T8((u16)(p + kMarkOpen), c); p++; } while (c);
                 const u16 a = (u16)(mark + pos), b = (u16)(mark + under);
                 const u8 t = t8((u16)(a + 1));
                 T8((u16)(a + 1), t8((u16)(b + 1)));
@@ -833,7 +834,7 @@ struct Native {
         } else if (pos > top) {
             u16 p = mark;
             u8 c = pos;
-            do { const u8 was = t8((u16)(p + 0xA)); T8((u16)(p + 0xA), c); c = was; p++; } while (c);
+            do { const u8 was = t8((u16)(p + kMarkOpen)); T8((u16)(p + kMarkOpen), c); c = was; p++; } while (c);
             if (!top) {
                 D8((u16)(kMarkOn + edge), 1);
                 D8(XA(0x26D8, 0x3210), (u8)(d8(XA(0x26D8, 0x3210)) + 1));
@@ -851,14 +852,14 @@ struct Native {
             u8 c = pos;
             for (;;) {
                 p++;
-                const u8 here = t8((u16)(p + 0xA));
+                const u8 here = t8((u16)(p + kMarkOpen));
                 if (c < here) continue;
                 if (c == here) {
                     u8 n;
-                    do { n = t8((u16)(p + 0xB)); T8((u16)(p + 0xA), n); p++; } while (n);
+                    do { n = t8((u16)(p + kMarkOpen + 1)); T8((u16)(p + kMarkOpen), n); p++; } while (n);
                     return;
                 }
-                T8((u16)(p + 0xA), c);
+                T8((u16)(p + kMarkOpen), c);
                 c = here;
                 if (!c) return;
             }
@@ -875,7 +876,7 @@ struct Native {
     }
 
     void crossing() {
-        if (obj > 0xF8) marking_crossing();
+        if (obj > XA(0xF8, 0xEF)) marking_crossing();     // (the layers of markings: the top 7 object numbers; X-Wing: 16)
         else if (obj >= 0x80) { if (d8((u16)(kObjFlag + obj))) close_object(obj); else open_object(obj); }
         else mesh_crossing();
     }
@@ -977,8 +978,8 @@ struct Native {
                 D8((u16)(kMarkOn + m), 0);
                 const u16 mark = d16((u16)(kMarkPtr + 2 * m));
                 const u8 mo = t8(mark), mf = t8((u16)(mark + 1));
-                const u16 with = (u16)(mark + t8((u16)(mark + 0xA)));
-                for (int k = 0; k < 8; k++) T8((u16)(mark + 0xA + k), 0);
+                const u16 with = (u16)(mark + t8((u16)(mark + kMarkOpen)));
+                for (int k = 0; k < kMarkOpen - 2; k++) T8((u16)(mark + kMarkOpen + k), 0);
                 const u16 colourAt = (u16)(record(mo) + 2 * mf + 0x65);
                 const u8 t = t8((u16)(with + 1));
                 T8((u16)(with + 1), t8(colourAt));

@@ -157,6 +157,9 @@ struct Event {
 
 // A sprite (or the backdrop) drawn by the game's own scaler, once for each quarter, into that quarter's own copy of
 // the 320x189 buffer; what its row pass (1CCA:A132) was given there, and the buffer as the scaler left it
+// A marking's record (1CCA:1FB0): the demo's has room for 8 layers' colours, a colour's low 5 bits its index (two
+// tables of 32 in the code segment); X-Wing's 16 layers, 6 bits, tables of 64.
+enum { kMarkLayers = XA(8, 16), kMarkTable = XA(32, 64), kMarkIndex = XA(0x1F, 0x3F), kMarkShift = XA(5, 6), kMarkTableA = XA(0x94F, 0xA0F), kMarkTableB = XA(0x99B, 0xA6B) };
 struct SpriteIn {
     bool has[4], pixels[4], stale[4];
     u8 box[4][8];
@@ -175,7 +178,7 @@ struct Capture {
     bool infoDone;          // the object being drawn has its kObjInfo
     bool fromBolt;
     u16 markTop;            // the records' top when the markings of a face began
-    u8 markRaw[10], markTables[64]; bool markSame, markHas;   // the marking's own colours as its data has them (1CCA:1FB0)
+    u8 markRaw[1 + kMarkLayers], markTables[2 * kMarkTable]; bool markSame, markHas;   // the marking's own colours as its data has them (1CCA:1FB0)
     u16 lightP, lightQ;     // the lines' two lights as last seen (they are left over from call to call)
     void clear() { events.clear(); edges.clear(); verts.clear(); bytes.clear(); points.clear(); infoDone = false; fromBolt = false; }
 };
@@ -737,17 +740,17 @@ struct Replay {
                         const u8 c = raw[2 + k];
                         u8 out;
                         if (same || !gouraud) {
-                            const u8 index = same ? raw[10 + (c & 0x1F)] : (u8)(c & 0x1F);
+                            const u8 index = same ? raw[2 + kMarkLayers + (c & kMarkIndex)] : (u8)(c & kMarkIndex);
                             const u16 where = (u16)((u16)(index << 4) - shade);
-                            out = (u8)((u8)(0 - (c >> 5)) + code[(u16)(where + 0x79F)]);
+                            out = (u8)((u8)(0 - (c >> kMarkShift)) + code[(u16)(where + 0x79F)]);
                         } else {
-                            out = (u8)(c + raw[42 + (c & 0x1F)]);
+                            out = (u8)(c + raw[2 + kMarkLayers + kMarkTable + (c & kMarkIndex)]);
                         }
                         m.T8((u16)(at + 2 + k), out);
                     }
-                    for (int k = 0; k < 8; k++) m.T8((u16)(at + 10 + k), 0);
+                    for (int k = 0; k < kMarkLayers; k++) m.T8((u16)(at + 2 + kMarkLayers + k), 0);
                     m.D16((u16)(kMarkPtr + 2 * (markBase + ev.mark)), at);
-                    m.D16(kRecordTop, (u16)(at + 18));
+                    m.D16(kRecordTop, (u16)(at + 2 + 2 * kMarkLayers));
                 }
                 m.D16(kFlatNext, markFlatKept);
                 markOpen = false;
@@ -810,7 +813,7 @@ void small_to_quarters(const Live &L, Bit16u loadSeg) {
         for (int i = 0; i < 4; i++) { in.box[q][2 * i] = (u8)(b[i] & 0xFF); in.box[q][2 * i + 1] = (u8)((u16)b[i] >> 8); }
         // (the 64 bytes taken as the sprite's colour map run over the box itself, DS:48A2 + 0x10: this quarter's there)
         memcpy(in.map[q] + (kBox - kSpriteMap), in.box[q], 8);
-        const int left = b[0] - 2, top = b[1] + 2, right = b[2] + 2, bottom = b[3] - 2;
+        const int left = b[0] - XA(2, 4), top = b[1] + XA(2, 4), right = b[2] + XA(2, 4), bottom = b[3] - XA(2, 4);
         in.pixels[q] = !(left >= g_wide || right < 0 || last - top >= g_deep || last - bottom < 0);
         if (!in.pixels[q]) continue;
         // the quarter's buffer: the box's part of it, from the small buffer
@@ -1020,11 +1023,11 @@ static bool onepass_hook_inner(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch
         // bytes), and whether the craft is the one named in DS:C450 (its colours are then taken another way)
         const PhysPt src = SegPhys(es) + reg_si;
         const int n = mem_readb(src);
-        g_cap.markRaw[0] = (u8)(n > 8 ? 8 : n);
+        g_cap.markRaw[0] = (u8)(n > kMarkLayers ? kMarkLayers : n);
         for (int i = 0; i < g_cap.markRaw[0]; i++) g_cap.markRaw[1 + i] = mem_readb(src + 1 + (PhysPt)i);
         g_cap.markSame = L.d16(XA(0xC450, 0xC71E)) == L.d16(kParent);
         // (the two colour tables in the renderer's code segment are the craft's own, written before it is drawn)
-        for (int i = 0; i < 32; i++) { g_cap.markTables[i] = mem_readb(SegPhys(cs) + 0x94F + (PhysPt)i); g_cap.markTables[32 + i] = mem_readb(SegPhys(cs) + 0x99B + (PhysPt)i); }
+        for (int i = 0; i < kMarkTable; i++) { g_cap.markTables[i] = mem_readb(SegPhys(cs) + kMarkTableA + (PhysPt)i); g_cap.markTables[kMarkTable + i] = mem_readb(SegPhys(cs) + kMarkTableB + (PhysPt)i); }
         g_cap.markHas = true;
         return true;
     }
@@ -1036,8 +1039,8 @@ static bool onepass_hook_inner(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch
         if (top > g_cap.markTop && top - g_cap.markTop < 0x100 && g_cap.markHas) {
             ev.n = top - g_cap.markTop;
             g_cap.bytes.push_back(g_cap.markSame ? 1 : 0);
-            for (int i = 0; i < 9; i++) g_cap.bytes.push_back(g_cap.markRaw[i]);
-            for (int i = 0; i < 64; i++) g_cap.bytes.push_back(g_cap.markTables[i]);
+            for (int i = 0; i < 1 + kMarkLayers; i++) g_cap.bytes.push_back(g_cap.markRaw[i]);
+            for (int i = 0; i < 2 * kMarkTable; i++) g_cap.bytes.push_back(g_cap.markTables[i]);
             g_cap.markHas = false;
         }
         return true;
@@ -1176,7 +1179,7 @@ static bool onepass_hook_inner(Bit16u loadSeg, Bit32u ip, Bit8u *draw, int pitch
         in.at[q][0] = L.d32(kSpriteX); in.at[q][1] = L.d32(kSpriteY); in.at[q][2] = L.d32(kSpriteZ);
         in.parent[q] = L.d16(kParent); in.idLow[q] = L.d16(kIdLow);
         for (int i = 0; i < 0x40; i++) in.map[q][i] = L.d8((u16)(kSpriteMap + i));
-        const int left = (Bit16s)L.d16(kBox) - 2, top = (Bit16s)L.d16(kBox + 2) + 2, right = (Bit16s)L.d16(kBox + 4) + 2, bottom = (Bit16s)L.d16(kBox + 6) - 2;
+        const int left = (Bit16s)L.d16(kBox) - XA(2, 4), top = (Bit16s)L.d16(kBox + 2) + XA(2, 4), right = (Bit16s)L.d16(kBox + 4) + XA(2, 4), bottom = (Bit16s)L.d16(kBox + 6) - XA(2, 4);
         const int last = (Bit16s)L.d16(kLastRow);
         in.pixels[q] = !(left >= g_wide || right < 0 || last - top >= g_deep || last - bottom < 0);
         if (in.pixels[q]) {
