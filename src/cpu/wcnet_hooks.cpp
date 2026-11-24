@@ -2516,6 +2516,11 @@ bool wc_net_mouse_button(int button, bool pressed) {
     return wc::tie_session_click(button, pressed);
 }
 
+// The mouse's wheel (up > 0): Armada's strategy map, the game's own or one level out (wcnet_armada_hires.cpp)
+bool wc_net_mouse_wheel(int dy) {
+    return wc::arm_found() && wc::arm_hires_wheel(dy);
+}
+
 bool wc_net_tie_running() {
     return wc::tie_found();
 }
@@ -2549,6 +2554,9 @@ bool wc_net_key_filter(int kbdKey, bool pressed) {
     if (kbdKey == KBD_grave && arm_found()) {
         if (pressed) arm_hires_flip();      // (Armada: the same, wcnet_armada_hires.cpp)
         return true;
+    }
+    if (arm_found() && arm_hires_key(kbdKey, pressed)) {
+        return true;    // (Armada's Move Resources: + and - click a row's arrows and go on, wcnet_armada_hires.cpp)
     }
     if (priv_controls_key(kbdKey, pressed)) {
         return true;    // (Privateer's flight: the arrows ramped, wcnet_priv_controls.cpp)

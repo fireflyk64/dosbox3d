@@ -22,6 +22,9 @@ void arm_hires_set(int level);                           // the page's boxes (wc
 int arm_hires_level();                                   // the picture's level now (0: the game's own)
 void arm_hires_flip();                                   // the ` key
 bool arm_hires_on();                                     // the picture is 640x400 now
+bool arm_hires_key(int kbdKey, bool pressed);            // a key (KBD_KEYS): true when taken from the game (+ and - in
+                                                         // Move Resources click its arrows; they go on to the game too)
+bool arm_hires_wheel(int dy);                            // the mouse's wheel (up > 0): true when the map's
 
 }  // namespace wc
 

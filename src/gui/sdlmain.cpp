@@ -2910,6 +2910,18 @@ void GFX_Events() {
 		case SDL_MOUSEBUTTONUP:
 			HandleMouseButton(&event.button);
 			break;
+#if SDL_VERSION_ATLEAST(2,0,0)
+		case SDL_MOUSEWHEEL: {
+			// (the layer's: Armada's strategy map zooms with it, wc_net.h)
+			extern bool wc_net_mouse_wheel(int dy);
+			int dy = event.wheel.y;
+#if SDL_VERSION_ATLEAST(2,0,4)
+			if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) dy = -dy;
+#endif
+			if (dy) wc_net_mouse_wheel(dy);
+			break;
+		}
+#endif
 #if !SDL_VERSION_ATLEAST(2,0,0)
 		case SDL_VIDEORESIZE:
 			//GFX_HandleVideoResize(event.resize.w, event.resize.h);

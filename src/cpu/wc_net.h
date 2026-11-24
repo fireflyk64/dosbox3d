@@ -99,6 +99,8 @@ bool wc_net_key_filter(int kbdKey, bool pressed);
 bool wc_net_mouse_divert(float xrel, float yrel);
 // A mouse button press or release: true when the layer takes it from the game (TIE Fighter's guest launch held).
 bool wc_net_mouse_button(int button, bool pressed);
+// The mouse's wheel (up > 0): true when the layer takes it (Armada's strategy map: wcnet_armada_hires.cpp).
+bool wc_net_mouse_wheel(int dy);
 bool wc_net_steer_marker(double *x, double *y);
 // A game's own pointer to redraw white (Privateer's options screen draws it nearly black): a 16 x 16 box of its
 // 320 x 200 picture from x0, y0, a bit a pixel (bit 15 the leftmost).

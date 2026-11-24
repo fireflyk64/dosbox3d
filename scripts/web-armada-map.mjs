@@ -3,7 +3,10 @@
 // novice), the map begun; then the page's own keyboard and mouse: the arrow keys move the view (the map's middle in
 // the emulator's log moves, within the sector), and a click where the 640x400 picture shows a planet that is not
 // selected selects it (the game's selection, the marker in the log, becomes that planet: the game's own hit test on
-// what the picture shows).  The emulator's WCARMHIRESDEBUG lines give the objects' 640x400 places.
+// what the picture shows), and a click on a fleet beside a planet selects the fleet; the wheel up shows the game's
+// own map (the log says so), the arrows move that one too, and the wheel down is one level out again.  The
+// emulator's WCARMHIRESDEBUG lines give the objects' 640x400 places (the planets, then the ships and markers beside
+// them).
 // PLAYWRIGHT_DIR points to a directory with Playwright installed.
 //   node scripts/web-armada-map.mjs PAGE_URL LOBBY_URL GOG_INSTALLER
 import assert from "node:assert/strict";
@@ -30,14 +33,15 @@ const page = await browser.newPage({ viewport: { width: 1200, height: 960 } });
 const logs = [];
 page.on("console", (line) => {
   logs.push(line.text());
-  if (/strategy map|picture is|failed|Armada map: marker/.test(line.text())) console.log(line.text().slice(0, 200));
+  if (/strategy map|picture is|failed|Armada map: marker|Armada map: the game's own|Armada map: one level/.test(line.text())) console.log(line.text().slice(0, 200));
 });
 page.on("pageerror", (error) => console.error(error.message));
 const lastObjects = () => {
   const line = [...logs].reverse().find((l) => /Armada map: middle/.test(l));
   if (!line) return null;
-  const m = /middle (-?\d+),(-?\d+); objects \(640x400\):(.*)$/.exec(line);
-  return { mx: Number(m[1]), my: Number(m[2]), objects: [...m[3].matchAll(/([0-9A-F]+)@(-?\d+),(-?\d+)/g)].map((o) => ({ id: o[1], x: Number(o[2]), y: Number(o[3]) })) };
+  const m = /middle (-?\d+),(-?\d+); objects \(640x400\):(.*); beside them:(.*)$/.exec(line);
+  const parse = (text) => [...text.matchAll(/([0-9A-F]+)@(-?\d+),(-?\d+)([FM]?)/g)].map((o) => ({ id: o[1], x: Number(o[2]), y: Number(o[3]), kind: o[4] }));
+  return { mx: Number(m[1]), my: Number(m[2]), objects: parse(m[3]), beside: parse(m[4]) };
 };
 const lastMarker = () => {
   const line = [...logs].reverse().find((l) => /Armada map: marker /.test(l));
@@ -114,6 +118,39 @@ try {
     `the click at ${target.x},${target.y} selects ${target.id} (was ${marker}; now ${lastMarker()})`);
   await canvas.screenshot({ path: path.join(out, "map-click.png") });
   console.log(`clicked ${target.id} at ${target.x},${target.y}: selected`);
+
+  // a fleet beside its planet, where the picture shows it (12,-8 from the planet: half that for the game's pointer)
+  const now = lastObjects();
+  const fleet = now.beside.find((o) => o.kind === "F" && o.x > 215 && o.x < 600 && o.y > 35 && o.y < 300);
+  if (fleet) {
+    const [fx, fy] = toPage(fleet.x, fleet.y);
+    await page.mouse.click(fx, fy);
+    const mark4 = logs.length;
+    assert(await waitLog(new RegExp(`Armada map: marker ${fleet.id} `), mark4, 10000),
+      `the click at ${fleet.x},${fleet.y} selects the fleet ${fleet.id} (now ${lastMarker()})`);
+    console.log(`clicked the fleet ${fleet.id} at ${fleet.x},${fleet.y}: selected`);
+  } else {
+    console.log(`no fleet on the picture to click (${JSON.stringify(now.beside)})`);
+  }
+
+  // the wheel: up, the game's own map (about the pointer); the arrows move it; down, one level out again
+  const [cx0, cy0] = toPage(407, 167);
+  await page.mouse.move(cx0, cy0);
+  const mark5 = logs.length;
+  await page.mouse.wheel(0, -120);
+  assert(await waitLog(/Armada map: the game's own/, mark5, 5000), "the wheel up shows the game's own map");
+  await page.waitForTimeout(1000);
+  await canvas.screenshot({ path: path.join(out, "map-wheel-in.png") });
+  await page.keyboard.down("ArrowRight");
+  await page.waitForTimeout(600);
+  await page.keyboard.up("ArrowRight");
+  const mark6 = logs.length;
+  await page.mouse.wheel(0, 120);
+  assert(await waitLog(/Armada map: one level out/, mark6, 5000), "the wheel down is one level out again");
+  assert(await waitLog(/Armada map: middle/, mark6, 10000), "the map drawn one level out again");
+  await canvas.screenshot({ path: path.join(out, "map-wheel-out.png") });
+  const after = lastObjects();
+  console.log(`the wheel: in and out again; the view's middle ${now.mx},${now.my} -> ${after.mx},${after.my}`);
   console.log(`ARMADA MAP OK. Screenshots in ${out}`);
 } finally {
   await browser.close();

@@ -52,6 +52,7 @@
 #include "vga.h"
 #include "render.h"
 #include "cpu.h"
+#include "keyboard.h"
 
 namespace wc {
 
@@ -1010,7 +1011,10 @@ void set_override(bool on, bool map) {
 //    picture is on, so the game's own pointer (half the 640x400 one) meets its hit box where the 640x400 picture shows
 //    the object, the box twice the object's size there as before.
 //  - The overview's rectangle (seg14C6:44CD) is the doubled view's, kept inside the overview.
-//  - The arrow keys, which the map does not use, move the view (250 units a second), within those limits.
+//  - The arrow keys, which the map does not use, move the view (250 units a second; 125 on the game's own map), within
+//    those limits, the picture on or not; not under a dialog.
+//  - The wheel: up, the game's own map; down, one level out again; about the pointer (map_zoom).
+//  - + and - in Move Resources: a click on a row's arrows (mr_update; the game's own keys do the rest: F1..F8).
 // The picture: each screen refresh the game's screen doubled, and in the panel wherever the screen still holds the
 // game's own pass's pixel (of the latest frame or the one before) the 640x400 panel instead: the pointer, the dialogs
 // and anything else drawn over the panel stay the game's.
@@ -1030,12 +1034,20 @@ struct MapBuild {
     Bit16u fleetDone, fleetBox, fleetRet;   // the fleet's: its place computed; its box computed; its caller's return
     Bit16u viewPtr, held;       // DS: the view's near pointer; the held-key table (by scan code)
     Bit16u mouseX, mouseY;      // DS: the pointer (x 0..639, y 0..199)
+    // a marker beside a planet (a squadron, a fleet's other ships, the other side's presence: seg11DE:23A0, its planet
+    // at +10h): its update method; its offset from the planet (2361); after 2361's call; its box computed
+    Bit16u markConv, markOffset, markPlaced, markBox;
+    // the Move Resources dialog (seg0C92 in ARMADA.EXE): its update method's entry; its mouse handler (its arrows' boxes)
+    Bit16u dlgSeg, mrUpdate, mrEvent;
+    Bit16u qStart, qEnd, qHead, qTail, qSize;   // DS: the mouse's event queue (seg6A6C:0162 puts, 0180 takes)
 };
 const MapBuild kMapBuilds[] = {
     { "ARMADA.EXE", 0x14C6, 0x11DE, 0x2DD2, 0x306D, 0x3094, 0x0AA7, 0x07DD, 0x0939,
-      { 0x074F, 0x0783, 0x07B7, 0x07EB }, 0x4554, 0x458A, 0x44C0, 0x311F, 0x07B8, 0x2892, 0x080A, 0x28B1, 0x28D5, 0x0B08, 0x76CA, 0x8E56, 0x8EFA, 0x8EFC },
+      { 0x074F, 0x0783, 0x07B7, 0x07EB }, 0x4554, 0x458A, 0x44C0, 0x311F, 0x07B8, 0x2892, 0x080A, 0x28B1, 0x28D5, 0x0B08, 0x76CA, 0x8E56, 0x8EFA, 0x8EFC,
+      0x2390, 0x2361, 0x23EE, 0x2412, 0x0C92, 0x0F05, 0x11F5, 0x6C2C, 0x6C2E, 0x6C30, 0x6C32, 0x8ED8 },
     { "ARMADACD.EXE", 0x14C9, 0x11E1, 0x2DD2, 0x306D, 0x3094, 0x0AA7, 0x07DD, 0x0939,
-      { 0x074F, 0x0783, 0x07B7, 0x07EB }, 0x4554, 0x458A, 0x44C0, 0x311F, 0x07B8, 0x2892, 0x080A, 0x28B1, 0x28D5, 0x0B08, 0x774A, 0x8ED6, 0x8F7A, 0x8F7C },
+      { 0x074F, 0x0783, 0x07B7, 0x07EB }, 0x4554, 0x458A, 0x44C0, 0x311F, 0x07B8, 0x2892, 0x080A, 0x28B1, 0x28D5, 0x0B08, 0x774A, 0x8ED6, 0x8F7A, 0x8F7C,
+      0x2390, 0x2361, 0x23EE, 0x2412, 0x0C95, 0x0F05, 0x11F5, 0x6CB8, 0x6CBA, 0x6CBC, 0x6CBE, 0x8F58 },
 };   // (Proving Grounds has no strategy map)
 enum { kPX0 = 105, kPY0 = 15, kPW = 197, kPH = 137, kPCX = 203, kPCY = 83, kMW = 2 * kPW, kMH = 2 * kPH };
 enum { kMapX0 = 2 * kPX0, kMapY0 = 2 * kPY0 };      // the doubled panel on the 640x400 screen
@@ -1057,12 +1069,23 @@ struct MapObj { PhysPt at; int kind; Bit8u f[12]; };   // an object, its kind (0
 std::set<Bit32u> g_mapKindsTold;
 std::vector<MapObj> g_mapObjs;
 Bit16u g_mapScroll[2], g_mapMouse[2];
+Bit16u g_mapMouseSet[2];        // the pointer as the latest quarter put it (else the mouse's own interrupt moved it)
 Bit16u g_mapOvHalf[2];
 bool g_mapOvSet;
 unsigned g_mapFrames;
 Bit16u g_mapMarker;             // the sector record's +15Ch: the selection's marker (drawn in the panel routine), or 0
+bool g_mapZoomIn;               // the wheel's: the game's own map (up), or one level out (down; the default)
+int g_mapWheel;                 // the wheel's turn not yet taken (the frame's entry takes it: the quarters' scroll and
+                                // pointer are the game's own again there)
+double g_mapFrameAt = -1e9;     // the map screen's frame function's latest entry
+bool g_mrOk;                    // the Move Resources dialog and the event queue are as known (+ and -)
+double g_mrAt = -1e9;           // its update's latest call
+std::vector<int> g_mrPending;   // + (1) and - (-1) not yet clicked
 
 PhysPt map_view() { return ds_at(rd16l(ds_at(g_m->viewPtr))); }
+PhysPt g_mapDS;                 // the game's DS, from the map's frame and the dialog's update (the keys and the wheel
+                                // come between any two instructions: an interrupt's DS, maybe)
+PhysPt map_view_in(PhysPt dsb) { return dsb + mem_readw(dsb + g_m->viewPtr); }
 
 bool map_code_here() {
     const PhysPt c = (PhysPt)(Bit16u)(g_load + g_m->seg) << 4, o = (PhysPt)(Bit16u)(g_load + g_m->objSeg) << 4;
@@ -1081,12 +1104,40 @@ bool map_code_here() {
     if (mem_readd(o + g_m->conv - 6) != 0x8944472B || mem_readb(o + g_m->conv - 1) != 0x0C ||
         mem_readd(o + g_m->conv) != 0x001E7C83) return false;
     if (mem_readw(o + g_m->convRet - 2) != 0x1FFF) return false;
+    // the marker's update; its offset (idx > 0: x - 12, y + (row - count/2) * 8; else x + 12, y + 8); after the offset's
+    // call (add sp,0Ah; mov ax,[si+0Ah]; add ax,-3); its box (cmp word [si+2],69h)
+    if (mem_readd(o + g_m->markConv) != 0x56EC8B55 || mem_readd(o + g_m->markOffset) != 0x56EC8B55 ||
+        mem_readd(o + g_m->markOffset + 0x0B) != 0x000C7E83 || mem_readd(o + g_m->markOffset + 0x11) != 0x8B0C2C83 ||
+        mem_readd(o + g_m->markOffset + 0x1E) != 0x0103E2C1 || mem_readd(o + g_m->markOffset + 0x25) != 0x830C0483 ||
+        mem_readw(o + g_m->markOffset + 0x29) != 0x0805) return false;
+    if (mem_readw(o + g_m->markPlaced - 3) != 0xC483 || mem_readd(o + g_m->markPlaced) != 0x050A448B ||
+        mem_readw(o + g_m->markPlaced + 4) != 0xFFFD || mem_readd(o + g_m->markBox) != 0x69027C83) return false;
     for (int i = 0; i < 4; i++) if (mem_readb(c + g_m->grid[i]) != 0x9A || mem_readw(c + g_m->grid[i] + 1) != 0x0006) return false;
     if (mem_readd(c + g_m->ovSize) != 0x45BF0F66 || mem_readb(c + g_m->ovSize + 4) != 0x18) return false;
     return mem_readw(c + g_m->ovLines) == 0x7D6A;
 }
 
-bool map_wanted() { return g_m && g_mapCodeOk && wanted() && vga.mode == M_VGA; }
+// The Move Resources dialog's update (55 8B EC 56 57 8B 76 06, then its key: mov al,[...]) and its mouse handler: a
+// row's arrows at x C7..CD (to the ship) and CF..D5 (to the planet), its rows 8 high from y 4Ch
+bool mr_code_here() {
+    const PhysPt d = (PhysPt)(Bit16u)(g_load + g_m->dlgSeg) << 4;
+    if (mem_readd(d + g_m->mrUpdate) != 0x56EC8B55 || mem_readd(d + g_m->mrUpdate + 4) != 0x06768B57 ||
+        mem_readb(d + g_m->mrUpdate + 8) != 0xA0) return false;
+    const PhysPt e = d + g_m->mrEvent;
+    if (mem_readd(e) != 0x83EC8B55 || mem_readb(e + 0x10F) != 0xC7 || mem_readd(e + 0x110) != 0x004CF846) return false;
+    if (mem_readd(e + 0x12F) != 0x00C7FF81 || mem_readd(e + 0x135) != 0x00CDFF81) return false;
+    if (mem_readd(e + 0x172) != 0x00CFFF81 || mem_readd(e + 0x178) != 0x00D5FF81) return false;
+    return mem_readd(e + 0x143) == 0x05F8468B && mem_readw(e + 0x147) == 0x0008;   // (mov ax,[bp-8]; add ax,8)
+}
+
+bool map_wanted() { return g_m && g_mapCodeOk && wanted() && !g_mapZoomIn && vga.mode == M_VGA; }
+
+// A dialog over the map (view+2A4h: Move Resources' and the like; view+2ACh: the catalog's, the menu's): the arrows
+// and the wheel leave the map alone then (the catalog's list takes Up and Down)
+bool map_dialog() {
+    const PhysPt view = map_view();
+    return mem_readw(view + 0x2A4) || mem_readw(view + 0x2AC);
+}
 
 // The doubled view's middle for the view's own middle (cx, cy): within the sector
 void map_clamp(PhysPt view, int &cx, int &cy, bool doubled) {
@@ -1102,20 +1153,48 @@ void map_clamp(PhysPt view, int &cx, int &cy, bool doubled) {
     cy = top + kPH > bottom - kPH ? (top + bottom) / 2 : std::max(top + kPH, std::min(bottom - kPH, cy));
 }
 
-// At the frame function's entry: the arrows' move, and the game's scroll put where the doubled view is
+// The wheel's turn, at the frame's entry
+void map_zoom(bool in) {
+    g_mapWheel = 0;
+    const PhysPt view = map_view();
+    if (in == g_mapZoomIn || !wanted() || map_dialog()) return;
+    const int px = (Bit16s)mem_readw(ds_at(g_m->mouseX)), py = 2 * (Bit16s)mem_readw(ds_at(g_m->mouseY));
+    int ox = 0, oy = 0;
+    if (px >= kMapX0 && px < kMapX0 + kMW && py >= kMapY0 && py < kMapY0 + kMH) {
+        ox = px - (kMapX0 + kPW);
+        oy = py - (kMapY0 + kPH);
+    }
+    int cx = (Bit16s)mem_readw(view + 0x42) + kPCX, cy = (Bit16s)mem_readw(view + 0x44) + kPCY;
+    cx += in ? ox / 2 : -(ox / 2);
+    cy += in ? oy / 2 : -(oy / 2);
+    map_clamp(view, cx, cy, !in);
+    mem_writew(view + 0x42, (Bit16u)(cx - kPCX));
+    mem_writew(view + 0x44, (Bit16u)(cy - kPCY));
+    mem_writew(view + 0x52, 0);         // (the game's own glide to a place, if one was going)
+    g_mapZoomIn = in;
+    g_mapHave[0] = g_mapHave[1] = false;    // (one level out again: from its next frame)
+    wclog(1, "Armada map: %s (the middle %d,%d; the pointer %d,%d)", in ? "the game's own" : "one level out", cx, cy, px, py);
+}
+
+// At the frame function's entry (the picture on or not): the wheel's turn, the arrows' move, and the game's scroll put
+// where the doubled view is
 void map_frame() {
-    if (!map_wanted()) { g_mapPanAt = -1; return; }
+    const double now = PIC_FullIndex();
+    g_mapFrameAt = now;
+    g_mapDS = ds_at(0);
+    if (g_mapWheel) map_zoom(g_mapWheel > 0);
     const PhysPt view = map_view();
     int cx = (Bit16s)mem_readw(view + 0x42) + kPCX, cy = (Bit16s)mem_readw(view + 0x44) + kPCY;
     const int wasX = cx, wasY = cy;
-    const double now = PIC_FullIndex();
     const PhysPt held = ds_at(g_m->held);
-    const int ax = (mem_readb(held + 0x4D) == 1) - (mem_readb(held + 0x4B) == 1);
-    const int ay = (mem_readb(held + 0x50) == 1) - (mem_readb(held + 0x48) == 1);
+    const bool free = !map_dialog();
+    const int ax = free ? (mem_readb(held + 0x4D) == 1) - (mem_readb(held + 0x4B) == 1) : 0;
+    const int ay = free ? (mem_readb(held + 0x50) == 1) - (mem_readb(held + 0x48) == 1) : 0;
     if ((ax || ay) && g_mapPanAt >= 0) {
         const double dt = std::min(now - g_mapPanAt, 100.0);
-        g_mapPanX += ax * kPanPerMs * dt;
-        g_mapPanY += ay * kPanPerMs * dt;
+        const double speed = map_wanted() ? kPanPerMs : kPanPerMs / 2;   // (the same on the screen at either level)
+        g_mapPanX += ax * speed * dt;
+        g_mapPanY += ay * speed * dt;
         const int mx = (int)g_mapPanX, my = (int)g_mapPanY;
         g_mapPanX -= mx;
         g_mapPanY -= my;
@@ -1126,7 +1205,8 @@ void map_frame() {
         g_mapPanX = g_mapPanY = 0;
     }
     g_mapPanAt = now;
-    map_clamp(view, cx, cy, true);
+    if (map_wanted()) map_clamp(view, cx, cy, true);                    // (one level out: the doubled view's limits)
+    else if (cx != wasX || cy != wasY) map_clamp(view, cx, cy, false);  // (the game's own map: its own, when moved)
     if (cx != wasX || cy != wasY) {
         mem_writew(view + 0x42, (Bit16u)(cx - kPCX));
         mem_writew(view + 0x44, (Bit16u)(cy - kPCY));
@@ -1138,32 +1218,63 @@ void map_frame() {
 // as the game draws it), a marker beside a planet (seg11DE:23A0: its planet at +10h) at its own offset from that
 // planet; anything else from the game's own update's place (at half the distance from the middle while the picture is
 // on) mapped into the quarter
+// The object's update method (load-relative segment, offset)
+void map_update_of(PhysPt o, Bit16u &seg, Bit16u &off) {
+    const PhysPt vt = ds_at(mem_readw(o));
+    seg = (Bit16u)(mem_readw(vt + 2) - g_load);
+    off = mem_readw(vt);
+}
+
+// A planet the map keeps (its kind 0 entry), or NULL
+const MapObj *map_planet(PhysPt at) {
+    for (size_t k = 0; k < g_mapObjs.size(); k++) if (g_mapObjs[k].at == at && g_mapObjs[k].kind == 0) return &g_mapObjs[k];
+    return NULL;
+}
+
+// An object drawn beside a planet: the planet and the object's offset from it in game pixels, as the game itself sets
+// it: a fleet (2892) at 12,-8; a marker (23A0, its planet at +10h: a squadron, the other side's presence) by its index
+// +14h, its row +16h and the planet's count +40h (2361); anything else of the map's with a planet at +10h at the offset
+// the game's own update gave it
+bool map_beside(const MapObj &m, PhysPt &planet, int &dx, int &dy) {
+    const PhysPt o = m.at;
+    if (m.kind == 1) {
+        planet = ds_at(mem_readw(o + 0x12));
+        dx = 12; dy = -8;
+        return true;
+    }
+    if (m.kind != 2) return false;
+    planet = ds_at(mem_readw(o + 0x10));
+    const MapObj *p = map_planet(planet);
+    if (!p) return false;
+    Bit16u useg, uoff;
+    map_update_of(o, useg, uoff);
+    if (useg == g_m->objSeg && uoff == g_m->markConv) {
+        const int idx = (Bit16s)mem_readw(o + 0x14), row = (Bit16s)mem_readw(o + 0x16), n = (Bit16s)mem_readw(planet + 0x40);
+        dx = idx > 0 ? -12 : 12;
+        dy = idx > 0 ? (Bit16s)(Bit16u)((row - (n >> 1)) << 3) : 8;
+        return true;
+    }
+    dx = (Bit16s)(m.f[8] | m.f[9] << 8) - (Bit16s)(p->f[8] | p->f[9] << 8);
+    dy = (Bit16s)(m.f[10] | m.f[11] << 8) - (Bit16s)(p->f[10] | p->f[11] << 8);
+    return true;
+}
+
 void map_objects_at(int q, int sx, int sy) {
     for (int pass = 0; pass < 3; pass++) {
         for (size_t i = 0; i < g_mapObjs.size(); i++) {
             if (g_mapObjs[i].kind != pass) continue;
             const PhysPt o = g_mapObjs[i].at;
             int a, b;
-            if (pass == 1) {
-                const PhysPt parent = ds_at(mem_readw(o + 0x12));
-                a = (Bit16s)mem_readw(parent + 0x0A) + 12;
-                b = (Bit16s)mem_readw(parent + 0x0C) - 8;
-                mem_writew(o + 0x0A, (Bit16u)a);
-                mem_writew(o + 0x0C, (Bit16u)b);
-                continue;
-            }
-            if (pass == 2) {
-                const int a0 = (Bit16s)(g_mapObjs[i].f[8] | g_mapObjs[i].f[9] << 8), b0 = (Bit16s)(g_mapObjs[i].f[10] | g_mapObjs[i].f[11] << 8);
-                // one put beside a planet (its +10h; a route's marker, seg11DE:23A0): there, at the game's own offset
-                const PhysPt parent = ds_at(mem_readw(o + 0x10));
-                const MapObj *p = NULL;
-                for (size_t k = 0; k < g_mapObjs.size(); k++) if (g_mapObjs[k].at == parent && g_mapObjs[k].kind == 0) p = &g_mapObjs[k];
-                if (p) {
-                    const int pa = (Bit16s)(p->f[8] | p->f[9] << 8), pb = (Bit16s)(p->f[10] | p->f[11] << 8);
-                    mem_writew(o + 0x0A, (Bit16u)((Bit16s)mem_readw(parent + 0x0A) + a0 - pa));
-                    mem_writew(o + 0x0C, (Bit16u)((Bit16s)mem_readw(parent + 0x0C) + b0 - pb));
+            if (pass >= 1) {
+                // beside its planet (put in this quarter already: the planets go first), at the game's own offset
+                PhysPt planet;
+                int dx, dy;
+                if (map_beside(g_mapObjs[i], planet, dx, dy)) {
+                    mem_writew(o + 0x0A, (Bit16u)((Bit16s)mem_readw(planet + 0x0A) + dx));
+                    mem_writew(o + 0x0C, (Bit16u)((Bit16s)mem_readw(planet + 0x0C) + dy));
                     continue;
                 }
+                const int a0 = (Bit16s)(g_mapObjs[i].f[8] | g_mapObjs[i].f[9] << 8), b0 = (Bit16s)(g_mapObjs[i].f[10] | g_mapObjs[i].f[11] << 8);
                 const int X = g_mapMode ? 2 * a0 : kMapX0 + a0 + kPW - kPCX, Y = g_mapMode ? 2 * b0 : kMapY0 + b0 + kPH - kPCY;
                 mem_writew(o + 0x0A, (Bit16u)(kPX0 + X - kMapX0 - (q & 1) * kPW));
                 mem_writew(o + 0x0C, (Bit16u)(kPY0 + Y - kMapY0 - (q >> 1) * kPH));
@@ -1212,6 +1323,13 @@ void map_keep_object(Bit16u near) {
     g_mapObjs.push_back(m);
 }
 
+// The mouse's interrupt moved the pointer while a quarter had it (it writes the game's +8EFA/8EFC itself): that place
+// is the real one now (put back after the quarters, not the one from before them: a move then was lost till the next)
+void map_mouse_moved() {
+    const Bit16u x = mem_readw(ds_at(g_m->mouseX)), y = mem_readw(ds_at(g_m->mouseY));
+    if (x != g_mapMouseSet[0] || y != g_mapMouseSet[1]) { g_mapMouse[0] = x; g_mapMouse[1] = y; }
+}
+
 void map_quarter(int q) {
     const PhysPt view = map_view();
     const int cx = (Bit16s)g_mapScroll[0] + kPCX, cy = (Bit16s)g_mapScroll[1] + kPCY;
@@ -1220,9 +1338,12 @@ void map_quarter(int q) {
     mem_writew(view + 0x44, (Bit16u)sy);
     map_objects_at(q, sx, sy);
     // the pointer in the quarter's terms (it is the 640x400 one: x in 640ths, y in 200ths, as the game keeps it)
+    map_mouse_moved();
     const int px = (Bit16s)g_mapMouse[0], py = 2 * (Bit16s)g_mapMouse[1];
-    mem_writew(ds_at(g_m->mouseX), (Bit16u)(2 * (kPX0 + px - kMapX0 - (q & 1) * kPW)));
-    mem_writew(ds_at(g_m->mouseY), (Bit16u)(kPY0 + py - kMapY0 - (q >> 1) * kPH));
+    g_mapMouseSet[0] = (Bit16u)(2 * (kPX0 + px - kMapX0 - (q & 1) * kPW));
+    g_mapMouseSet[1] = (Bit16u)(kPY0 + py - kMapY0 - (q >> 1) * kPH);
+    mem_writew(ds_at(g_m->mouseX), g_mapMouseSet[0]);
+    mem_writew(ds_at(g_m->mouseY), g_mapMouseSet[1]);
 }
 
 void map_panel_read(std::vector<Bit8u> &to, int stride, int x0, int y0) {
@@ -1268,8 +1389,8 @@ void map_loop() {
         if ((Bit16u)(mem_readw(vt + 6) - g_load) == g_m->objSeg) map_keep_object(obj);   // (the map's own draws)
     }
     map_keep_object(g_mapMarker);
-    g_mapMouse[0] = mem_readw(ds_at(g_m->mouseX));
-    g_mapMouse[1] = mem_readw(ds_at(g_m->mouseY));
+    g_mapMouse[0] = g_mapMouseSet[0] = mem_readw(ds_at(g_m->mouseX));
+    g_mapMouse[1] = g_mapMouseSet[1] = mem_readw(ds_at(g_m->mouseY));
     g_mapPass = 0;
     map_quarter(0);
 }
@@ -1291,6 +1412,7 @@ void map_after() {
             for (size_t i = 0; i < g_mapObjs.size(); i++) {
                 for (int k = 0; k < 12; k++) mem_writeb(g_mapObjs[i].at + 2 + k, g_mapObjs[i].f[k]);
             }
+            map_mouse_moved();
             mem_writew(ds_at(g_m->mouseX), g_mapMouse[0]);
             mem_writew(ds_at(g_m->mouseY), g_mapMouse[1]);
             std::fill(g_mapMask[next].begin(), g_mapMask[next].end(), 0);
@@ -1315,16 +1437,32 @@ void map_after() {
         told = PIC_FullIndex();
         const PhysPt view = map_view();
         const int cx = (Bit16s)mem_readw(view + 0x42) + kPCX, cy = (Bit16s)mem_readw(view + 0x44) + kPCY;
-        std::string line;
+        std::string line, more;
+        const auto planetXY = [&](PhysPt o, int &X, int &Y) {
+            X = kMapX0 + (Bit16s)mem_readw(o + 0x10) - (cx - kPW);
+            Y = kMapY0 + (Bit16s)mem_readw(o + 0x12) - (cy - kPH);
+        };
         for (size_t i = 0; i < g_mapObjs.size(); i++) {
             const PhysPt o = g_mapObjs[i].at;
-            const int X = kMapX0 + (Bit16s)mem_readw(o + 0x10) - (cx - kPW), Y = kMapY0 + (Bit16s)mem_readw(o + 0x12) - (cy - kPH);
-            if (X < kMapX0 || X >= kMapX0 + kMW || Y < kMapY0 || Y >= kMapY0 + kMH || !mem_readw(o + 0x1E)) continue;
+            int X, Y;
+            if (g_mapObjs[i].kind == 0) {
+                if (!mem_readw(o + 0x1E)) continue;
+                planetXY(o, X, Y);
+            } else {
+                PhysPt planet;
+                int dx, dy;
+                if (!map_beside(g_mapObjs[i], planet, dx, dy) || !map_planet(planet)) continue;
+                planetXY(planet, X, Y);
+                X += dx;
+                Y += dy;
+            }
+            if (X < kMapX0 || X >= kMapX0 + kMW || Y < kMapY0 || Y >= kMapY0 + kMH) continue;
             char b[48];
             snprintf(b, sizeof(b), " %X@%d,%d", (unsigned)(o - SegPhys(ds)), X, Y);
-            line += b;
+            (g_mapObjs[i].kind == 0 ? line : more) += b;
+            if (g_mapObjs[i].kind) more += g_mapObjs[i].kind == 1 ? "F" : "M";
         }
-        wclog(1, "Armada map: middle %d,%d; objects (640x400):%s", cx, cy, line.c_str());
+        wclog(1, "Armada map: middle %d,%d; objects (640x400):%s; beside them:%s", cx, cy, line.c_str(), more.c_str());
         // the registered objects (what seg14C6:449A draws: view+288h, a count and a far list of near pointers), each
         // with its methods +0 (the update's) and +4 (the draw), as load-relative seg:off
         const Bit16u cnt = mem_readw(view + 0x288);
@@ -1385,8 +1523,15 @@ void map_grid(int which) {
 // fleet then goes at half its offset (12,-8 game pixels: 6,-4), where the 640x400 picture draws it beside its planet,
 // and the hit boxes are what the picture shows: a planet's +-3 (its circle, 12 pixels across on the 640x400 screen),
 // a fleet's +-2 (its icon).  The game's own +-5 and +-3 at half the offsets overlapped: a click on a fleet took its
-// planet.  (The user, 2026-11-23: "I always remebmer seeing ships and carriers right next to a planet")
+// planet.  (The user, 2026-11-23: "I always remebmer seeing ships and carriers right next to a planet")  A marker
+// beside a planet (seg11DE:23A0: a squadron of fighters left of it, a column 8 apart; the other side's presence below
+// right) the same: half its offset (2361's -12 or +12 across, its rows 8 apart: 4) and a box of +-2.  Its offset was
+// left whole at first: the user's Phantom drawn 12 pixels left of its planet answered a click 24 to the left ("the
+// player must click most of the way towards the destination nav point to select the phantom at the source").
 PhysPt g_mapConvObj;            // the planet map_conv has just put (its box: map_planet_box)
+PhysPt g_mapMarkObj;            // the marker map_mark has just put (its box)
+PhysPt g_mapFleetObj;           // the fleet map_fleet has just put (its box)
+std::set<PhysPt> g_mapHalved;   // the planets whose place now is the halved one (map_conv's), not the game's own
 
 bool map_from(Bit16u ret) {
     const PhysPt bp = SegPhys(ss) + reg_bp;
@@ -1408,15 +1553,40 @@ void map_planet_box() {
     map_set_box(o, 3);
 }
 
+// The fleet's place (2892: its planet's + 12,-8) and its box, while its planet is at its halved place
 void map_fleet(bool box) {
-    if (!g_mapMode || g_mapPass >= 0 || !map_from(g_m->fleetRet)) return;
+    if (g_mapPass >= 0) return;
     const PhysPt o = ds_at((Bit16u)reg_si);
     if (box) {
-        map_set_box(o, 2);
+        if (o == g_mapFleetObj) map_set_box(o, 2);
+        g_mapFleetObj = 0;
         return;
     }
+    g_mapFleetObj = 0;
+    if (!map_from(g_m->fleetRet) || !g_mapHalved.count(ds_at(mem_readw(o + 0x12)))) return;
     mem_writew(o + 0x0A, (Bit16u)((Bit16s)mem_readw(o + 0x0A) - 6));
     mem_writew(o + 0x0C, (Bit16u)((Bit16s)mem_readw(o + 0x0C) + 4));
+    g_mapFleetObj = o;
+}
+
+// A marker's place (23A0: its planet's + 2361's offset, just computed) and its box, while its planet is at its halved
+// place: half the offset (12 and multiples of 8: exact)
+void map_mark(bool box) {
+    if (g_mapPass >= 0) return;
+    const PhysPt o = ds_at((Bit16u)reg_si);
+    if (box) {
+        if (o == g_mapMarkObj) map_set_box(o, 2);
+        g_mapMarkObj = 0;
+        return;
+    }
+    g_mapMarkObj = 0;
+    const PhysPt planet = ds_at(mem_readw(o + 0x10));
+    if (!g_mapHalved.count(planet)) return;
+    const int px = (Bit16s)mem_readw(planet + 0x0A), py = (Bit16s)mem_readw(planet + 0x0C);
+    const int dx = (Bit16s)mem_readw(o + 0x0A) - px, dy = (Bit16s)mem_readw(o + 0x0C) - py;
+    mem_writew(o + 0x0A, (Bit16u)(px + dx / 2));
+    mem_writew(o + 0x0C, (Bit16u)(py + dy / 2));
+    g_mapMarkObj = o;
 }
 
 // The registered objects' draws: in a quarter only the map's own (planets, fleets), not the overview and the buttons;
@@ -1510,12 +1680,15 @@ void map_compose() {
 // The conversion's place (+0A/+0C just computed): from the map's update loop, while the picture is on, at half the
 // distance from the middle, where the 640x400 picture has the object (its pixel there, halved: the game's pointer)
 void map_conv() {
-    if (!g_mapMode || g_mapPass >= 0) return;
-    const PhysPt bp = SegPhys(ss) + reg_bp;
-    if (mem_readw(bp + 2) != g_m->convRet || (Bit16u)(mem_readw(bp + 4) - g_load) != g_m->objSeg) return;
-    const PhysPt bp0 = SegPhys(ss) + mem_readw(bp);
-    if (mem_readw(bp0 + 2) != g_m->updateRet || (Bit16u)(mem_readw(bp0 + 4) - g_load) != g_m->seg) return;
+    if (g_mapPass >= 0) return;
     const PhysPt o = ds_at((Bit16u)reg_si);
+    const PhysPt bp = SegPhys(ss) + reg_bp;
+    const PhysPt bp0 = SegPhys(ss) + mem_readw(bp);
+    if (!g_mapMode || mem_readw(bp + 2) != g_m->convRet || (Bit16u)(mem_readw(bp + 4) - g_load) != g_m->objSeg ||
+        mem_readw(bp0 + 2) != g_m->updateRet || (Bit16u)(mem_readw(bp0 + 4) - g_load) != g_m->seg) {
+        if (!g_mapHalved.empty()) g_mapHalved.erase(o);     // (the game's own place: its fleet and markers' too)
+        return;
+    }
     // the object's 640x400 place: kMapX0 + (its place in the doubled view) = kMapX0 + a - 6, kMapY0 + b + 54
     // (a place a on the game's panel is the doubled view's column a - (kPCX - kPW) - kPX0 ... : with the game's middle
     // and the doubled view's the same, column u = a + kPW - kPCX + kPX0 - kPX0 = a - 6; on the screen kMapX0 + u, and
@@ -1525,6 +1698,67 @@ void map_conv() {
     mem_writew(o + 0x0A, (Bit16u)(X >> 1));
     mem_writew(o + 0x0C, (Bit16u)(Y >> 1));
     g_mapConvObj = o;
+    g_mapHalved.insert(o);
+}
+
+// The Move Resources dialog's + and - (the user, 2026-11-23: "increasing resource count for transport or carrier";
+// "if there are gaps we can add those": the game's own keys are F1..F8 for the buttons, C and D for a dialog's Cancel
+// and Done, none for these arrows).  + is a click on a row's left arrow (a ton from the planet onto the ship), - on
+// its right (back to the planet): the row level with the pointer, else the first.  The click is the game's own: a
+// press and a release put in the mouse's event queue (seg6A6C: 7 bytes each: kind 1 press / 2 release, the button,
+// x in 640ths, y, the buttons held), from the dialog's update (the game's own flow, never inside the mouse's
+// interrupt), so the dialog's handler takes it as a click at that arrow, its limits and all, the pointer where it was.
+// One a frame; a key held repeats as the keyboard repeats it.
+const int kMrRowTop = 0x4C, kMrRows = 6;
+
+bool mr_queue_put(PhysPt ds, Bit8u kind, int x, int y, Bit8u held) {
+    const Bit16u start = mem_readw(ds + g_m->qStart), end = mem_readw(ds + g_m->qEnd), size = mem_readw(ds + g_m->qSize);
+    const Bit16u head = mem_readw(ds + g_m->qHead), tail = mem_readw(ds + g_m->qTail);
+    if (size != 7 || start >= end || (end - start) / size < 4 || head < start || head >= end || tail < start || tail >= end) return false;
+    Bit16u next = (Bit16u)(tail + size);
+    if (next >= end) next = start;
+    if (next == head) return false;     // (full: the next frame)
+    const Bit8u ev[7] = { kind, 1, (Bit8u)(x & 0xFF), (Bit8u)(x >> 8), (Bit8u)(y & 0xFF), (Bit8u)(y >> 8), held };
+    for (int k = 0; k < 7; k++) mem_writeb(ds + tail + k, ev[k]);
+    mem_writew(ds + g_m->qTail, next);
+    return true;
+}
+
+void mr_update() {
+    g_mrAt = PIC_FullIndex();
+    g_mapDS = ds_at(0);
+    if (g_mrPending.empty()) return;
+    const PhysPt ds = g_mapDS;
+    const Bit16u head = mem_readw(ds + g_m->qHead), tail = mem_readw(ds + g_m->qTail);
+    if (head != tail) return;           // (the game's own events first)
+    const int py = (Bit16s)mem_readw(ds_at(g_m->mouseY));
+    const int row = py >= kMrRowTop && py < kMrRowTop + 8 * kMrRows ? (py - kMrRowTop) / 8 : 0;
+    const int x = 2 * (g_mrPending.front() > 0 ? 0xCA : 0xD2), y = kMrRowTop + 8 * row + 4;
+    if (mr_queue_put(ds, 1, x, y, 1) && mr_queue_put(ds, 2, x, y, 0)) {
+        g_mrPending.erase(g_mrPending.begin());
+    }
+}
+
+bool mr_open() { return g_m && g_mrOk && PIC_FullIndex() - g_mrAt < 300.0 && mem_readw(map_view_in(g_mapDS) + 0x2A4); }
+
+// The keys: the main row's = (+, shifted or not) and -, as the keyboard gives them (its repeat while held: the
+// emulated keyboard's, 30 a second after half a second); they go on to the game too, which has no use for them here.
+// (Not the keypad's: on the strategy screen the game's own update takes a held keypad - (and keypad +, with its
+// flag DS:16AC set) to set the side's record's +18h)
+bool mr_key(int kbdKey, bool pressed) {
+    if (!pressed || (kbdKey != KBD_equals && kbdKey != KBD_minus) || !mr_open()) return false;
+    if (g_mrPending.size() < 2) g_mrPending.push_back(kbdKey == KBD_equals ? 1 : -1);
+    return false;
+}
+
+// The wheel on the strategy map (the user, 2026-11-23: "seamlessly zoom in (2x) and zoom out (normal) using wheel"):
+// up, the game's own map (its 320x200 picture doubled); down, one level out (the default).  About the pointer: the
+// place under it stays under it (one level out a unit is a 640x400 pixel, the game's own map two), as far as the
+// view's limits let it; the pointer off the map: about the middle.  Not while a dialog is over the map.
+bool map_wheel(int dy) {
+    if (!dy || !g_m || !g_mapCodeOk || !wanted() || PIC_FullIndex() - g_mapFrameAt > 300.0) return false;
+    g_mapWheel = dy > 0 ? 1 : -1;
+    return true;
 }
 
 }  // namespace
@@ -1549,18 +1783,30 @@ void arm_hires_loaded(const char *exe, Bit16u loadSeg) {
     g_mapHave[0] = g_mapHave[1] = false;
     g_mapTail = g_mapDiff = false;
     g_mapLastOwn = -1e9;
+    g_mapZoomIn = false;
+    g_mapWheel = 0;
+    g_mapFrameAt = g_mrAt = -1e9;
+    g_mrOk = false;
+    g_mrPending.clear();
+    g_mapHalved.clear();
+    g_mapConvObj = g_mapMarkObj = g_mapFleetObj = 0;
     for (size_t i = 0; i < sizeof(kMapBuilds) / sizeof(kMapBuilds[0]); i++) {
         if (strcmp(exe, kMapBuilds[i].exe) == 0) g_m = &kMapBuilds[i];
     }
     if (g_m) {
         g_mapCodeOk = map_code_here();
-        wclog(1, "Armada: %s's strategy map %s", exe, g_mapCodeOk ? "can be drawn at 640x400" : "is not as known: the game's own");
+        g_mrOk = g_mapCodeOk && mr_code_here();
+        wclog(1, "Armada: %s's strategy map %s; its Move Resources %s", exe, g_mapCodeOk ? "can be drawn at 640x400" :
+              "is not as known: the game's own", g_mrOk ? "takes + and -" : "is the game's own");
     }
     if (g_b) wanted();
 }
 
 void arm_hires_watch(void (*watch)(Bit16u ip)) {
     now_wanted();
+    // (the arrows on the map, the wheel's knowing the map is up, and + and - in Move Resources: high resolution or not)
+    if (g_m && g_mapCodeOk) watch(g_m->frame);
+    if (g_m && g_mrOk) watch(g_m->mrUpdate);
     if (!g_b || !g_used) return;
     for (int o : { 0, (int)kCleared, (int)kSetup, (int)kDrawn, (int)kCockpit }) watch((Bit16u)(g_b->top + o));
     watch(g_b->starEntry);
@@ -1575,17 +1821,20 @@ void arm_hires_watch(void (*watch)(Bit16u ip)) {
     watch(g_b->monoEntry);
     if (calls_on()) for (size_t i = 0; i < sizeof(kLibSeg) / sizeof(kLibSeg[0]); i++) watch(kLibOff[i]);
     if (g_m && g_mapCodeOk) {
-        for (Bit16u a : { g_m->frame, g_m->loop, g_m->after, g_m->conv, g_m->planetBox, g_m->fleetDone, g_m->fleetBox, g_m->ovSize, g_m->ovLines, g_m->regCall, (Bit16u)(g_m->regCall + 3), g_m->present }) watch(a);
+        for (Bit16u a : { g_m->loop, g_m->after, g_m->conv, g_m->planetBox, g_m->fleetDone, g_m->fleetBox, g_m->markPlaced, g_m->markBox,
+                          g_m->ovSize, g_m->ovLines, g_m->regCall, (Bit16u)(g_m->regCall + 3), g_m->present }) watch(a);
         for (int i = 0; i < 4; i++) watch(g_m->grid[i]);
     }
 }
 
 bool arm_hires_hook(Bit32u ip) {
-    if (!g_b || !g_used || ip > 0xFFFF) return false;
+    if (ip > 0xFFFF) return false;
     const Bit16u para = (Bit16u)(SegValue(cs) - g_load);
+    if (g_m && g_mapCodeOk && para == g_m->seg && ip == g_m->frame) { map_frame(); return true; }
+    if (g_m && g_mrOk && para == g_m->dlgSeg && ip == g_m->mrUpdate) { mr_update(); return true; }
+    if (!g_b || !g_used) return false;
     if (g_m && g_mapCodeOk) {
         if (para == g_m->seg) {
-            if (ip == g_m->frame) { map_frame(); return true; }
             if (ip == g_m->loop) { map_loop(); return true; }
             if (ip == g_m->after) { map_after(); return true; }
             for (int i = 0; i < 4; i++) if (ip == g_m->grid[i]) { map_grid(i); return true; }
@@ -1599,6 +1848,8 @@ bool arm_hires_hook(Bit32u ip) {
             if (ip == g_m->planetBox) { map_planet_box(); return true; }
             if (ip == g_m->fleetDone) { map_fleet(false); return true; }
             if (ip == g_m->fleetBox) { map_fleet(true); return true; }
+            if (ip == g_m->markPlaced) { map_mark(false); return true; }
+            if (ip == g_m->markBox) { map_mark(true); return true; }
         }
     }
     if (para == g_b->frameSeg) {
@@ -1708,6 +1959,12 @@ bool arm_hires_script_item(const std::string &item, double t) {
         wclog(1, "key script %.1fs: the map's panels to %s.ppm", t, base.c_str());
         return true;
     }
+    // !armwheel=<n>: the mouse's wheel (n > 0 up: the game's own map; n < 0 down: one level out)
+    if (item.compare(0, 10, "!armwheel=") == 0) {
+        const bool took = map_wheel(atoi(item.c_str() + 10));
+        wclog(1, "key script %.1fs: the wheel %s%s", t, item.c_str() + 10, took ? "" : " (not the map's)");
+        return true;
+    }
     if (item == "!armside") {
         g_side = 1;
         return true;
@@ -1723,6 +1980,7 @@ bool arm_hires_script_item(const std::string &item, double t) {
 void arm_hires_set(int lvl) {
     level();
     g_level = lvl < 0 ? 0 : lvl > 2 ? 2 : lvl;
+    g_mapZoomIn = false;
     now_wanted();
     wclog(1, "Armada: the high-resolution picture %s", g_level == 2 ? "all" : g_level == 1 ? "the space alone" : "off");
 }
@@ -1732,6 +1990,7 @@ void arm_hires_flip() {
     if (g_never) return;
     const int l = level();
     g_level = l == 2 ? 1 : l == 1 ? 0 : 2;
+    g_mapZoomIn = false;
     now_wanted();
     wclog(1, "Armada: the high-resolution picture %s", g_level == 2 ? "all" : g_level == 1 ? "the space alone" : "off");
 }
@@ -1739,6 +1998,10 @@ void arm_hires_flip() {
 int arm_hires_level() { return g_override ? level() : 0; }
 
 bool arm_hires_on() { return g_override; }
+
+bool arm_hires_key(int kbdKey, bool pressed) { return mr_key(kbdKey, pressed); }
+
+bool arm_hires_wheel(int dy) { return map_wheel(dy); }
 
 }  // namespace wc
 
