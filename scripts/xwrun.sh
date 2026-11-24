@@ -5,7 +5,9 @@
 #
 #   scripts/xwrun.sh [seconds] [the key script]
 #
-#   XWDIR=    the installed game (its CD's files in CD/ beside the hard disk's; default ~/dev/dosbox3d/xwingcd/XWNOCP)
+#   XWDIR=    the installed game's hard-disk files (default ~/dev/dosbox3d/xwingcd/XWING)
+#   XWCD=     the CD's files (default XWDIR/CD, else ~/dev/dosbox3d/xwingcd/XWNOCP/CD)
+#   OPTS=     an OPTIONS.CFG to fly with instead of the folder's
 #   XWISO=    the CD as an image instead of XWDIR/CD
 #   DOSBOX=   the emulator (default build-native/src/dosbox)
 #   CYCLES=   the emulated CPU (default 30000)
@@ -13,24 +15,26 @@
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/xwrun}; mkdir -p $OUT; rm -f $OUT/*.ppm $OUT/*.txt
 DUR=${1:-40}; SCRIPT=${2:-}
-XW=${XWDIR:-$HOME/dev/dosbox3d/xwingcd/XWNOCP}
+XW=${XWDIR:-$HOME/dev/dosbox3d/xwingcd/XWING}
+XWCD=${XWCD:-$XW/CD}; [ -d "$XWCD" ] || XWCD=$HOME/dev/dosbox3d/xwingcd/XWNOCP/CD
 DOSBOX=${DOSBOX:-$ROOT/build-native/src/dosbox}
 if [ ! -f $OUT/game/BWING.EXE ]; then
   mkdir -p $OUT/game
   find "$XW" -maxdepth 1 -type f -exec cp {} $OUT/game/ \;
 fi
-if [ -n "$XWISO" ]; then CD="imgmount d \"$XWISO\" -t iso"; else CD="mount d \"$XW/CD\" -t cdrom"; fi
+[ -n "$OPTS" ] && cp -f "$OPTS" $OUT/game/OPTIONS.CFG
+if [ -n "$XWISO" ]; then CD="imgmount d \"$XWISO\" -t iso"; else CD="mount d \"$XWCD\" -t cdrom"; fi
 cat > $OUT/xw.conf <<CONF
 [sdl]
 output=surface
 [dosbox]
-machine=svga_s3
-memsize=16
+machine=${MACHINE:-svga_s3}
+memsize=${MEMSIZE:-16}
 [cpu]
 core=normal
 cycles=fixed ${CYCLES:-30000}
 [dos]
-ems=true
+ems=${EMS:-true}
 xms=true
 umb=true
 [sblaster]
