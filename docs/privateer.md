@@ -1415,3 +1415,60 @@ BIOS's ROM from a random place (an LCG at ss:4242), so H never had it.  Now it i
 noted (on the flight's buffer, 8 a frame) and at the span copy, the static in the buffer by then, those rectangles go
 into H as the game's own pixels, 2 x 2.  Measured with the user's save (scratch dmg13, dmg14): the static at both
 levels, 1,750-1,820 white pixels in its frames where the "NO TARGET" screen has 40-65, blocks of 2 x 2.
+
+## 29. A planet in the window: the turned shape's runs and the rows' unpacking made natively (2026-11-23)
+
+The user: "When I play privateer in the uprezzed way 640x400 in a browser I notice the framerate is not nearly as
+smooth as with the native 320x200 when flying, especially when there are both ships and a planet occupying the screen.
+Can you find the bottleneck and optimize it?"
+
+**The bottleneck was not the high resolution.**  The scene (the user's Oxford save: turned round to the planet, flown
+at it until it fills the window, five ships spawned round us) in headless Chrome, the three levels cycled with the `
+key in one flight: the page's main thread 87 to 96 in 100 busy and the game at 17 to 23 frames a second at every level,
+off too.  The high resolution's own work was 45 ms of each second (its hooks 25-35, the frame's composition 15-20);
+the rest was the emulated CPU.  Its instructions sampled by routine (one in a thousand, natively): 53 in 100 in seg197,
+the worker of seg202's turned and scaled shape -- the planet, turned by our roll, drawn by the game itself a pixel at a
+time in a loop of six instructions.  Nearer 100 in 100 busy, the high resolution's 4 or 5 more are what tips the
+emulator behind real time: hence worse with it than without.
+
+**The runs** (src/cpu/wcnet_priv_native.cpp, `shape_run`).  seg197 draws a source row's run through one of sixteen near
+routines (DGROUP:4222, by the turn's octant): ah pixels from ds:si to es:bx along a line stepped by two 8-bit
+fractions (dl by cl a pixel, dh by ch a row of DGROUP:47F5 bytes).  Eight have no clip's count (the other eight jump
+to them when the run cannot leave the clip): 0C15, 0D0D, 0E1B, 0F0E skip a source pixel that steps nowhere; 0C75,
+0D6D, 0E7B, 0F6E read every one and fill a diagonal step's corner with the pixel before (the corner before or after
+the pixel's step, by the octant).  Those eight are twins now: near routines (the table's `pop` 2), nothing on the
+stack, registers al, ah, bx, dx, si, di.
+
+**The rows' unpacking** (`row_decode`).  Every scaled or turned shape's packed row is first unpacked into DGROUP:47F8
+by the same 39 bytes of loop, 22 copies in seg197 to seg204.  One twin for all, entered at the loop's first
+instruction and left at the one after it (`pop` 0: no return).
+
+**Checked.**  Against the executable's bytes run by unicorn on random registers and memory (design/privateer-hires/
+research/twins: rundiff.py, 150,000 calls of each of the eight; rowdiff.py, 60,000 of each of the 22): none differing;
+a bug planted on purpose caught at once.  In the game (WCPRIVTWINS=check, the planet scene): 5.6 million calls of all
+the twins compared, none differing, none left to the game.
+
+**Measured**, the same scene in headless Chrome at the page's 30,000 cycles:
+
+| | before | now |
+|---|---|---|
+| frames a second, the scene's 55 s | 17 to 29 (24.6) | 28 to 29 (28.6) |
+| the main thread busy | 87 to 96 in 100 | 60 to 65 |
+| seg197's share of the emulated instructions | 53 in 100 | 11 (its row loop and set-up) |
+
+Natively the same flight with all the twins off falls to 12 frames a second, with them holds 28 to 29.
+
+**The frame's composition** went over the 256,000 fine pixels, each looking up its game pixel: now a game pixel at a
+time (four fine pixels each), then the smoothed edge's fine pixels alone (537 with the Centurion's window) -- a third
+of the time (7 ms a second natively where 17 to 22 were), the picture byte for byte the same over 800 frames compared.
+
+**The stars.**  The user: "also the stars are 2x2 and is there any way they could be drawn equivalently as single
+pixels?"  The star field's are shapes drawn from one place (caller para 0x47E5): one pixel each, and a few larger ones
+(3 x 3, 5 x 5 pictures of a glint).  A star of one pixel is now one fine pixel, the middle of the game's (as the lines'
+ends are), at both levels; the larger ones stay the game's pictures in blocks.
+
+How it was found (all temporary, not kept): timers round each hook and the composition logged each second; the
+emulated CPU's cs:ip noted at each periodic call (every 1,000 instructions under a key script) and totalled by
+segment; Chrome's own profiler through CDP (the page's wasm has its functions' names).  A rig's trap: runs of one
+scene differ by tens in 100 with where the planet ends up (the turn is a held key), so levels are compared within one
+flight (the ` key), never between flights.
