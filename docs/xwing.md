@@ -118,9 +118,13 @@ the demo's (`xw_queue_call`): CPU state only, no byte of the game written.
 (that craft held ahead of our nose: 8,000 units is gunnery range; 1,200 is inside a freighter). `WCNET_EMS_TRACE=1`
 lists the EMS calls.
 
-## 4. Flown together (src/cpu/wcnet_xw_session.cpp)
+## 4. Flown together (src/cpu/wcnet_tiedemo_session.cpp, built for X-Wing as wcnet_xw_session.cpp)
 
-The TIE demo's session (docs/tiedemo.md section 5) with this build's offsets, made from its source by script: who
+The TIE demo's session (docs/tiedemo.md section 5), the same source file compiled twice (the user: "we should ideally
+use the same code to do it, so the fixes are shared"): wcnet_tdm_game.h gives each build its game (`XG(tie, xwing)` for
+a place or an offset, `TDM_NS` for the object's fields by name, `#ifdef TDM_XWING` around what is one game's own);
+the wrapper defines TDM_XWING and includes the source; the shared names are renamed for it (scripts/t640-names.sh).
+The flight's keys likewise (wcnet_tiedemo_controls.cpp as wcnet_xw_controls.cpp). So: who
 flies a craft (the host most; a guest those near its nose or its target), the rates, puppets, shots made with the
 game's own laser_createprojectile, hits decided by the shooter's machine and applied by the owner's, deaths, kills
 credited, craft named by flight group and arrival. What is X-Wing's own:
@@ -139,9 +143,22 @@ credited, craft named by flight group and arrival. What is X-Wing's own:
 * **The flight's end.** A pilot down, or the host's flight over (its jump home too: the host's frames stop), ends
   every pilot's flight 3 s later.
 * **The result is the host's.** A boarding runs only where the boarder's AI runs (the host flies every craft whose
-  flight group has a boarding order: dockings are not sent yet), so a guest's game would never see the corvette
-  taken. The host sends its flight groups' status every 2 s and at its flight's end; a guest's game is given it
-  as its own flight ends, before the goals are judged (0920:04B8).
+  flight group has a boarding order), so a guest's game would never see the corvette taken. Every pilot sends its
+  flight groups' status every 2 s; in flight each count of it (bytes 3 to 13 of a group's 20: they only grow) is
+  taken from whoever has the larger, so a boarding, a capture or an identification counted on one machine is counted
+  on all; and a guest's game is given the host's whole table as its own flight ends, before the goals are judged
+  (0920:04B8).
+* **A craft's side** goes with its report (a captured craft changes sides where its captor's AI runs), and its
+  **warheads**: the craft data's weapon slots are 4 bytes each from +0x112, six of them, the count the byte at +1
+  (measured: a torpedo from each of an X-wing's launchers, slots 4 and 5, 3 to 2).
+* **The flight's keys** are the demo's: the arrows steer by a ramp (a tap a little, full in a third of a second,
+  Shift the whole stick), the keypad's Ins and Del roll, Space fires and confirms, F12 changes what the mouse does
+  (point to aim by default). X-Wing's input is the demo's code (its poll lined up: 657 of 700 instructions): what
+  Space confirms at DS:BFC7, the right button's hold at DS:BFD0 / BFD2; the gunsight's middle is read from the
+  projection's centre, each cockpit's own. Measured: Left held 1 s turned the nose 50 degrees and Right 1 s brought
+  it back to within 4; Ins rolled 62 degrees with the heading unmoved; Space 1 s made four shots.
+* **The trench run flown by two** (Historical Combat, the B-wing's sixth; `ROUTE=trench scripts/xwnet-duo.sh`): both
+  pilots over the Death Star's surface in B-wings at 640x400, each seeing the other and the TIE that attacks.
 
 **Measured (2026-11-23, natively over TCP, scripts/xwnet-duo.sh: each machine from boot to Tour of Duty I's first
 mission by the route's keys and clicks):**
@@ -172,17 +189,21 @@ scanline pass, the game's 320x200 (cockpit, instruments, text) doubled behind it
   * a marking's record holds 16 layers (colours' indices 6 bits, tables of 64 at CS:0A0F and 0A6B), the demo's 8;
     the layers are the top 16 object numbers;
   * a shaded face cut by the near plane is not made flat (the demo's 1CCA:5D18 is not there): the edge that closes
-    a cut face is new code with the lights along it (23CF:611D to 6761, 1.3 KB more than the demo's). NOT ported
-    yet: the one pass still closes a cut face the demo's way, flat (a face that close to the eye loses its
-    shading; the closing edge half a pixel off X-Wing's);
+    a cut face is its own code (23CF:5FA1 to 6740; `close_cut_face_xwing`): the lights are the words before the two
+    cut points, stepped along the closing edge; an edge wholly beside the window is one running record (right of
+    the window for a shaded face only);
+  * **its divisions are not rounded**: where the demo's tracers call a by-cases rounding division (1CCA:F59D, and
+    F6F0), X-Wing's call a plain 32-bit one (23CF:F875, F897). An edge that comes in from just beside the window
+    came in a row off: this was the seam at a quarter's side (the user's "cut line"). Found by a face whose two
+    lists differed by one running record at x = the window's width;
   * the near plane's clip is in two places, not four; the static objects' records are 14 bytes.
 * **Checked** (`WCNET_T640_TRACECHECK=1`, each call of the game's tracer against the hand-written one on a copy of
   the memory; Tour of Duty I's first mission, a freighter held ahead): the line tracer the same in 68,246 of 68,246
-  calls, the sprites' row pass in 6,616 of 6,616, flat polygons in 3,478 of 3,478, the face tracer in 21,282 of
-  21,646: the 364 are faces cut by the window, whose closing edge is the demo's here (half a pixel off X-Wing's).
-  `WCNET_T640_CHECK=3` (every frame in quarters by the game's own code, then in one pass): the game's state never
-  differs; some 130 pixels a frame of 241,920 do, at the quarters' borders (a shade's step, or a pixel of a cut face's
-  edge), while a craft crosses the middle of the picture.
+  calls, the sprites' row pass in 6,616 of 6,616, flat polygons in 3,478 of 3,478, the face tracer in 26,446 of
+  26,446 (a freighter 9,000 units ahead) and 18,696 of 18,696 (150 units ahead: faces cut by the near plane).
+  `WCNET_T640_CHECK=3 WCNET_T640_SPR1X=0` (every frame in quarters by the game's own code, then in one pass, the
+  sprites the game's way): 1,863 frames, the game's state never differs and no pixel does.
+* **The gunsight** is drawn at the finer grid (docs/tie640.md): its one-pixel strokes one fine pixel wide.
 * **Sprites** are the game's own art as it draws it at 320, each pixel four (docs/tie640.md: one run of the scaler a
   sprite; the user: "I like the idea of drawing sprites with 2x2 pixels instead of upres since the original art is
   meant for lower scale anyway").
@@ -198,10 +219,9 @@ scanline pass, the game's 320x200 (cockpit, instruments, text) doubled behind it
 
 ## 6. Open
 
-* The closing edge of a cut face as X-Wing's code makes it (23CF:611D on), for the quarters' borders.
-* Not flown at 640x400 yet: the Death Star's surface, the Y-wing's, A-wing's and B-wing's cockpits, the proving
-  ground's gates.
-* Dockings sent as the TIE sessions send them (the boarding maneuver's place and its fields in this build).
-* The warheads' counts (the craft data's weapon slots in this build).
-* The flight's keys (the arrows' ramp, as the TIE demo has them), the comms prompt.
+* Not flown at 640x400 yet: the proving ground's gates.
+* Dockings as events (the TIE CD's kinds 6 and 7): X-Wing's AI is script-driven and its boarding routine is not
+  found (the craft data's +0x3A is the docking's minutes, maneuver 0x12 the boarding); today the boarder's machine
+  counts it and the counts are merged.
+* The comms prompt.
 * The mission a guest sees briefed is its own pick, the mission flown the host's.
