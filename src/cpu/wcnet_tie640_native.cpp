@@ -29,6 +29,7 @@
 #include <string.h>
 #include <vector>
 #include <string>
+#include "wcnet_t640_game.h"
 #include "wcnet_tie640.h"
 #include "wcnet_log.h"
 #include "regs.h"
@@ -1020,16 +1021,17 @@ unsigned g_nativeRuns = 0, g_nativeSorts = 0;
 bool tie640_native_on() {
     if (g_nativeOn < 0) {
         const char *e = getenv("WCNET_T640_NATIVE");
-        g_nativeOn = e && e[0] ? atoi(e) : 2;      // (the default: 2, the scene in one pass; 1 the quarters with this pass; 0 the quarters by the game's own)
-        if (g_nativeOn) wclog(1, "TIE demo 640: the scanline pass is native (WCNET_T640_NATIVE=%d)", g_nativeOn);
+        g_nativeOn = e && e[0] ? atoi(e) : XA(2, 0);   // (X-Wing: the quarters by the game's own code until its tracers are proved)
+             // (the default: 2, the scene in one pass; 1 the quarters with this pass; 0 the quarters by the game's own)
+        if (g_nativeOn) wclog(1, T640_GAME " 640: the scanline pass is native (WCNET_T640_NATIVE=%d)", g_nativeOn);
     }
     return g_nativeOn > 0;
 }
 
 // (the one pass's check: the runs of both drawings kept by quarter, [0] the quarters', [1] the one pass's)
 std::vector<Native::RunLog> g_keptRuns[2][4];
-std::vector<std::pair<int, std::string> > g_keptNotes[2][4];
-int g_quarterNow = 0;
+static std::vector<std::pair<int, std::string> > g_keptNotes[2][4];
+static int g_quarterNow = 0;
 void tie640_native_quarter(int quarter) { g_quarterNow = quarter; }
 void keep_runs(const Native &n, int set, int quarter) {
     if (!n.keep || quarter < 0 || quarter > 3) return;
@@ -1105,7 +1107,7 @@ void tie640_native_scanlines(Bit16u loadSeg, Bit8u *draw, int pitch, int limitX,
 
 // (the check's reference drawing: the game's own shaded runs, taken at 1CCA:98BF where the right edge is known)
 struct RefShade { int row, from, to, front, rightX, rightInfo, left; };
-std::vector<RefShade> g_refShades;
+static std::vector<RefShade> g_refShades;
 void tie640_native_ref(Bit16u loadSeg, int what) {
     if (what == 0) { g_refShades.clear(); return; }
     const PhysPt ds = (PhysPt)(Bit16u)(loadSeg + kDataPara) << 4;

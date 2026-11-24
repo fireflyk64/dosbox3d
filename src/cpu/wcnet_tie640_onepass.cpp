@@ -29,6 +29,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include "wcnet_t640_game.h"
 #include "wcnet_tie640.h"
 #include "wcnet_log.h"
 #include "regs.h"
@@ -246,7 +247,7 @@ bool run_to_idle(u16 stubSeg) {
         // emulator's own loop makes it)
         if (r > 0 && r < CB_MAX && CallBack_Handlers[r] && (*CallBack_Handlers[r])() == CBRET_NONE) r = 0;
         if (r != 0 || ++slices > 100000) {
-            wclog(0, "TIE demo 640: the scaler's run inside the hook ended oddly (core %d, %u slices, at %04X:%04X): the sprites go the slower way", (int)r, slices, (unsigned)SegValue(cs), (unsigned)reg_eip);
+            wclog(0, T640_GAME " 640: the scaler's run inside the hook ended oddly (core %d, %u slices, at %04X:%04X): the sprites go the slower way", (int)r, slices, (unsigned)SegValue(cs), (unsigned)reg_eip);
             ok = false;
             break;
         }
@@ -830,7 +831,7 @@ bool tie640_onepass_on() {
         g_nativeMap = !(e && e[0] == '0');
         e = getenv("WCNET_T640_SPRCULL");
         g_cullSprites = e && e[0] == '1';
-        if (g_on) wclog(1, "TIE demo 640: the scene in one pass (WCNET_T640_NATIVE=2)%s%s", g_check ? ", every frame checked against the quarters" : "", g_noSprites ? ", no sprites" : "");
+        if (g_on) wclog(1, T640_GAME " 640: the scene in one pass (WCNET_T640_NATIVE=2)%s%s", g_check ? ", every frame checked against the quarters" : "", g_noSprites ? ", no sprites" : "");
     }
     return g_on == 1;
 }

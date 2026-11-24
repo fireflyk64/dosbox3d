@@ -18,6 +18,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include "wcnet_t640_game.h"
 #include "wcnet_tie640.h"
 #include "wcnet_log.h"
 #include "wc_net.h"
@@ -62,7 +63,7 @@ void read_env() {
     const char *e = getenv("WCNET_T640_CHECK");
     g_check = e && e[0] && e[0] != '0' ? atoi(e) : 0;
     e = getenv("WCNET_T640_FAST");
-    g_fast = e && e[0] ? (unsigned)strtoul(e, NULL, 0) : 9u | 1u | 2u | 32u;   // (kFastDefault, declared below)
+    g_fast = e && e[0] ? (unsigned)strtoul(e, NULL, 0) : XA(9u | 1u | 2u | 32u, 0u);   // (kFastDefault, declared below)
     if (tie640_native_on()) g_fast &= ~32u;     // (the hand-written scanline pass: the translated code is not used)
     e = getenv("WCNET_T640_PROF");
     g_prof = e && e[0] && e[0] != '0' ? 1 : 0;

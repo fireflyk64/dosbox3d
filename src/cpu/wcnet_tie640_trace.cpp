@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include "wcnet_t640_game.h"
 #include "wcnet_tie640.h"
 #include "wcnet_log.h"
 #include "regs.h"

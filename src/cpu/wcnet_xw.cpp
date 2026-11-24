@@ -29,6 +29,7 @@
 #include <utility>
 #include <vector>
 #include "wcnet_xw.h"
+#include "wcnet_xw640.h"
 #include "wcnet_log.h"
 #include "wcnet_game.h"
 #include "wc_net.h"
@@ -366,6 +367,7 @@ static bool xw_chosen() {
 
 void xw_tick() {
     if (xw_chosen()) xw_session_tick();
+    xw640_tick(g_found && g_flightSaid && xw_flight_loaded(), g_load);
     if (!g_found) return;
     const double now = PIC_FullIndex();
     if (now >= g_nextCheckMs) {
@@ -402,6 +404,10 @@ void xw_watch_list(void (*watch)(Bit16u ip)) {
     watch_at(seg_of(kLaserHit), kLaserHit.off);
     watch_at(seg_of(kDamage), kDamage.off);
     watch_at(g_psp, kStubOff);
+    if (xw_flight_loaded()) {       // (the 640x400 picture's places: the flight overlay's)
+        xw640_watch(g_load);
+        xw640_stars_watch(watch);
+    }
 }
 
 bool xw_check_hooks(Bit32u ip) {
@@ -410,6 +416,8 @@ bool xw_check_hooks(Bit32u ip) {
         if (g_holding) at_stub();
         return true;
     }
+    if (g_flightSaid && xw640_hook(ip)) return true;
+    if (g_flightSaid && xw640_stars_hook(ip, g_load)) return true;
     if (at(kMoveObjects, ip)) {
         if (g_inCall || bytes_at(kMoveObjects)) at_move_objects();
         return true;
@@ -469,6 +477,7 @@ bool xw_key(int key, bool pressed) {
 }
 
 bool xw_script_item(const std::string &item, double t) {
+    if (xw640_script_item(item, t)) return true;
     if (item.compare(0, 8, "!xwkill=") == 0) {
         // (test aid) !xwkill=<object>: collide_damagecraft(object, -1, -1, 0) forty times: it blows up
         const int o = atoi(item.c_str() + 8);
@@ -535,8 +544,8 @@ bool xw_script_item(const std::string &item, double t) {
         const PhysPt a = xw_obj(o);
         int bolts = 0;
         for (int n = xw::kCraftSlots; n < xw::kObjectCount; n++) bolts += mem_readb(xw_obj(n) + xw::kOType) ? 1 : 0;
-        wclog(1, "key script %.1fs: X-Wing: pose: obj %d at %d %d %d hpr %u %u %u nose %d %d %d speed %d target %d; shots made %u (ours %u), %d objects past the craft",
-              t, o, (Bit32s)mem_readd(a + xw::kOPos), (Bit32s)mem_readd(a + xw::kOPos + 4), (Bit32s)mem_readd(a + xw::kOPos + 8),
+        wclog(1, "key script %.1fs: X-Wing: pose: %.1f ms a frame; obj %d at %d %d %d hpr %u %u %u nose %d %d %d speed %d target %d; shots made %u (ours %u), %d objects past the craft",
+              t, g_frameMs, o, (Bit32s)mem_readd(a + xw::kOPos), (Bit32s)mem_readd(a + xw::kOPos + 4), (Bit32s)mem_readd(a + xw::kOPos + 8),
               mem_readw(a + xw::kOHeading), mem_readw(a + xw::kOPitch), mem_readw(a + xw::kORoll), (Bit16s)mem_readw(a + xw::kOMove),
               (Bit16s)mem_readw(a + xw::kOMove + 2), (Bit16s)mem_readw(a + xw::kOMove + 4), (Bit16s)mem_readw(a + xw::kOSpeed),
               (Bit16s)r16(xw::kTarget), g_shotsMade, g_ourShots, bolts);

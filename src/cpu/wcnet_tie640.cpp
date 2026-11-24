@@ -21,6 +21,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "wcnet_t640_game.h"
 #include "wcnet_tie640.h"
 #include "wcnet_log.h"
 #include "regs.h"
@@ -30,7 +31,14 @@
 #include "vga.h"
 #include "render.h"
 
+#ifdef T640_XWING
+extern bool wc_hires_watch;     // (the one flag: the VGA's memory asks whichever game's picture is on)
+#else
 bool wc_hires_watch = false;
+namespace wc { bool xw640_on(); }
+bool xw640_hires_write(PhysPt offset, Bitu val, int bytes);
+bool xw640_hires_read(PhysPt offset, int bytes, Bitu *val);
+#endif
 
 namespace wc {
 
@@ -156,19 +164,19 @@ void compose() {
 // --- the scene in quarters -----------------------------------------------------------------------------------------
 // (Found by running: docs/tie640.md.  Places are image paragraphs; DS is the program's data segment.)
 enum {
-    kFlightPara = 0x0090, kRendPara = 0x1CCA, kStarPara = 0x1B66, kBackdropPara = 0x168C, kDataPara = 0x421F,
-    kSceneTop = 0x0B1A,         // tie_updatescreen: the scene section's start (the camera is set)
-    kSceneCentre = 0x0B36,      // ... xtrans2_initxtrans has come back (it sets the centre again every frame)
-    kSceneEnd = 0x1069,         // ... the section's end: the panel's work follows
-    kDrawStars = 0x0F0E,        // 1B66: rtsvga2_drawstars
-    kFullUpdate = 0xBF98,       // DS: the whole window drawn again this frame (the run tables forgotten)
-    kBackColour = 0x48BC,       // DS: the background's colour (a byte)
-    kCorner = 0x48C3,           // DS: the window's corner in the screen
-    kWide = 0x48C5, kDeep = 0x48D1,         // DS: the window, 320 x 189
-    kHalfWide = 0x48C9, kHalfDeep = 0x48D5, // DS: the projection's centre (160, 94)
-    kYOffset = 0x289E,          // DS: ... and the 32 bits added to the centre's row (-19: the sight's height)
-    kTablesSeg = 0xD8A6, kMaskAt = 0x28B6,  // DS: the run tables' segment, the mask's offset in it
-    kStatics = 0x8FC0,          // DS: the static objects (0x12 a record, 64): three angle bytes advanced in the section
+    kFlightPara = XA(0x0090, 0x0920), kRendPara = XA(0x1CCA, 0x222D), kStarPara = XA(0x1B66, 0x20CE), kBackdropPara = XA(0x168C, 0x1D5D), kDataPara = XA(0x421F, 0x3F1C),
+    kSceneTop = XA(0x0B1A, 0x0AD8),         // tie_updatescreen: the scene section's start (the camera is set)
+    kSceneCentre = XA(0x0B36, 0x0AF4),      // ... xtrans2_initxtrans has come back (it sets the centre again every frame)
+    kSceneEnd = XA(0x1069, 0x104B),         // ... the section's end: the panel's work follows
+    kDrawStars = XA(0x0F0E, 0x0E88),        // 1B66: rtsvga2_drawstars
+    kFullUpdate = XA(0xBF98, 0xC07A),       // DS: the whole window drawn again this frame (the run tables forgotten)
+    kBackColour = XA(0x48BC, 0x541A),       // DS: the background's colour (a byte)
+    kCorner = XA(0x48C3, 0x5421),           // DS: the window's corner in the screen
+    kWide = XA(0x48C5, 0x5423), kDeep = XA(0x48D1, 0x5433),         // DS: the window, 320 x 189
+    kHalfWide = XA(0x48C9, 0x542B), kHalfDeep = XA(0x48D5, 0x543B), // DS: the projection's centre (160, 94)
+    kYOffset = XA(0x289E, 0x33DE),          // DS: ... and the 32 bits added to the centre's row (-19: the sight's height)
+    kTablesSeg = XA(0xD8A6, 0xD34A), kMaskAt = XA(0x28B6, 0x33FB),  // DS: the run tables' segment, the mask's offset in it
+    kStatics = XA(0x8FC0, 0xC2BE),          // DS: the static objects (0x12 a record, 64): three angle bytes advanced in the section
     kMaskBytes = 0x900,
 };
 Bit8u g_maskKept[kMaskBytes], g_statics[64 * 3];
@@ -243,18 +251,20 @@ void fill_window() {
 // shl ax,9 / nop.
 struct Patch { Bit16u off; int n; Bit8u was[8], now[8]; };
 const Patch kScalePatches[] = {
-    { 0x7820, 1, { 0x08 }, { 0x09 } }, { 0x7824, 1, { 0x08 }, { 0x09 } },
-    { 0x78BE, 1, { 0x08 }, { 0x09 } }, { 0x78C2, 1, { 0x08 }, { 0x09 } },
-    { 0x7A27, 8, { 0x8A, 0xF2, 0x8A, 0xD4, 0x8A, 0xE0, 0x32, 0xC0 }, { 0x0F, 0xA4, 0xC2, 0x09, 0xC1, 0xE0, 0x09, 0x90 } },
-    { 0x7AF7, 8, { 0x8A, 0xF2, 0x8A, 0xD4, 0x8A, 0xE0, 0x32, 0xC0 }, { 0x0F, 0xA4, 0xC2, 0x09, 0xC1, 0xE0, 0x09, 0x90 } },
+    { XA(0x7820, 0x7DBE), 1, { 0x08 }, { 0x09 } }, { XA(0x7824, 0x7DC2), 1, { 0x08 }, { 0x09 } },
+    { XA(0x78BE, 0x7E5C), 1, { 0x08 }, { 0x09 } }, { XA(0x78C2, 0x7E60), 1, { 0x08 }, { 0x09 } },
+    { XA(0x7A27, 0x7FCF), 8, { 0x8A, 0xF2, 0x8A, 0xD4, 0x8A, 0xE0, 0x32, 0xC0 }, { 0x0F, 0xA4, 0xC2, 0x09, 0xC1, 0xE0, 0x09, 0x90 } },
+    { XA(0x7AF7, 0x809F), 8, { 0x8A, 0xF2, 0x8A, 0xD4, 0x8A, 0xE0, 0x32, 0xC0 }, { 0x0F, 0xA4, 0xC2, 0x09, 0xC1, 0xE0, 0x09, 0x90 } },
+#ifndef T640_XWING     // (the demo's renderer has four such places, X-Wing's two)
     { 0x7C11, 8, { 0x8A, 0xF2, 0x8A, 0xD4, 0x8A, 0xE0, 0x32, 0xC0 }, { 0x0F, 0xA4, 0xC2, 0x09, 0xC1, 0xE0, 0x09, 0x90 } },
     { 0x7CA1, 8, { 0x8A, 0xF2, 0x8A, 0xD4, 0x8A, 0xE0, 0x32, 0xC0 }, { 0x0F, 0xA4, 0xC2, 0x09, 0xC1, 0xE0, 0x09, 0x90 } },
+#endif
 };
 // NATIVE (WCNET_T640_NATIVE): the three "smaller than a pixel: not drawn" tests (0090:0C4A craft, 121C bolts and
 // debris, 1392 static objects) take the depth / 256 into DX:AX with byte moves (mov al,ah / mov ah,dl / mov dl,dh /
 // shl dh,1 / sbb dh,dh); for a pixel half the size the depth / 512: shrd ax,dx,9 / sar dx,9.  The same value the
 // hooks at 0C5B, 1226, 139C make of it, without a hook's call for every object of every quarter.
-const Bit16u kPixelPatches[] = { 0x0C51, 0x121C, 0x1392 };
+const Bit16u kPixelPatches[] = { XA(0x0C51, 0x0C0E), XA(0x121C, 0x11FA), XA(0x1392, 0x1370) };
 const Bit8u kPixelWas[10] = { 0x8A, 0xC4, 0x8A, 0xE2, 0x8A, 0xD6, 0xD0, 0xE6, 0x1A, 0xF6 };
 const Bit8u kPixelNow[10] = { 0x0F, 0xAC, 0xD0, 0x09, 0xC1, 0xFA, 0x09, 0x90, 0x90, 0x90 };
 // ... and draw_getcompdetailptr (1CCA:09FC) picks a part's detail level by its depth: the depth halved as it is
@@ -263,7 +273,7 @@ const Bit8u kLodWas[30] = { 0x8B, 0x46, 0x0A, 0x8B, 0x56, 0x0C, 0x26, 0x3B, 0x57
                             0x26, 0x3B, 0x07, 0x0F, 0x86, 0x05, 0x00, 0x83, 0xC3, 0x06, 0xEB, 0xE8 };
 const Bit8u kLodNow[30] = { 0x8B, 0x46, 0x0A, 0x8B, 0x56, 0x0C, 0xD1, 0xFA, 0xD1, 0xD8, 0x26, 0x3B, 0x57, 0x02, 0x7C, 0x0E, 0x7F, 0x05,
                             0x26, 0x3B, 0x07, 0x76, 0x07, 0x83, 0xC3, 0x06, 0xEB, 0xEE, 0x90, 0x90 };
-enum { kLodAt = 0x0A03 };
+enum { kLodAt = XA(0x0A03, 0x0AF3) };
 int g_pixelPatched = -1;        // -1 not looked at; 0 the hooks; 1 the code patched while the quarters are drawn
 bool pixel_patches() {
     if (g_pixelPatched < 0) {
@@ -307,7 +317,7 @@ bool code_known() {
             const Patch &q = kScalePatches[i];
             for (int k = 0; k < q.n; k++) if (mem_readb(base + q.off + (PhysPt)k) != q.was[k]) g_codeKnown = 0;
         }
-        if (!g_codeKnown) wclog(0, "TIE demo: the renderer's projection is not the code known: the picture stays the game's own");
+        if (!g_codeKnown) wclog(0, T640_GAME ": the renderer's projection is not the code known: the picture stays the game's own");
     }
     return g_codeKnown == 1;
 }
@@ -320,9 +330,9 @@ void pass_begin(bool again = false) {      // FAST: again = the same quarter onc
         const bool full = r16(kFullUpdate) != 0;
         mask_open();
         if (full || !g_filled) fill_window();
-        for (int i = 0; i < 64; i++) for (int k = 0; k < 3; k++) g_statics[i * 3 + k] = mem_readb(dsa((Bit16u)(kStatics + i * 0x12 + k)));
+        for (int i = 0; i < 64; i++) for (int k = 0; k < 3; k++) g_statics[i * 3 + k] = mem_readb(dsa((Bit16u)(kStatics + i * XA(0x12, 0x0E) + k)));
     } else {
-        for (int i = 0; i < 64; i++) for (int k = 0; k < 3; k++) mem_writeb(dsa((Bit16u)(kStatics + i * 0x12 + k)), g_statics[i * 3 + k]);
+        for (int i = 0; i < 64; i++) for (int k = 0; k < 3; k++) mem_writeb(dsa((Bit16u)(kStatics + i * XA(0x12, 0x0E) + k)), g_statics[i * 3 + k]);
     }
     mem_writew(dsa(kFullUpdate), 1);        // (every quarter drawn whole: the run tables are another quarter's)
     // the window (w x h at its corner in the game's picture; the side views' is smaller) is twice that in H, and
@@ -365,24 +375,24 @@ namespace {
 void tie640_watch(Bit16u loadSeg) {
     g_load = loadSeg;
     static const Bit16u ips[] = { kSceneTop, kSceneCentre, kSceneEnd, kDrawStars,
-                                  0x0775, 0xDF1D, 0xDF26, 0x09FC, 0x0C5B, 0x1226, 0x139C, 0x0782 };
-    static const Bit16u paras[] = { 0x0090, 0x0090, 0x0090, 0x1B66,
-                                    0x1CCA, 0x1CCA, 0x1CCA, 0x1CCA, 0x0090, 0x0090, 0x0090, 0x168C };
+                                  XA(0x0775, 0x0775), XA(0xDF1D, 0xE1AD), XA(0xDF26, 0xE1B6), XA(0x09FC, 0x0AEC), XA(0x0C5B, 0x0C18), XA(0x1226, 0x1204), XA(0x139C, 0x137A), XA(0x0782, 0x07E4) };
+    static const Bit16u paras[] = { XA(0x0090, 0x0920), XA(0x0090, 0x0920), XA(0x0090, 0x0920), XA(0x1B66, 0x20CE),
+                                    XA(0x1CCA, 0x222D), XA(0x1CCA, 0x222D), XA(0x1CCA, 0x222D), XA(0x1CCA, 0x222D), XA(0x0090, 0x0920), XA(0x0090, 0x0920), XA(0x0090, 0x0920), XA(0x168C, 0x1D5D) };
     g_pixelPatched = -1;
     g_checking = tie640_native_on() && getenv("WCNET_T640_CHECK");
     for (size_t i = 0; i < sizeof(ips) / sizeof(ips[0]); i++) {
-        if ((ips[i] == 0x0C5B || ips[i] == 0x1226 || ips[i] == 0x139C || ips[i] == 0x09FC) && pixel_patches() && !g_checking) continue;     // NATIVE: the code patched instead
-        if ((ips[i] == 0xDF1D || ips[i] == 0xDF26) && tie640_native_on() && !g_checking) continue;    // NATIVE: the routine whole (DF00)
+        if ((ips[i] == XA(0x0C5B, 0x0C18) || ips[i] == XA(0x1226, 0x1204) || ips[i] == XA(0x139C, 0x137A) || ips[i] == XA(0x09FC, 0x0AEC)) && pixel_patches() && !g_checking) continue;     // NATIVE: the code patched instead
+        if ((ips[i] == XA(0xDF1D, 0xE1AD) || ips[i] == XA(0xDF26, 0xE1B6)) && tie640_native_on() && !g_checking) continue;    // NATIVE: the routine whole (DF00)
         place_at(paras[i], ips[i]);
     }
     // [stars] the three per-star places only when the game's own routine is run in the quarters (WCNET_TIE640_STARS=0,
     // a research aid): natively the routine's entry is the stars' one hook a call
-    if (!tie640_stars_native()) { place_at(0x1B66, 0x112A); place_at(0x1B66, 0x1310); place_at(0x1B66, 0x14F6); }
+    if (!tie640_stars_native()) { place_at(XA(0x1B66, 0x20CE), XA(0x112A, 0x10A4)); place_at(XA(0x1B66, 0x20CE), XA(0x1310, 0xFFFF /* ? */)); place_at(XA(0x1B66, 0x20CE), XA(0x14F6, 0xFFFF /* ? */)); }
     tie640_fast_places(place_at);   // FAST
     dump_places();      // RESEARCH AID
-    if (tie640_trace_check_on()) { place_at(kRendPara, 0x53F3); place_at(kRendPara, 0x13DF); place_at(kRendPara, 0x193D); place_at(kRendPara, 0x1A1A); tie640_trace_shapes_places(place_at); }    // TRACE
-    if (tie640_native_on()) { place_at(kRendPara, 0x85E9); place_at(kRendPara, 0xDF00); place_at(kRendPara, 0xD772); place_at(kRendPara, 0x8510); if (getenv("WCNET_T640_CHECK")) { place_at(kRendPara, 0x98BF); place_at(kRendPara, 0x9724); } }    // NATIVE
-    if (tie640_onepass_on()) { tie640_onepass_places(place_at); place_at(kFlightPara, 0x0B5C); }      // ONE PASS
+    if (tie640_trace_check_on()) { place_at(kRendPara, XA(0x53F3, 0x559D)); place_at(kRendPara, XA(0x13DF, 0x14FE)); place_at(kRendPara, XA(0x193D, 0x1A7D)); place_at(kRendPara, XA(0x1A1A, 0x1B5A)); tie640_trace_shapes_places(place_at); }    // TRACE
+    if (tie640_native_on()) { place_at(kRendPara, XA(0x85E9, 0x89A7)); place_at(kRendPara, XA(0xDF00, 0xE190)); place_at(kRendPara, XA(0xD772, 0xDB94)); place_at(kRendPara, XA(0x8510, 0x88B0)); if (getenv("WCNET_T640_CHECK")) { place_at(kRendPara, XA(0x98BF, 0x9CD8)); place_at(kRendPara, XA(0x9724, 0x9B30)); } }    // NATIVE
+    if (tie640_onepass_on()) { tie640_onepass_places(place_at); place_at(kFlightPara, XA(0x0B5C, 0x0B1A)); }      // ONE PASS
     tie640_fast_hooked(ips, (int)(sizeof(ips) / sizeof(ips[0])));   // FAST
 }
 
@@ -409,16 +419,16 @@ void onepass_window(bool wide) {
     g_onePassWindow = wide;
     if (wide) {
         const int w = r16(kWide), h = r16(kDeep);
-        g_onePassKeep[0] = (Bit16u)w; g_onePassKeep[1] = r16(0x48C7); g_onePassKeep[2] = (Bit16u)h; g_onePassKeep[3] = r16(0x48D3);
+        g_onePassKeep[0] = (Bit16u)w; g_onePassKeep[1] = r16(XA(0x48C7, 0x5427)); g_onePassKeep[2] = (Bit16u)h; g_onePassKeep[3] = r16(XA(0x48D3, 0x5437));
         mem_writew(dsa(kWide), (Bit16u)(2 * w));
-        mem_writew(dsa(0x48C7), (Bit16u)(2 * w - 1));
+        mem_writew(dsa(XA(0x48C7, 0x5427)), (Bit16u)(2 * w - 1));
         mem_writew(dsa(kDeep), (Bit16u)(2 * h));
-        mem_writew(dsa(0x48D3), (Bit16u)(2 * h - 1));
+        mem_writew(dsa(XA(0x48D3, 0x5437)), (Bit16u)(2 * h - 1));
     } else {
         mem_writew(dsa(kWide), g_onePassKeep[0]);
-        mem_writew(dsa(0x48C7), g_onePassKeep[1]);
+        mem_writew(dsa(XA(0x48C7, 0x5427)), g_onePassKeep[1]);
         mem_writew(dsa(kDeep), g_onePassKeep[2]);
-        mem_writew(dsa(0x48D3), g_onePassKeep[3]);
+        mem_writew(dsa(XA(0x48D3, 0x5437)), g_onePassKeep[3]);
     }
 }
 }
@@ -433,32 +443,32 @@ bool tie640_hook(Bit32u ip) {
     // window); the sprites' and the backdrop's code, sized for the game's own 320x189 buffer, never sees it
     // ONE PASS: the backdrop's call is over (drawn or not): the window is the 640x378 again for the objects (a
     // sprite's row is worked out from the window's depth when it is queued)
-    if (g_pass == kOnePass && ip == 0x0B5C && cs_is(kFlightPara)) { onepass_window(true); return true; }
-    if (g_pass >= 0 && g_pass < 4 && g_onePassRef && ip == 0xA132 && cs_is(kRendPara)) tie640_onepass_ref_sprite(g_load, g_pass);
+    if (g_pass == kOnePass && ip == XA(0x0B5C, 0x0B1A) && cs_is(kFlightPara)) { onepass_window(true); return true; }
+    if (g_pass >= 0 && g_pass < 4 && g_onePassRef && ip == XA(0xA132, 0xA555) && cs_is(kRendPara)) tie640_onepass_ref_sprite(g_load, g_pass);
     if (g_pass == kOnePass && cs_is(kRendPara)) {
-        if (ip == 0xDF00 || ip == 0x0775 || ip == 0xA02A) onepass_window(false); else if (ip == 0x0AAB) onepass_window(true);
+        if (ip == XA(0xDF00, 0xE190) || ip == XA(0x0775, 0x0775) || ip == XA(0xA02A, 0xA44D)) onepass_window(false); else if (ip == XA(0x0AAB, 0x0B9B)) onepass_window(true);
     }
     if (g_pass == kOnePass && cs_is(kRendPara) && tie640_onepass_hook(g_load, ip, g_draw, HW, HW, HH, r16(kCorner))) {     // ONE PASS
-        if (ip == 0xA02A && !tie640_onepass_sprite_running()) onepass_window(true);     // (the scaler has drawn all four quarters)
+        if (ip == XA(0xA02A, 0xA44D) && !tie640_onepass_sprite_running()) onepass_window(true);     // (the scaler has drawn all four quarters)
         return true;
     }
-    if (ip == 0xA02A && g_pass >= 0 && g_pass < 4 && cs_is(kRendPara) && tie640_onepass_no_sprites()) {     // ONE PASS (its check without sprites: none in the quarters either)
+    if (ip == XA(0xA02A, 0xA44D) && g_pass >= 0 && g_pass < 4 && cs_is(kRendPara) && tie640_onepass_no_sprites()) {     // ONE PASS (its check without sprites: none in the quarters either)
         far_return();
         return true;
     }
-    if (g_pass >= 0 && g_pass < 4 && cs_is(kRendPara) && tie640_native_on() && tie640_fast_reference() && (ip == 0x85E9 || ip == 0x98BF || ip == 0x9724)) {
-        tie640_native_ref(g_load, ip == 0x85E9 ? 0 : ip == 0x98BF ? 1 : 2);       // NATIVE (the check: the game's own runs noted)
+    if (g_pass >= 0 && g_pass < 4 && cs_is(kRendPara) && tie640_native_on() && tie640_fast_reference() && (ip == XA(0x85E9, 0x89A7) || ip == XA(0x98BF, 0x9CD8) || ip == XA(0x9724, 0x9B30))) {
+        tie640_native_ref(g_load, ip == XA(0x85E9, 0x89A7) ? 0 : ip == XA(0x98BF, 0x9CD8) ? 1 : 2);       // NATIVE (the check: the game's own runs noted)
         return true;
     }
     if (g_pass >= 0 && g_pass < 4 && cs_is(kRendPara) && tie640_trace_check_on()) {      // TRACE (the check of wcnet_tie640_trace.cpp)
-        if (ip == 0x53F3) { tie640_trace_check_entry(g_load); return true; }
-        if (ip == 0x13DF || ip == 0x193D || ip == 0x1A1A) { tie640_trace_check_return(g_load); return true; }
+        if (ip == XA(0x53F3, 0x559D)) { tie640_trace_check_entry(g_load); return true; }
+        if (ip == XA(0x13DF, 0x14FE) || ip == XA(0x193D, 0x1A7D) || ip == XA(0x1A1A, 0x1B5A)) { tie640_trace_check_return(g_load); return true; }
         if (tie640_trace_shapes_hook(g_load, ip)) return true;      // TRACE
     }
-    if ((ip == 0xD772 || ip == 0x8510) && g_pass >= 0 && (g_pass < 4 || g_pass == kOnePass) && cs_is(kRendPara) && tie640_native_on() && !tie640_fast_reference()
+    if ((ip == XA(0xD772, 0xDB94) || ip == XA(0x8510, 0x88B0)) && g_pass >= 0 && (g_pass < 4 || g_pass == kOnePass) && cs_is(kRendPara) && tie640_native_on() && !tie640_fast_reference()
         && tie640_native_fill(g_load, ip)) return true;     // NATIVE: the full update's two fills
     // NATIVE: the quarter's scanline pass (xtrans2_drawxtrans) done by wcnet_tie640_native.cpp
-    if (ip == 0x85E9 && g_pass >= 0 && g_pass < 4 && g_passX >= 0 && cs_is(kRendPara) && tie640_native_on() && !tie640_fast_reference()) {
+    if (ip == XA(0x85E9, 0x89A7) && g_pass >= 0 && g_pass < 4 && g_passX >= 0 && cs_is(kRendPara) && tie640_native_on() && !tie640_fast_reference()) {
         tie640_native_quarter(g_pass);
         tie640_native_scanlines(g_load, g_draw, HW, HW, HH, g_passX, g_passY);
         return true;
@@ -578,7 +588,7 @@ bool tie640_hook(Bit32u ip) {
             g_frames++;
             tie640_fast_pass(-1, true);     // FAST
             return true;
-        case 0x0C5B: case 0x1226: case 0x139C:
+        case XA(0x0C5B, 0x0C18): case XA(0x1226, 0x1204): case XA(0x139C, 0x137A):
             // the craft's, the bolts' and the static objects' test, depth / 256 in DX:AX against the object's size
             // (smaller than a pixel: not drawn): a pixel is half the size now
             if (g_pass >= 0 && !g_patchedNow) {
@@ -593,7 +603,7 @@ bool tie640_hook(Bit32u ip) {
     if (g_pass < 0) return false;
     if (cs_is(kRendPara)) {
         switch (ip) {
-        case 0xDF00: {      // NATIVE: rotscale_calcscale(depth lo, hi, size, factor) whole: (2 size / (depth >> 8)) * factor >> 8, 800h at most
+        case XA(0xDF00, 0xE190): {      // NATIVE: rotscale_calcscale(depth lo, hi, size, factor) whole: (2 size / (depth >> 8)) * factor >> 8, 800h at most
             if (!tie640_native_on() || tie640_fast_reference()) return false;
             const PhysPt a = ((PhysPt)SegValue(ss) << 4) + (Bit16u)((reg_esp & 0xFFFF) + 4);
             const Bit16u lo = mem_readw(a), hi = mem_readw(a + 2), size = mem_readw(a + 4), factor = mem_readw(a + 6);
@@ -610,13 +620,13 @@ bool tie640_hook(Bit32u ip) {
             far_return();
             return true;
         }
-        case 0x09FC: {      // draw_getcompdetailptr(component, z): the depth its detail level is picked by, halved
+        case XA(0x09FC, 0x0AEC): {      // draw_getcompdetailptr(component, z): the depth its detail level is picked by, halved
             if (g_patchedNow) return true;
             const PhysPt a = ((PhysPt)SegValue(ss) << 4) + (Bit16u)((reg_esp & 0xFFFF) + 8);
             mem_writed(a, (Bit32u)((Bit32s)mem_readd(a) >> 1));
             return true;
         }
-        case 0xDF1D: {      // the sprites' scale: the size in AX about to be divided by the depth in BX
+        case XA(0xDF1D, 0xE1AD): {      // the sprites' scale: the size in AX about to be divided by the depth in BX
             const Bit32u v = (Bit32u)reg_ax << 1;
             if (reg_bx && v / reg_bx > 0xFFFF) {
                 reg_ax = 0xFFFF;
@@ -628,11 +638,11 @@ bool tie640_hook(Bit32u ip) {
             }
             return true;
         }
-        case 0xDF26:        // ... its result's limit (0x400, four times: eight now)
+        case XA(0xDF26, 0xE1B6):        // ... its result's limit (0x400, four times: eight now)
             if (reg_ax > 0x800) reg_ax = 0x800;
-            reg_eip = 0xDF2E;
+            reg_eip = XA(0xDF2E, 0xE1BE);
             return true;
-        case 0x0775:        // the backdrop's place from the centre, AX and BX
+        case XA(0x0775, 0x0775):        // the backdrop's place from the centre, AX and BX
             reg_ax = (Bit16u)(reg_ax << 1);
             reg_bx = (Bit16u)(reg_bx << 1);
             return true;
@@ -657,14 +667,14 @@ bool tie640_hook(Bit32u ip) {
             mem_writew(dsa(kFullUpdate), 1);    // (the frame has cleared it: the stars' lists are another quarter's too)
             return true;
         }
-        if (ip == 0x112A || ip == 0x1310 || ip == 0x14F6) {     // the stars' three loops: AX, BX the star from the centre
+        if (ip == XA(0x112A, 0x10A4) || ip == XA(0x1310, 0xFFFF /* ? */) || ip == XA(0x14F6, 0xFFFF /* ? */)) {     // the stars' three loops: AX, BX the star from the centre
             reg_ax = (Bit16u)(reg_ax << 1);
             reg_bx = (Bit16u)(reg_bx << 1);
             return true;
         }
         return false;
     }
-    if (ip == 0x0782 && cs_is(kBackdropPara)) {     // the backdrop picture's scale (0x100 = 1), about to be pushed
+    if (ip == XA(0x0782, 0x07E4) && cs_is(kBackdropPara)) {     // the backdrop picture's scale (0x100 = 1), about to be pushed
         reg_ax = (Bit16u)(reg_ax << 1);
         return true;
     }
@@ -680,7 +690,7 @@ bool tie640_fast_trip(Bit32u ip) {
     return tie640_hook(ip);
 }
 
-float g_fps = 70; double g_ratio = 1;       // the picture's rate and shape as given to the emulator's renderer
+static float g_fps = 70; static double g_ratio = 1;       // the picture's rate and shape as given to the emulator's renderer
 void tie640_tick(bool flight, Bit16u loadSeg) {
     if (g_wanted < 0) {
         const char *env = getenv("WCNET_TIE640");
@@ -700,9 +710,9 @@ void tie640_tick(bool flight, Bit16u loadSeg) {
         g_fps = (float)fps; g_ratio = ratio;
         RENDER_SetSize(HW, HH, 8, (float)fps, ratio, false, false);
         wc_hires_watch = true;
-        wclog(1, "TIE demo: the flight's picture is 640x400 (the game's 320x200 behind it)");
+        wclog(1, T640_GAME ": the flight's picture is 640x400 (the game's 320x200 behind it)");
     } else {
-        wclog(1, "TIE demo: the picture is the game's own again (%s)", !flight ? "the flight is over" : vga.mode != M_VGA ? "the game has left mode 13h" : "switched off");
+        wclog(1, T640_GAME ": the picture is the game's own again (%s)", !flight ? "the flight is over" : vga.mode != M_VGA ? "the game has left mode 13h" : "switched off");
         if (g_pass >= 0) mask_back();
         onepass_window(false);      // ONE PASS
         g_onePassRef = false;
@@ -778,6 +788,9 @@ bool tie640_script_item(const std::string &item, double t) {
 using namespace wc;
 
 bool wc_hires_write(PhysPt offset, Bitu val, int bytes) {
+#ifndef T640_XWING
+    if (xw640_on()) return xw640_hires_write(offset, val, bytes);
+#endif
     if (!g_on) return false;
     if (g_countWriters) g_writers[((Bit32u)(Bit16u)(SegValue(cs) - g_load) << 16) | (reg_eip & 0xFFF0)] += bytes;
     if (g_passX < 0) return false;
@@ -791,6 +804,9 @@ bool wc_hires_write(PhysPt offset, Bitu val, int bytes) {
 }
 
 bool wc_hires_read(PhysPt offset, int bytes, Bitu *val) {
+#ifndef T640_XWING
+    if (xw640_on()) return xw640_hires_read(offset, bytes, val);
+#endif
     if (!g_on || g_passX < 0) return false;
     // ... and what it reads of the screen (the stars' routine: is the pixel still the background's?) is H's
     Bitu v = 0;
@@ -814,7 +830,7 @@ void wc_hires_vsync() {
         // The emulator's renderer is not taking frames.  A frame skipped is nothing; when it goes on (seen once:
         // the picture stood still after a death and the next launch) the picture's size is given to it again.
         if (++refused == 30) {
-            if (said++ < 5) wclog(0, "TIE demo 640: the renderer took no frame 30 times running: its size set again");
+            if (said++ < 5) wclog(0, T640_GAME " 640: the renderer took no frame 30 times running: its size set again");
             RENDER_SetSize(HW, HH, 8, wc::g_fps, wc::g_ratio, false, false);
             refused = 0;
         }

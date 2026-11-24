@@ -36,6 +36,7 @@
 #include "wcnet_priv_hires.h"
 #include "wcnet_tiedemo.h"
 #include "wcnet_xw.h"
+#include "wcnet_xw640.h"
 #include "wcnet_armada.h"
 #include "wcnet_armada_hires.h"
 #include "wcnet_ipx.h"
@@ -297,6 +298,7 @@ static int rock_onto(int target) {
 // shows of video memory: TIE Fighter's 640x480).  A text mode goes to the
 // same name with .txt instead: its 80 x 25 characters.
 static bool write_screenshot(const std::string &path) {
+    if (wc::xw640_on()) return wc::xw640_shot(path);       // (X-Wing's)
     if (wc::tie640_on()) return wc::tie640_shot(path);     // (the TIE demo's 640x400 picture; !low= the game's own)
     if (vga.mode == M_TEXT) {
         std::string txt = path.size() > 4 && path.compare(path.size() - 4, 4, ".ppm") == 0 ? path.substr(0, path.size() - 4) + ".txt" : path + ".txt";

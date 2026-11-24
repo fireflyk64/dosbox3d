@@ -41,6 +41,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "wcnet_t640_game.h"
 #include "wcnet_tie640.h"
 #include "wcnet_log.h"
 #include "regs.h"
@@ -319,7 +320,7 @@ bool tie640_stars_hook(Bit32u ip, Bit16u loadSeg) {
 bool tie640_stars_native() {
     if (g_native < 0) {
         const char *env = getenv("WCNET_TIE640_STARS");
-        g_native = env && env[0] == '0' ? 0 : 1;
+        g_native = env && env[0] ? (env[0] == '0' ? 0 : 1) : XA(1, 0);
     }
     return g_native != 0;
 }
