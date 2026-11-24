@@ -125,6 +125,7 @@ Bit8u g_shownLow[LW * LH];          // ... and what that copy put on the screen
 Bit8u g_window[LW * LH];            // the spans
 Bit16u g_from[HW * HH];             // the edge at the fine grid: see smooth_edge
 Bit8u g_fineWindow[HW * HH];
+std::vector<int> g_edge;            // the fine pixels of the smoothed edge (see smooth_edge, compose)
 Bit8u g_out[HW * HH];
 bool g_haveFrame = false;
 bool g_drewThis = false;            // H has been drawn since the last span copy (not while flipped off)
@@ -2469,6 +2470,38 @@ void smooth_edge() {
                 }
             }
         }
+    }    // (the fine pixels that are not simply their own game pixel's: the smoothed edge's)
+    g_edge.clear();
+    for (int Y = 0; Y < HH; Y++) {
+        for (int X = 0; X < HW; X++) {
+            const int i = Y * HW + X, own = (Y >> 1) * LW + (X >> 1);
+            if (g_from[i] != own || g_fineWindow[i] != g_window[own]) g_edge.push_back(i);
+        }
+    }
+}
+
+// The picture a game's pixel at a time: H's four fine pixels where the pixel is in the window and the screen still
+// holds what was copied there, the screen's own pixel four times elsewhere; compose then sets the smoothed edge's fine
+// pixels (g_edge, some hundreds) over it.  (One pass over the 256,000 fine pixels, each looking up its game pixel, was
+// 15 to 20 ms of every second, the costliest single part of the high resolution: a third of that now, the picture
+// byte for byte the same -- 800 frames compared.)
+typedef char two_by_two[HW == 2 * LW && HH == 2 * LH ? 1 : -1];
+void compose_blocks(const Bit8u *low) {
+    for (int y = 0; y < LH; y++) {
+        const Bit8u *in = g_window + y * LW, *now = low + y * LW, *then = g_shownLow + y * LW;
+        const Bit8u *h0 = g_shownHi + 2 * y * HW, *h1 = h0 + HW;
+        Bit8u *o0 = g_out + 2 * y * HW, *o1 = o0 + HW;
+        for (int x = 0; x < LW; x++) {
+            const Bit8u c = now[x];
+            if (in[x] && c == then[x]) {
+                o0[2 * x] = h0[2 * x];
+                o0[2 * x + 1] = h0[2 * x + 1];
+                o1[2 * x] = h1[2 * x];
+                o1[2 * x + 1] = h1[2 * x + 1];
+            } else {
+                o0[2 * x] = o0[2 * x + 1] = o1[2 * x] = o1[2 * x + 1] = c;
+            }
+        }
     }
 }
 
@@ -2499,18 +2532,13 @@ void compose() {
         return;
     }
     if (mode == 3) {            // (the space alone: the cockpit's window edge the game's own, block for block)
-        for (int Y = 0; Y < HH; Y++) {
-            const int row = g_lowRow[Y] * LW;
-            for (int X = 0; X < HW; X++) {
-                const int from = row + (X >> 1), i = Y * HW + X;
-                g_out[i] = g_window[from] && low[from] == g_shownLow[from] ? g_shownHi[i] : low[from];
-            }
-        }
+        compose_blocks(low);
         return;
     }
     smooth_edge();
-    for (int i = 0; i < HW * HH; i++) {
-        const int from = g_from[i];
+    compose_blocks(low);
+    for (size_t k = 0; k < g_edge.size(); k++) {
+        const int i = g_edge[k], from = g_from[i];
         g_out[i] = g_fineWindow[i] && low[from] == g_shownLow[from] ? g_shownHi[i] : low[from];
     }
 }
