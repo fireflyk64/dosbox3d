@@ -811,6 +811,10 @@ message TdmState {
     optional uint32 verdict = 10;
     optional uint32 next = 11;
     optional bool over = 12;
+    // X-Wing (docs/xwing.md): the mission file the host's go launches (its path less the drive: "\\mission\\defect.xwi"),
+    // and how many pilots fly it (the player's flight group is made that large)
+    optional string mission_name = 13;
+    optional uint32 pilots = 14;
 }
 
 // The room's IPX network (src/cpu/wcnet_ipx.cpp, docs/armada.md).  A guest says hello to the host on its link, the

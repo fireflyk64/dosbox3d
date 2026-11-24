@@ -35,6 +35,7 @@
 #include "wcnet_rap.h"
 #include "wcnet_priv_hires.h"
 #include "wcnet_tiedemo.h"
+#include "wcnet_xw.h"
 #include "wcnet_armada.h"
 #include "wcnet_armada_hires.h"
 #include "wcnet_ipx.h"
@@ -85,7 +86,7 @@ static bool g_frameSeen = false;
 static int g_flightCount = 0;  // missions that reached their first frame
 static bool in_flight() { return g_inMission && g_frameSeen; }
 // ... for the key script's clock and its "wait" item: a game module's flight counts too (the TIE demo's)
-static bool script_in_flight() { return in_flight() || (tdm_found() && tdm_in_flight()); }
+static bool script_in_flight() { return in_flight() || (tdm_found() && tdm_in_flight()) || (xw_found() && xw_in_flight()); }
 // The page's stick steers in a flight and moves a pointer in a menu.  A simulator's flight is flown like any other but is no
 // mission (the hooks stand aside for it: in_simulation, g_rvSimulator), and in_flight says no: so the stick drifted the
 // pointer like a mouse's, a turn that never stopped (WC1's TrainSim, RetroVega's simulator).  WC1's simulator has screens
@@ -1247,7 +1248,7 @@ static void key_script() {
         wr16(ds::missionStatus, (Bit16u)status);
     } else if (tv_script_item(item, t)) {
         // (Terminal Velocity's aids: wcnet_tv.cpp)
-    } else if (rap_script_item(item, t) || tdm_script_item(item, t)) {
+    } else if (rap_script_item(item, t) || tdm_script_item(item, t) || xw_script_item(item, t)) {
         // (Raptor's aids: wcnet_rap.cpp; the TIE Fighter demo's: wcnet_tiedemo.cpp)
     } else if (priv_script_item(item, t)) {
         // (Privateer's aids: wcnet_priv.cpp)
@@ -1297,6 +1298,7 @@ static void build_watch_list() {
     if (priv_found()) {
         priv_watch_list(watch);
     }
+    xw_watch_list(watch);       // (X-Wing Collector's CD's, wcnet_xw.cpp)
     tdm_watch_list(watch);      // (the TIE Fighter demo's, wcnet_tiedemo.cpp)
     arm_watch_list(watch);      // (Armada's arrows, wcnet_armada.cpp)
     g_watchReady = true;
@@ -2306,6 +2308,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_link(int what) {
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_in_flight() {
     return wc::stick_flying() || wc::rap_in_wave()          // (Raptor's: a wave under way, flown by the arrows)
            || (wc::tie_found() && wc::tie_in_flight()) || (wc::tdm_found() && wc::tdm_in_flight())
+           || (wc::xw_found() && wc::xw_in_flight())
            || (wc::priv_found() && wc::priv_flight_frame_recent()) ? 1 : 0;
 }
 // the page's keys and mouse buttons, into DOSBox's keyboard and mouse driver: every game's (RetroVega's too)
@@ -2573,6 +2576,9 @@ bool wc_net_key_filter(int kbdKey, bool pressed) {
     if (priv_controls_key(kbdKey, pressed)) {
         return true;    // (Privateer's flight: the arrows ramped, wcnet_priv_controls.cpp)
     }
+    if (xw_key(kbdKey, pressed)) {
+        return true;    // (X-Wing: Esc while a guest's launch waits for the host flies alone)
+    }
     if (tdm_key(kbdKey, pressed)) {
         return true;    // (the TIE Fighter demo: Esc never takes it to DOS, wcnet_tiedemo.cpp)
     }
@@ -2812,6 +2818,7 @@ void wc_net_check_cpu_hooks() {
         tv_tick();
         rap_tick();
         tdm_tick();
+        xw_tick();
         arm_tick();
 #ifdef __EMSCRIPTEN__
         escape_tap();
@@ -2857,6 +2864,10 @@ void wc_net_check_cpu_hooks() {
     }
     if (arm_found()) {
         arm_check_hooks(ip);    // (Armada and Proving Grounds: their arrows, wcnet_armada.cpp; nothing else of theirs)
+        return;
+    }
+    if (xw_found()) {
+        xw_check_hooks(ip);     // (X-Wing Collector's CD: its own places, wcnet_xw.cpp)
         return;
     }
     if (tdm_watching()) {

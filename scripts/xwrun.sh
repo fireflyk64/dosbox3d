@@ -6,17 +6,23 @@
 #   scripts/xwrun.sh [seconds] [the key script]
 #
 #   XWDIR=    the installed game's hard-disk files (default ~/dev/dosbox3d/xwingcd/XWING)
-#   XWCD=     the CD's files (default XWDIR/CD, else ~/dev/dosbox3d/xwingcd/XWNOCP/CD)
+#   XWCD=     the CD's files as a folder, instead of the image
 #   OPTS=     an OPTIONS.CFG to fly with instead of the folder's
-#   XWISO=    the CD as an image instead of XWDIR/CD
+#   FRESH=1   the game's copy made anew
+#   XWISO=    the CD as an image (default ~/dev/dosbox3d/xwingcd/xwing.iso)
 #   DOSBOX=   the emulator (default build-native/src/dosbox)
 #   CYCLES=   the emulated CPU (default 30000)
 #   ENV=      more of the environment
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/xwrun}; mkdir -p $OUT; rm -f $OUT/*.ppm $OUT/*.txt
+[ -n "$FRESH" ] && rm -rf $OUT/game           # (a new copy: no pilot of the run before)
 DUR=${1:-40}; SCRIPT=${2:-}
+# "tod1" first in the key script: the keys and clicks from boot to Tour of Duty I's first mission with a new pilot
+# (scripts/xwroute-tod1.txt: in flight some 112 s in; wants FRESH=1)
+case "$SCRIPT" in tod1*) SCRIPT="$(cat "$ROOT/scripts/xwroute-tod1.txt")${SCRIPT#tod1}";; esac
 XW=${XWDIR:-$HOME/dev/dosbox3d/xwingcd/XWING}
-XWCD=${XWCD:-$XW/CD}; [ -d "$XWCD" ] || XWCD=$HOME/dev/dosbox3d/xwingcd/XWNOCP/CD
+# (the CD: an image by default.  ~/dev/dosbox3d/xwingcd/XWNOCP/CD is a copy whose forward cockpits are blank)
+[ -z "$XWCD" ] && [ -z "$XWISO" ] && XWISO=$HOME/dev/dosbox3d/xwingcd/xwing.iso
 DOSBOX=${DOSBOX:-$ROOT/build-native/src/dosbox}
 if [ ! -f $OUT/game/BWING.EXE ]; then
   mkdir -p $OUT/game
