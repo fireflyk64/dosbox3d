@@ -55,6 +55,9 @@ Phase g_phase = PHASE_BASE;
 Bit8u g_drive = 2;                          // the drive PLAYTYPE.IFF is on (the game's own directory)
 bool g_ownFlight;                           // this flight is flown in our own ship (no pilot's ship was known at its launch)
 Bit32u g_farDump[2];
+enum { kPowerStep = 10 };                   // points of power a press of Enter or Tab moves
+int g_powerLocal;                           // (a crew member's) the move to make on our own copy at the next frame
+std::vector<std::pair<int, int> > g_powerAsked;     // (the pilot's) seat, kind: the crew's moves to make at the next frame
 int g_rigJump;
 bool g_rigJumpAsked;
 int g_role, g_turret;                       // the room's word: 1 the pilot, 2 a gunner in that turret
@@ -600,8 +603,29 @@ void priv_crew_frame() {
         g_farDump[1] = 0;
     }
     const double now = PIC_FullIndex();
-    if (g_role == 1) pilot_frame(now);
-    else if (g_role == 2 || rig_gunner()) gunner_frame(now);
+    if (g_role == 1) {
+        for (size_t i = 0; i < g_powerAsked.size(); i++) {
+            const int kind = g_powerAsked[i].second;
+            Bit32s s0[4], s1[4], emax = 0;
+            priv_ship_shields(priv_player_ship(), s0);
+            const Bit32s e0 = priv_ship_energy(&emax);
+            const int moved = priv_ship_power(kind, kPowerStep);
+            priv_ship_shields(priv_player_ship(), s1);
+            const Bit32s e1 = priv_ship_energy(NULL);
+            wclog(1, "Privateer: crew: seat %d %s: %d points; shields %d %d %d %d -> %d %d %d %d, guns %d -> %d of %d (x 256; the whole %lld -> %lld)",
+                  g_powerAsked[i].first + 1, kind == 1 ? "evened the shields (the most a quadrant changed)" : kind == 2 ? "moved shields to the guns" :
+                  "moved the guns' energy to the shields", moved, s0[0], s0[1], s0[2], s0[3], s1[0], s1[1], s1[2], s1[3], e0, e1, emax,
+                  (long long)s0[0] + s0[1] + s0[2] + s0[3] + e0, (long long)s1[0] + s1[1] + s1[2] + s1[3] + e1);
+        }
+        g_powerAsked.clear();
+        pilot_frame(now);
+    } else if (g_role == 2 || rig_gunner()) {
+        gunner_frame(now);
+        if (g_powerLocal) {
+            priv_ship_power(g_powerLocal, kPowerStep);
+            g_powerLocal = 0;
+        }
+    }
 }
 
 int priv_crew_system_id() {
@@ -632,11 +656,17 @@ void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[
 
 bool priv_crew_key(int kbdKey, bool pressed) {
     if (!pressed || priv_tapping() || !priv_in_flight() || g_ownFlight || (g_role != 2 && !rig_gunner())) return false;
-    if (kbdKey == KBD_s && g_role == 2 && g_flight.joined) {
-        // The shield level (S) is the ship's, whoever's hand: told to the pilot's game, which presses it; ours takes it
-        // too (our copy's guns draw on our copy's energy)
-        priv_session_crew_key(1);
-        return false;
+    if (g_role == 2 && g_flight.joined && (kbdKey == KBD_s || kbdKey == KBD_enter || kbdKey == KBD_tab)) {
+        // The crew's hand on the ship's power (the user, 2026-11-25: the game's shield level from a crew seat "is too
+        // destructive. Can we have toggle like s to rebalance shields to be more even and enter to draw shield energy
+        // to guns if guns energy are not full and tab can move gun energy back to shields if shields are not full.
+        // Energy should be conserved"): told to the pilot's game, where the ship is; done on our copy too (a gunner's
+        // guns draw on its copy's pool; its shields are the pilot's reports again at the next one).  The game's own S,
+        // Enter and Tab (the shield level, the missiles, the afterburner) are the pilot's.
+        const int kind = kbdKey == KBD_s ? 1 : kbdKey == KBD_enter ? 2 : 3;
+        priv_session_crew_key(kind);
+        g_powerLocal = kind;        // (at the frame: the ship's far data)
+        return true;
     }
     switch (kbdKey) {
     case KBD_a: case KBD_j: case KBD_x: case KBD_enter: case KBD_tab:
@@ -658,11 +688,8 @@ void priv_crew_controls(Bit32u rec) {
 }
 
 void priv_crew_take_key(int seat, int key) {
-    if (g_role != 1 || !priv_in_flight()) return;
-    if (key == 1) {
-        priv_tap_key(KBD_s);
-        wclog(1, "Privateer: crew: seat %d set the shield level (S pressed here)", seat + 1);
-    }
+    if (g_role != 1 || !priv_in_flight() || key < 1 || key > 3 || g_powerAsked.size() >= 8) return;
+    g_powerAsked.push_back(std::make_pair(seat, key));       // (at the frame: the ship's far data; a list has a cap)
 }
 
 bool priv_crew_no_wings() { return g_role == 2; }

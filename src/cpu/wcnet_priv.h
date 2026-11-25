@@ -251,6 +251,14 @@ int priv_guns_seat(Bit16u ship, int station);
 // The player's ship's guns of that seat fired once by the game's own routine at the next frame (a gunner's shot shown in
 // the pilot's game: no energy taken, its bolts harmless here); false: not queued.
 bool priv_fire_station(int station);
+// The player's ship's power moved between its shields and its guns' energy, none made or lost (both are kept in the
+// same units, 256 to a point: the shields' four quadrants in the damage model, the guns' pool in the ship's energy
+// object).  kind 1: the four quadrants made even (their sum kept); 2: up to `points` from the shields (each quadrant
+// its share) to the guns, as far as the guns' pool has room; 3: up to `points` from the guns to the shields (the
+// quadrants with room, the emptiest first).  Returns the points moved (kind 1: the largest change of a quadrant).
+int priv_ship_power(int kind, int points);
+// The player's ship's guns' energy now and at most (x 256), -1 not known.
+Bit32s priv_ship_energy(Bit32s *max);
 // The bolt (or whatever hit) is one of those copies'.
 bool priv_copy_bolt(Bit16u hitter);
 // A key pressed and let go for the game by the layer itself (past the crew's key filter).
@@ -293,7 +301,8 @@ bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9
 void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire, unsigned shots);
 // A gunner's keys: true, not the game's (the ship is the pilot's to fly).
 bool priv_crew_key(int kbdKey, bool pressed);
-// A crew member's key for the pilot's ship sent to the pilot (1 the shield level); and taken there (pressed for the game).
+// A crew member's key for the pilot's ship sent to the pilot (1 the shields evened, 2 shields to guns, 3 guns to shields);
+// and taken there.
 void priv_session_crew_key(int key);
 void priv_crew_take_key(int seat, int key);
 // A gunner's control record after the controls were read (seg088:0BBD): no missile is the gunner's to launch.

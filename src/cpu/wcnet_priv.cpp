@@ -104,6 +104,8 @@ enum {
     kTurretYaw = 0x34,              //   at +0x3C..+0x48), +0x4C its turn rate, +0x4E it is there (ovr394:0295 turns it from
     kTurretPitch = 0x38,            //   the control record while its view is on)
     kTurretThere = 0x4E,
+    kShipEnergy = 0x52,             // a ship's energy object (far): +0xA the guns' pool's size (points), +0xC the pool now (x 256)
+    kEnergyVtable = 0x19FA,
     kWeaponsSeat = 0x3F,            // the weapons record's seat: the station whose guns fire (seg125:024B, from the view)
     kGunStation = 0x22, kGunOn = 0x35, kGunEnergy = 0x33,
     kStub273 = 0x6A66,              // stub273's paragraph: the thunks of the overlay that builds the base's ship
@@ -1640,6 +1642,15 @@ static void guns_dump_frame() {
     }
     Bit16u bolts[64];
     wclog(1, "Privateer: guns %.1f:   %d bolts in the scene", t, priv_scene_bolt_shooters(bolts, 64));
+    if (getenv("PRIVENERGYSCAN")) {     // (a rig's: far pointers in the ship object and what they point at)
+        for (int k = 0x40; ship && k < 0x90; k++) {
+            const Bit16u off = priv_r16((Bit16u)(ship + k)), seg = priv_r16((Bit16u)(ship + k + 2));
+            if (seg < 0x1000 || seg > 0xF000 || off > 0x100) continue;
+            char hex[3 * 0x20 + 1];
+            for (int j = 0; j < 0x20; j++) snprintf(hex + 3 * j, 4, "%02X ", mem_readb(((PhysPt)seg << 4) + off + j));
+            wclog(1, "Privateer: guns %.1f:   ship +%02X -> %04X:%04X: %s", t, k, seg, off, hex);
+        }
+    }
 }
 
 static bool fire_record(Bit16u obj, PhysPt *rec);
@@ -3638,6 +3649,94 @@ bool priv_fire_station(int station) {
     c.tag = ship;
     g_stationShot.station = station;
     return queue_call(c);
+}
+
+// The ship's energy object (far at the ship's +0x52, vtable 0x19FA: seg049:0198 reads its +0xC, the guns' pool now,
+// 256 to a point; its +0xA the pool's size in points: 130 on the user's Centurion, measured full and firing) and the
+// damage model's shields (+0x31 + 6q now, 256 to a point; +0x10 + 2q each quadrant's size in points).
+int priv_ship_power(int kind, int points) {
+    const Bit16u ship = priv_r16(kPlayerShip);
+    if (!ship || !priv_ship_is_alive(ship)) return 0;
+    const Bit16u eoff = priv_r16((Bit16u)(ship + kShipEnergy)), eseg = priv_r16((Bit16u)(ship + kShipEnergy + 2));
+    const PhysPt model = ship_model(ship);
+    if (!eseg || !model) return 0;
+    const PhysPt e = ((PhysPt)eseg << 4) + eoff;
+    Bit16u vt = 0, emax = 0;
+    if (mem_readw_checked(e, &vt) || vt != kEnergyVtable || mem_readw_checked(e + 0xA, &emax)) return 0;
+    Bit32s energy = (Bit32s)mem_readd(e + 0xC);
+    const Bit32s energyMax = (Bit32s)emax << 8;
+    Bit32s sh[4], cap[4];
+    Bit64s total = 0;
+    for (int q = 0; q < 4; q++) {
+        sh[q] = (Bit32s)mem_readd(model + kModelShield + 6 * q);
+        cap[q] = (Bit32s)mem_readw(model + 0x10 + 2 * q) << 8;
+        if (sh[q] < 0) sh[q] = 0;
+        total += sh[q];
+    }
+    Bit32s moved = 0;
+    if (kind == 1) {
+        // (every quadrant the same, the sum kept: the remainder of the division to the first quadrants, a unit each)
+        const Bit32s each = (Bit32s)(total / 4);
+        int rest = (int)(total % 4);
+        for (int q = 0; q < 4; q++) {
+            const Bit32s v = each + (rest-- > 0 ? 1 : 0);
+            if (abs(v - sh[q]) > moved) moved = abs(v - sh[q]);
+            sh[q] = v;
+        }
+    } else if (kind == 2) {
+        Bit64s want = (Bit64s)points << 8;
+        if (want > energyMax - energy) want = energyMax - energy;
+        if (want > total) want = total;
+        if (want <= 0) return 0;
+        Bit64s left = want;
+        for (int q = 0; q < 4; q++) {           // (each quadrant its share of what it holds; the rounding's rest below)
+            const Bit32s take = (Bit32s)(want * sh[q] / total);
+            sh[q] -= take;
+            left -= take;
+        }
+        for (int q = 0; q < 4 && left > 0; q++) {
+            const Bit32s take = (Bit32s)(left < sh[q] ? left : sh[q]);
+            sh[q] -= take;
+            left -= take;
+        }
+        moved = (Bit32s)(want - left);
+        energy += moved;
+    } else if (kind == 3) {
+        Bit64s room = 0;
+        for (int q = 0; q < 4; q++) room += cap[q] > sh[q] ? cap[q] - sh[q] : 0;
+        Bit64s want = (Bit64s)points << 8;
+        if (want > energy) want = energy;
+        if (want > room) want = room;
+        if (want <= 0) return 0;
+        Bit64s left = want;
+        while (left > 0) {                      // (the emptiest quadrant with room first, a point at a time)
+            int low = -1;
+            for (int q = 0; q < 4; q++) if (sh[q] < cap[q] && (low < 0 || sh[q] < sh[low])) low = q;
+            if (low < 0) break;
+            Bit32s give = (Bit32s)(left < 256 ? left : 256);
+            if (give > cap[low] - sh[low]) give = cap[low] - sh[low];
+            sh[low] += give;
+            left -= give;
+        }
+        moved = (Bit32s)(want - left);
+        energy -= moved;
+    } else {
+        return 0;
+    }
+    for (int q = 0; q < 4; q++) mem_writed(model + kModelShield + 6 * q, (Bit32u)sh[q]);
+    if (kind != 1) mem_writed(e + 0xC, (Bit32u)energy);
+    return moved >> 8;
+}
+
+Bit32s priv_ship_energy(Bit32s *max) {
+    const Bit16u ship = priv_r16(kPlayerShip);
+    const Bit16u eoff = ship ? priv_r16((Bit16u)(ship + kShipEnergy)) : 0, eseg = ship ? priv_r16((Bit16u)(ship + kShipEnergy + 2)) : 0;
+    if (!eseg) return -1;
+    const PhysPt e = ((PhysPt)eseg << 4) + eoff;
+    Bit16u vt = 0, emax = 0;
+    if (mem_readw_checked(e, &vt) || vt != kEnergyVtable || mem_readw_checked(e + 0xA, &emax)) return -1;
+    if (max) *max = (Bit32s)emax << 8;
+    return (Bit32s)mem_readd(e + 0xC);
 }
 
 bool priv_copy_bolt(Bit16u hitter) {
