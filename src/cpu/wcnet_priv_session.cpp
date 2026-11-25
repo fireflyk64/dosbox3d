@@ -245,6 +245,9 @@ struct PrivNet {
     bool crew;                  // a crew's room (the host's choice, WCPRIVCREW=1): the host flies, the guests man its turrets
     unsigned crewShipSent;      // (the pilot's) the launch whose ship the gunners were last told
     double turretAt;            // (a gunner's) our turret last told
+    std::vector<std::pair<Bit32u, int> > crewComms;     // (the pilot's) id, message: the crew's comm messages to hand to our ships
+    std::vector<std::pair<Bit32u, std::string> > crewLines;   // (a crew member's) id, line: the pilot's comm's lines to show
+    std::string commSaid;       // (the pilot's) the comm's line last told to the crew
     unsigned copiesFired, copiesSkipped;
     PrivNet() : crew(false), crewShipSent(0), turretAt(-1e9), ownShotAt(-1e9), friendlyFire(0), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
                 sentAt(-1e9), stateAt(-1e9), frame(0), flightShip(0), lastX(0), lastY(0), lastZ(0), lastAt(-1e9), vx(0), vy(0), vz(0) {}
@@ -1037,6 +1040,14 @@ void handle(Peer *p, NetworkMessage &msg) {
         if (p->hello && !g_net->host && g_net->crew) {
             const PrivCrewShip &cs = msg.priv_crew_ship();
             priv_crew_take_ship(cs.file(), (int)cs.hull(), cs.serial());
+        }
+    } else if (msg.has_priv_crew_comm()) {
+        if (p->hello && g_net->host && g_net->crew && p->player >= 1 && g_net->crewComms.size() < 8) {
+            g_net->crewComms.push_back(std::make_pair(msg.priv_crew_comm().id(), (int)msg.priv_crew_comm().msg()));
+        }
+    } else if (msg.has_priv_crew_line()) {
+        if (p->hello && !g_net->host && g_net->crew && g_net->crewLines.size() < 8) {
+            g_net->crewLines.push_back(std::make_pair(msg.priv_crew_line().id(), msg.priv_crew_line().text()));
         }
     } else if (msg.has_priv_crew_key()) {
         if (p->hello && g_net->host && g_net->crew && p->player >= 1) priv_crew_take_key(p->player, (int)msg.priv_crew_key().key());
@@ -2685,6 +2696,71 @@ void govern_memory(double now, const Bit32s pos[3]) {
     }
 }
 
+// A crew's comms (the user, 2026-11-25: "Comms would also be very useful so that either pilot or secondary can run the
+// comms").  The game's comm menu puts its choice in the target ship's comm record and that ship's pilot answers at its
+// next think.  A crew member's game shows the pilot's ships as puppets, their pilots held: the choice stays in the
+// record -- taken out here and told to the pilot's game, which puts it in the real ship's record: the real pilot
+// answers there (and acts on it: a taunt angers, a mission's talk goes on).  Every line said on the pilot's comm,
+// whoever asked, is told to the crew, whose copy of that ship says it (priv_ship_say: the face on the comm screen, the
+// text on the message bar).
+void crew_comms_frame() {
+    if (priv_crew_pilot()) {
+        for (size_t i = 0; i < g_net->crewComms.size(); i++) {
+            const Bit16u obj = (Bit16u)g_net->crewComms[i].first;
+            const bool ours = obj && priv_scene_has(obj) && priv_ship_is_alive(obj) && !is_puppet_obj(obj) && obj != priv_player_ship();
+            if (ours) priv_ship_comm_put(obj, g_net->crewComms[i].second);
+            wclog(1, "Privateer: crew: a crew member's comm message %d for ds:%04X (%s): %s", g_net->crewComms[i].second, obj,
+                  ours ? priv_ship_cast_name(obj).c_str() : "?", ours ? "handed to it" : "no such ship of ours now");
+        }
+        g_net->crewComms.clear();
+        Bit16u speaker = 0;
+        std::string text;
+        if (!priv_comm_line(&speaker, &text)) {
+            g_net->commSaid.clear();
+        } else if (text != g_net->commSaid) {
+            g_net->commSaid = text;
+            NetworkMessage msg;
+            msg.mutable_priv_crew_line()->set_id(speaker && speaker != priv_player_ship() && priv_scene_has(speaker) ? speaker : 0);
+            msg.mutable_priv_crew_line()->set_text(text);
+            for (size_t i = 0; i < g_net->peers.size(); i++) {
+                if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) g_net->peers[i]->conn.send(msg);
+            }
+            wclog(2, "Privateer: crew: the comm's line told to the crew: %s", text.c_str());
+        }
+        return;
+    }
+    if (!priv_crew_gunner()) return;
+    for (int k = 0; k < kNpcCap; k++) {
+        NpcPuppet &p = g_net->npcs[k];
+        if (!p.used || !p.obj || p.parked || p.pod || p.seat != 0 || !priv_ship_alive(p.obj, p.otype)) continue;
+        const int m = priv_ship_comm_take(p.obj);
+        if (m < 0) continue;
+        NetworkMessage msg;
+        msg.mutable_priv_crew_comm()->set_player((Bit32u)g_net->self);
+        msg.mutable_priv_crew_comm()->set_id(p.id);
+        msg.mutable_priv_crew_comm()->set_msg((Bit32u)m);
+        for (size_t i = 0; i < g_net->peers.size(); i++) {
+            if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) g_net->peers[i]->conn.send(msg);
+        }
+        wclog(1, "Privateer: crew: our comm message %d for the pilot's %s (its ds:%04X) told to the pilot's game", m, p.cast.c_str(), (unsigned)p.id);
+    }
+    for (size_t i = 0; i < g_net->crewLines.size(); i++) {
+        const std::string &line = g_net->crewLines[i].second;
+        const size_t c = line.find(": ");
+        const std::string name = c == std::string::npos ? "" : line.substr(0, c), text = c == std::string::npos ? line : line.substr(c + 2);
+        bool said = false;
+        for (int k = 0; k < kNpcCap && !said; k++) {
+            NpcPuppet &p = g_net->npcs[k];
+            if (p.used && p.obj && !p.parked && !p.pod && p.seat == 0 && p.id == g_net->crewLines[i].first && priv_ship_alive(p.obj, p.otype)) {
+                said = priv_ship_say(p.obj, name.c_str(), text.c_str(), -1);
+                if (said) priv_let_think(priv_ship_controller(p.obj), kSayThinkFrames);
+            }
+        }
+        wclog(1, "Privateer: crew: the pilot's comm: %s (%s)", line.c_str(), said ? "said here by our copy of that ship" : "its speaker is no ship shown here");
+    }
+    g_net->crewLines.clear();
+}
+
 void priv_session_frame() {
     if (!g_net || g_net->self < 0 || !priv_in_flight()) {
         return;
@@ -2801,6 +2877,7 @@ void priv_session_frame() {
             wclog(2, "Privateer: pilot %d's ship parked (%s)", s + 1, fresh ? "out of reach" : "no reports");
         }
     }
+    if (g_net->crew) crew_comms_frame();
     bolts_gc(now);
     frame_chats_and_shots();
     turns_frame();
@@ -2808,6 +2885,7 @@ void priv_session_frame() {
 }
 
 void priv_session_force_release() { g_forceRelease++; }
+
 
 // A test aid (!privprovoke): a provocation of the nearest encounter ship of another's shown here sent to its owner, as our
 // first hit or taunt of it sends one

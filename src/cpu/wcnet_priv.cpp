@@ -3739,6 +3739,33 @@ Bit32s priv_ship_energy(Bit32s *max) {
     return (Bit32s)mem_readd(e + 0xC);
 }
 
+int priv_ship_comm_take(Bit16u ship) {
+    const Bit16u ctl = ship ? priv_ship_controller(ship) : 0;
+    if (!ctl) return -1;
+    const Bit16u v = priv_r16((Bit16u)(ctl + kCtlComm + 6));
+    if (v == 0xFFFF) return -1;
+    priv_w16((Bit16u)(ctl + kCtlComm + 6), 0xFFFF);
+    return v;
+}
+
+void priv_ship_comm_put(Bit16u ship, int msg) {
+    const Bit16u ctl = ship ? priv_ship_controller(ship) : 0;
+    if (ctl && msg >= 0 && msg < 0xFFFF) priv_w16((Bit16u)(ctl + kCtlComm + 6), (Bit16u)msg);
+}
+
+bool priv_comm_line(Bit16u *speaker, std::string *text) {
+    const Bit16u str = priv_r16((Bit16u)(kComm + 0xC));
+    text->clear();
+    for (int i = 0; str && i < 120; i++) {
+        const Bit8u c = priv_r8((Bit16u)(str + i));
+        if (!c) break;
+        if (c < 32 || c >= 127) { text->clear(); break; }
+        *text += (char)c;
+    }
+    *speaker = priv_r16(kComm);
+    return !text->empty();
+}
+
 bool priv_copy_bolt(Bit16u hitter) {
     return hitter && std::find(g_copyBolts.begin(), g_copyBolts.end(), hitter) != g_copyBolts.end();
 }

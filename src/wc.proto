@@ -693,6 +693,19 @@ message PrivCrewKey {
     optional uint32 player = 1;
     optional uint32 key = 2;
 }
+// A crew's comms.  A crew member's message to a ship of the pilot's game (the comm menu's choice: the number the game
+// puts in that ship's comm record), for the pilot's game to hand to the real ship (reliable); and a line said on the
+// pilot's comm (whoever asked: the pilot or a crew member), for the crew's screens (reliable): the speaker's id in the
+// pilot's game (0: not a ship of its scene) and the line as the game shows it ("NAME: text").
+message PrivCrewComm {
+    optional uint32 player = 1;
+    optional uint32 id = 2;
+    optional uint32 msg = 3;
+}
+message PrivCrewLine {
+    optional uint32 id = 1;
+    optional string text = 2;
+}
 message PrivShot {
     optional uint32 player = 1;
     optional uint32 id = 2;             // the ship that fired, in the sender's game (0: the sender's own ship)
@@ -755,6 +768,8 @@ message NetworkMessage {
     optional PrivCrewShip priv_crew_ship = 48;
     optional PrivTurret priv_turret = 49;
     optional PrivCrewKey priv_crew_key = 50;
+    optional PrivCrewComm priv_crew_comm = 51;
+    optional PrivCrewLine priv_crew_line = 52;
     // Terminal Velocity's (from 60: docs/terminalvelocity.md)
     optional TvHello tv_hello = 60;
     optional TvState tv_state = 61;

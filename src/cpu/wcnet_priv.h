@@ -259,6 +259,12 @@ bool priv_fire_station(int station);
 int priv_ship_power(int kind, int points);
 // The player's ship's guns' energy now and at most (x 256), -1 not known.
 Bit32s priv_ship_energy(Bit32s *max);
+// Comms.  A ship's comm record (its controller's +8) holds the message the player's comm menu chose for it (+6, 0xFFFF
+// none: its pilot's next think takes it, seg096:03FF, and answers): taken out (-1 none), and put in.  And the line on
+// the comm now (ds:67E4: its speaker, its text as shown, "NAME: text"; false: none).
+int priv_ship_comm_take(Bit16u ship);
+void priv_ship_comm_put(Bit16u ship, int msg);
+bool priv_comm_line(Bit16u *speaker, std::string *text);
 // The bolt (or whatever hit) is one of those copies'.
 bool priv_copy_bolt(Bit16u hitter);
 // A key pressed and let go for the game by the layer itself (past the crew's key filter).

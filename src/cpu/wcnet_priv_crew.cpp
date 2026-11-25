@@ -91,6 +91,7 @@ struct Flight {
     Bit16u ship;
     double since, viewAt, jumpAt, landAt, toldAt;
     bool joined, firing, killed;
+    bool seated;                // our turret's view was taken once this flight
     int systemId;
     int seat;                   // the turret we man on this ship (1, 2), 0 none: a passenger
     int bolts;                  // our own bolts in the scene at the last frame
@@ -207,6 +208,7 @@ void priv_file_opening(const char *fullname, Bit8u drive, Bit8u flags) {
         g_phase = PHASE_FLIGHT;
         g_flight.ship = 0;
         g_flight.joined = false;
+        g_flight.seated = false;
         g_flight.shots = 0;
         g_flight.bolts = 0;
         for (int k = 0; k < 3; k++) g_turrets[k].counted = false;
@@ -485,10 +487,13 @@ void gunner_frame(double now) {
     }
     f.seat = seat;
     priv_guns_seat(ship, seat ? seat : -1);
-    if (seat && priv_view() != 3 + seat && now - f.viewAt > 800 && now - f.since > 500) {
+    // (the turret's view at first, and from any view but the cockpit's forward one: the gunner may step there, F1, to
+    // work the comms -- the turret has no comm screen -- and back with its turret's key)
+    if (seat && priv_view() != 3 + seat && (priv_view() != 0 || !f.seated) && now - f.viewAt > 800 && now - f.since > 500) {
         f.viewAt = now;
         priv_tap_key(seat == 1 ? KBD_f5 : KBD_f6);
     }
+    if (seat && priv_view() == 3 + seat) f.seated = true;
     {
         // our volleys, counted by our bolts appearing (the pilot's game shows one for each)
         Bit16u shooters[64];
@@ -674,6 +679,7 @@ bool priv_crew_key(int kbdKey, bool pressed) {
         // the autopilot, the jump, the hold's ejection, the missiles and the afterburner are the pilot's; the view is
         // our turret's (a passenger looks where it likes)
         if (kbdKey >= KBD_f1 && kbdKey <= KBD_f4 && !g_flight.seat) return false;
+        if (kbdKey == KBD_f1 || (g_flight.seat && kbdKey == (g_flight.seat == 1 ? KBD_f5 : KBD_f6))) return false;   // (the comms' seat, and back)
         return true;
     default:
         return false;

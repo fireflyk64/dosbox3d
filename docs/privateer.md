@@ -1594,11 +1594,35 @@ cockpit, the ship's own copy put where the pilot's is, the views F1-F4 its own t
 a turret's mount stays off for everybody: no seat fires it), no missile, no error of the game's.  A Galaxy with one of
 its two turrets: the ship's turrets that are there go to the gunners in order -- the first gunner mans it (whichever
 of the two it is: the game makes it its first, F5), the second rides.
-What a crew member can do for the ship besides shooting, so far: **the shield level** (the game's S: fewer shields
-up, more energy for the guns, and back).  A gunner's or passenger's S is told to the pilot's game (`PrivCrewKey`),
-which presses it: measured, the pilot's shields 300, 200, 100 a quadrant at a guest's two presses, and the guest's
-display follows (its copy's shields are the pilot's reports).  Put to the user as choices, not built: the missiles
-(select, lock and launch from the second seat), the targeting (T and L for the pilot), the tractor beam, the comms.
+**What a crew member does for the ship besides shooting.**
+- *The ship's power* (the user: the game's shield level from a crew seat, tried first, "is too destructive. Can we have
+  toggle like s to rebalance shields to be more even and enter to draw shield energy to guns if guns energy are not
+  full and tab can move gun energy back to shields if shields are not full.  Energy should be conserved").  From any
+  crew seat S makes the four shield quadrants even (their sum kept), Enter moves 10 points from the shields (each
+  quadrant its share) to the guns' energy as far as it has room, Tab 10 points from the guns' energy to the shields
+  (the emptiest quadrant first, as far as they have room): `PrivCrewKey`, done in the pilot's game at its frame
+  (`priv_ship_power`) and on the sender's copy.  Both are kept in the same units (256 to a point): the shields in the
+  damage model (+0x31 + 6q now, +0x10 + 2q each quadrant's size), the guns' pool in the ship's energy object (far at
+  the ship's +0x52, vtable 0x19FA: +0xC now, +0xA its size, 130 points on the Centurion against 300 a quadrant).
+  Measured in the pilot's game, the whole the same before and after every move: a quadrant at 159 of 300 evened to
+  264.8 each; four Enters while the pilot fired, 10 points each into the guns; Tab with the shields full, nothing;
+  Tab with a quadrant down, 10 points into it.  The game's own S, Enter and Tab (its shield level, the missiles, the
+  afterburner) stay the pilot's.
+- *The comms* (the user: "Comms would also be very useful so that either pilot or secondary can run the comms").  The
+  game's comm menu puts its choice, a number, in the target ship's comm record (its controller's +8: +6, 0xFFFF none)
+  and that ship's pilot takes it at its next think (seg096:03FF) and answers (seg013:0951).  A crew member's game
+  shows the pilot's ships as copies whose pilots are held, so the choice stays in the copy's record: taken out each
+  frame and told to the pilot's game (`PrivCrewComm`), which puts it in the real ship's record -- the real pilot
+  answers and acts on it there.  Every line on the pilot's comm, whoever asked, is told to the crew (`PrivCrewLine`),
+  whose copy of that ship says it (`priv_ship_say`: the face on the comm screen, the text on the message bar).  The
+  turret's cockpit has no comm screen: a gunner steps to the cockpit's forward view with F1 (its guns are off there,
+  the stick does nothing) and back with its turret's key.  Measured: the gunner's F1, C, the merchant, message 1 --
+  "a crew member's comm message 1 for ds:B338 (MER_DP): handed to it" in the pilot's game, the merchant's "Good to
+  see a friendly ship." on both, with its face on the gunner's screen; the pilot's own talk with a merchant shown to
+  the gunner the same way.  Not carried: a talk with the base (each game's base is its own object), and a line whose
+  speaker is not shown in the crew member's game (a militia ship far off).
+Put to the user, not built: the missiles (select, lock and launch from the second seat), the targeting (T and L for
+the pilot), the tractor beam.
 
 **Open:** the dealer's gun mounting by a rig (the hardpoint's click); the gunner's picture between the pilot's reports
 (the attitude is not carried on: fine at 28 reports a second on one machine, to be looked at over a real link); a
