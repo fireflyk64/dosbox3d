@@ -69,6 +69,22 @@ def main(a):
         print("an Orion: guns on mounts %s, %d bytes" % (mounts, len(out)))
         open(a[4], "wb").write(out)
         return
+    if a[0] == "turrets":
+        # crewsave.py turrets <in.SAV> <out.SAV> [ids...]: the ship with only those turrets (none: no turret bought)
+        sav = open(a[1], "rb").read()
+        offs = table(sav)
+        k = next(i for i, o in enumerate(offs) if sav[o + 8:o + 12] == b"REAL")
+        real = sav[offs[k]:offs[k + 1]]
+        fite_at, fite_len = find_form(real, b"FITE")
+        keep = bytes(int(x) for x in a[3:])
+        body = b""
+        for t, o, s in chunks(real, fite_at + 12, fite_at + fite_len):
+            if t == b"TRRT":
+                body += chunk(b"TRRT", keep) if keep else b""
+            else:
+                body += real[o:o + 8 + s + (s & 1)]
+        open(a[2], "wb").write(replace_ship(sav, form(b"REAL", form(b"FITE", body))))
+        return
     sav = bytearray(open(a[1], "rb").read())
     real = table(sav)[6]
     g = sav.find(b"GUNS", real)

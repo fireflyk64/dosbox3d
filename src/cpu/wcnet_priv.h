@@ -293,6 +293,9 @@ bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9
 void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire, unsigned shots);
 // A gunner's keys: true, not the game's (the ship is the pilot's to fly).
 bool priv_crew_key(int kbdKey, bool pressed);
+// A crew member's key for the pilot's ship sent to the pilot (1 the shield level); and taken there (pressed for the game).
+void priv_session_crew_key(int key);
+void priv_crew_take_key(int seat, int key);
 // A gunner's control record after the controls were read (seg088:0BBD): no missile is the gunner's to launch.
 void priv_crew_controls(Bit32u rec);
 // A gunner's game spawns no wings (the pilot's does), and nothing hits its copy of the ship (the pilot's game decides).

@@ -1586,6 +1586,20 @@ Seen on the way: a pilot sitting at the title screen tells a base of the title's
 0 of system 58 before the import): a gunner launching then would be taken there.  Not met in play (the pilot is in a
 game by the time anybody launches); left.
 
+**No turret** (the user, 2026-11-25: "what about a ship without a turret or without a bought turret. What happens? can
+we give the user something meaningful to do like rebalancing shields in WC2"; "and what happens on the galaxy if there
+is no turret purchased or the orion").  Measured (`crewsave.py turrets <in> <out> [ids]` makes the saved games): a
+Tarsus, an Orion without its Tail Turret, a Galaxy with neither -- every guest rides as a passenger: in the pilot's
+cockpit, the ship's own copy put where the pilot's is, the views F1-F4 its own to look through, every gun off (a gun on
+a turret's mount stays off for everybody: no seat fires it), no missile, no error of the game's.  A Galaxy with one of
+its two turrets: the ship's turrets that are there go to the gunners in order -- the first gunner mans it (whichever
+of the two it is: the game makes it its first, F5), the second rides.
+What a crew member can do for the ship besides shooting, so far: **the shield level** (the game's S: fewer shields
+up, more energy for the guns, and back).  A gunner's or passenger's S is told to the pilot's game (`PrivCrewKey`),
+which presses it: measured, the pilot's shields 300, 200, 100 a quadrant at a guest's two presses, and the guest's
+display follows (its copy's shields are the pilot's reports).  Put to the user as choices, not built: the missiles
+(select, lock and launch from the second seat), the targeting (T and L for the pilot), the tractor beam, the comms.
+
 **Open:** the dealer's gun mounting by a rig (the hardpoint's click); the gunner's picture between the pilot's reports
 (the attitude is not carried on: fine at 28 reports a second on one machine, to be looked at over a real link); a
 gunner's energy is its own copy's (the pilot's is not taken by the turret); the landing fee (50) of a gunner's

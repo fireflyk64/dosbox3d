@@ -687,6 +687,12 @@ message PrivTurret {
     optional bool fire = 6;
     optional uint32 shots = 7;          // its volleys so far this flight (the pilot's game shows one for each)
 }
+// A crew member's key for the pilot's ship (reliable): what is not flying or shooting but still the ship's business --
+// 1 the shield level (the game's S key: fewer shields up, more energy for the guns, and back).
+message PrivCrewKey {
+    optional uint32 player = 1;
+    optional uint32 key = 2;
+}
 message PrivShot {
     optional uint32 player = 1;
     optional uint32 id = 2;             // the ship that fired, in the sender's game (0: the sender's own ship)
@@ -748,6 +754,7 @@ message NetworkMessage {
     optional PrivPodTaken priv_pod_taken = 47;
     optional PrivCrewShip priv_crew_ship = 48;
     optional PrivTurret priv_turret = 49;
+    optional PrivCrewKey priv_crew_key = 50;
     // Terminal Velocity's (from 60: docs/terminalvelocity.md)
     optional TvHello tv_hello = 60;
     optional TvState tv_state = 61;

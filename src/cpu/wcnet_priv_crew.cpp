@@ -89,6 +89,7 @@ struct Flight {
     double since, viewAt, jumpAt, landAt, toldAt;
     bool joined, firing, killed;
     int systemId;
+    int seat;                   // the turret we man on this ship (1, 2), 0 none: a passenger
     int bolts;                  // our own bolts in the scene at the last frame
     unsigned shots;             // our turret's volleys this flight
 } g_flight;
@@ -470,8 +471,16 @@ void gunner_frame(double now) {
         return;
     }
     // the seat: our turret's guns ours, every other gun off; the view our turret's
-    Bit32s yaw, pitch;
-    const int seat = (g_turret == 1 || g_turret == 2 || rig) && priv_turret(rig ? 1 : g_turret, &yaw, &pitch, NULL) ? (rig ? 1 : g_turret) : 0;
+    // (the ship's turrets that are there, in order, to the gunners in order: a Galaxy with one turret bought gives it
+    // to the first gunner, whichever of its two it is; a gunner with none left rides as a passenger)
+    int seat = 0;
+    {
+        int have[2], n2 = 0;
+        for (int k = 1; k <= 2; k++) if (priv_turret(k, NULL, NULL, NULL)) have[n2++] = k;
+        const int mine = rig ? 0 : g_turret - 1;
+        if (mine >= 0 && mine < n2) seat = have[mine];
+    }
+    f.seat = seat;
     priv_guns_seat(ship, seat ? seat : -1);
     if (seat && priv_view() != 3 + seat && now - f.viewAt > 800 && now - f.since > 500) {
         f.viewAt = now;
@@ -601,9 +610,9 @@ int priv_crew_system_id() {
 
 bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9], bool *fire, unsigned *shots) {
     if (g_role != 2 || !priv_in_flight() || g_ownFlight || !g_flight.joined) return false;
-    if (g_turret < 1 || g_turret > 2 || !priv_turret(g_turret, yaw, pitch, m)) return false;
-    *turret = g_turret;
-    *fire = g_flight.firing && priv_view() == 3 + g_turret;
+    if (g_flight.seat < 1 || !priv_turret(g_flight.seat, yaw, pitch, m)) return false;
+    *turret = g_flight.seat;
+    *fire = g_flight.firing && priv_view() == 3 + g_flight.seat;
     *shots = g_flight.shots;
     return true;
 }
@@ -623,12 +632,18 @@ void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[
 
 bool priv_crew_key(int kbdKey, bool pressed) {
     if (!pressed || priv_tapping() || !priv_in_flight() || g_ownFlight || (g_role != 2 && !rig_gunner())) return false;
+    if (kbdKey == KBD_s && g_role == 2 && g_flight.joined) {
+        // The shield level (S) is the ship's, whoever's hand: told to the pilot's game, which presses it; ours takes it
+        // too (our copy's guns draw on our copy's energy)
+        priv_session_crew_key(1);
+        return false;
+    }
     switch (kbdKey) {
     case KBD_a: case KBD_j: case KBD_x: case KBD_enter: case KBD_tab:
     case KBD_f1: case KBD_f2: case KBD_f3: case KBD_f4: case KBD_f5: case KBD_f6: case KBD_f7: case KBD_f8: case KBD_f9:
         // the autopilot, the jump, the hold's ejection, the missiles and the afterburner are the pilot's; the view is
         // our turret's (a passenger looks where it likes)
-        if (kbdKey >= KBD_f1 && kbdKey <= KBD_f4 && !(g_turret >= 1 && g_turret <= 2 && priv_turret(g_turret, NULL, NULL, NULL))) return false;
+        if (kbdKey >= KBD_f1 && kbdKey <= KBD_f4 && !g_flight.seat) return false;
         return true;
     default:
         return false;
@@ -640,6 +655,14 @@ void priv_crew_controls(Bit32u rec) {
     const Bit8u b = mem_readb(rec + 0x1E);
     g_flight.firing = (b & 0x04) != 0;
     if (b & 0x02) mem_writeb(rec + 0x1E, (Bit8u)(b & ~0x02));       // (no missile is a gunner's to launch)
+}
+
+void priv_crew_take_key(int seat, int key) {
+    if (g_role != 1 || !priv_in_flight()) return;
+    if (key == 1) {
+        priv_tap_key(KBD_s);
+        wclog(1, "Privateer: crew: seat %d set the shield level (S pressed here)", seat + 1);
+    }
 }
 
 bool priv_crew_no_wings() { return g_role == 2; }

@@ -921,7 +921,7 @@ void handle(Peer *p, NetworkMessage &msg) {
             priv_crew_role(g_net->crew ? 2 : 0, g_net->self);
             g_pendingWhy = WHY_HELLO;
             char line[160];
-            if (g_net->crew) snprintf(line, sizeof(line), "Aboard %s's ship: you man turret %d. Launch after your pilot does", p->callsign.c_str(), g_net->self);
+            if (g_net->crew) snprintf(line, sizeof(line), "Aboard %s's ship as its crew: launch after your pilot does", p->callsign.c_str());
             else snprintf(line, sizeof(line), "In %s's room as pilot %d of %d", p->callsign.c_str(), g_net->self + 1, g_net->seats);
             notice(line);
         }
@@ -1038,13 +1038,15 @@ void handle(Peer *p, NetworkMessage &msg) {
             const PrivCrewShip &cs = msg.priv_crew_ship();
             priv_crew_take_ship(cs.file(), (int)cs.hull(), cs.serial());
         }
+    } else if (msg.has_priv_crew_key()) {
+        if (p->hello && g_net->host && g_net->crew && p->player >= 1) priv_crew_take_key(p->player, (int)msg.priv_crew_key().key());
     } else if (msg.has_priv_turret()) {
         if (p->hello && g_net->host && g_net->crew && p->player >= 1) {
             const PrivTurret &t = msg.priv_turret();
             Bit32s m[9] = { 256, 0, 0, 0, 256, 0, 0, 0, 256 };
             for (int i = 0; i < 9 && i < t.m_size(); i++) m[i] = t.m(i);
-            // (a gunner's turret is its seat's: seat 1 the first, seat 2 the second)
-            if ((int)t.turret() == p->player) priv_crew_take_turret(p->player, t.yaw(), t.pitch(), m, t.fire(), t.shots());
+            // (the turret it mans: the ship's first that is there for seat 1, the next for seat 2)
+            priv_crew_take_turret((int)t.turret(), t.yaw(), t.pitch(), m, t.fire(), t.shots());
         }
     } else if (msg.has_chat()) {
         if (!p->hello) {
@@ -2393,6 +2395,16 @@ bool priv_session_allow_wing(int sphereId) {
         return false;
     }
     return true;        // (no owner could be chosen: as alone)
+}
+
+void priv_session_crew_key(int key) {
+    if (!g_net || g_net->self < 1 || !g_net->crew) return;
+    NetworkMessage msg;
+    msg.mutable_priv_crew_key()->set_player((Bit32u)g_net->self);
+    msg.mutable_priv_crew_key()->set_key((Bit32u)key);
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) g_net->peers[i]->conn.send(msg);
+    }
 }
 
 void priv_session_notice(const std::string &text) {
