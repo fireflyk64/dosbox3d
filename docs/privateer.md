@@ -1561,7 +1561,14 @@ behind ours: a tail turret's target), `!privjump[=<system>]`, `!privkillme`, `!p
 flown in a ship file).  Saved games for it were made from the user's OXFORD01.SAV by bytes (the first record's hull
 byte, the REAL form's GUNS and TRRT: a Galaxy with both turrets armed).
 
-**Open:** the page's test of the lobby's choice in two browsers; the gunner's picture between the pilot's reports
+**In the browser** (`scripts/web-priv-crew.sh`: two pages of headless Chrome, a local lobby): the host's page keeps the
+saved game, picks "one ship, crewed" and makes a room of 2; the guest's page shows the choice greyed and is told "PILOT
+flies and you man a turret"; the host's Fly starts both; the guest's new pilot launches after the host from the
+pilot's base in the pilot's Centurion, sits in its turret and fires, and lands with the pilot at Oxford -- the pilot's
+Centurion and the guest's own Tarsus on the same pad (looked at on both screens).  A gunner who launched first was
+taken to the pilot's base and set down, as natively.
+
+**Open:** the gunner's picture between the pilot's reports
 (the attitude is not carried on: fine at 28 reports a second on one machine, to be looked at over a real link); a
 gunner's energy is its own copy's (the pilot's is not taken by the turret); the landing fee (50) of a gunner's
 bounce; Righteous Fire flown as a crew (the same program: not yet run).
