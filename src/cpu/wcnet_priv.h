@@ -228,6 +228,22 @@ void priv_session_event(int why);
 void priv_session_frame();
 bool priv_session_active();
 
+// The crew (wcnet_priv_crew.cpp, docs/privateer.md section 30): DOS's file calls while the program runs -- a file opened
+// or created (its full name on its drive, the handle's entry), read into or written from the caller's buffer, closed.
+// About to open (before the drive is asked: the file may be written first).
+void priv_file_opening(const char *fullname, Bit8u drive, Bit8u flags);
+void priv_file_opened(const char *fullname, Bit16u entry, bool created);
+void priv_file_read(Bit16u entry, Bit8u *data, Bit16u amount);
+void priv_file_written(Bit16u entry, const Bit8u *data, Bit16u amount);
+void priv_file_closed(Bit16u entry);
+// Its tick (from priv_tick).
+void priv_crew_tick();
+// At stub273:0020, the game about to build the base's ship (ovr273:0000).
+void priv_crew_ship_load();
+// We are a gunner of the room's ship (not its pilot).
+bool priv_crew_gunner();
+bool priv_crew_script_item(const std::string &item, double t);
+
 }  // namespace wc
 
 #endif

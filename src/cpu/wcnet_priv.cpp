@@ -98,6 +98,8 @@ enum {
     kControlFire = 0x1E,            // the control record's fire bits: 4 the guns, 2 the launcher
     kShipWeapons = 0x4E,            // a ship's weapons record (far; seg120:0004's first argument)
     kSeg125 = 0x4B2B,
+    kStub273 = 0x6A66,              // stub273's paragraph: the thunks of the overlay that builds the base's ship
+    kShipLoad = 0x0020,             // stub273:0020 -> ovr273:0000 (wcnet_priv_crew.cpp, priv_crew_ship_load)
     kWeaponsUpdate = 0x0158,        // seg125:0158(weapons far, scene, control record far): a ship's guns (and launcher) as its record says
     kScene = 0x66C6,                // the scene (its object list at +8, ds:66CE)
     kPodVtable = 0x1584,            // a cargo pod (CDBRTYPE, made by seg036:0C90 as cargo is expelled or a ship dies)
@@ -1205,6 +1207,7 @@ static bool g_scriptStickOn;                 // !privstick: the page's stick, sa
 static double g_scriptStickX, g_scriptStickY;
 void priv_tick() {
     priv_session_tick();
+    priv_crew_tick();
     priv_hires_tick();
     if (!g_found) {
         return;
@@ -1559,6 +1562,59 @@ static void gun_stress_frame() {
     }
 }
 
+// A ship's guns (the weapons record's list at +0xE: gun_stress_frame's walk), as linear addresses; and the weapons
+// record itself (0: none).  A gun: +0x20 its group, +0x22 its station (0 the pilot's, 1 and 2 the turrets': seg120:00E5
+// fires a gun only when its station is the weapons record's +0x3F, the seat the ship is flown from), +0x35 switched on.
+static PhysPt ship_weapons(Bit16u ship) {
+    const Bit16u woff = priv_r16((Bit16u)(ship + kShipWeapons)), wseg = priv_r16((Bit16u)(ship + kShipWeapons + 2));
+    return wseg ? ((PhysPt)wseg << 4) + woff : 0;
+}
+static int ship_guns(Bit16u ship, PhysPt out[], int cap) {
+    const PhysPt w = ship_weapons(ship);
+    if (!w) return 0;
+    Bit16u noff = 0, nseg = 0;
+    if (mem_readw_checked(w + 0xE + 2, &noff) || mem_readw_checked(w + 0xE + 4, &nseg)) return 0;
+    int n = 0;
+    for (int k = 0; nseg && k < 16 && n < cap; k++) {
+        const PhysPt node = ((PhysPt)nseg << 4) + noff;
+        Bit16u goff = 0, gseg = 0;
+        if (mem_readw_checked(node + 4, &goff) || mem_readw_checked(node + 6, &gseg)) break;
+        if (gseg) out[n++] = ((PhysPt)gseg << 4) + goff;
+        if (mem_readw_checked(node, &noff) || mem_readw_checked(node + 2, &nseg)) break;
+    }
+    return n;
+}
+bool g_gunsDump;
+// !privguns: our ship's guns (group, station, switched on, the time since its shot, its delay, its energy), the seat the
+// weapons are fired from, the view, and the turrets
+static void guns_dump_frame() {
+    if (!g_gunsDump) return;
+    g_gunsDump = false;
+    const double t = PIC_FullIndex() / 1000.0;
+    const Bit16u ship = priv_r16(kPlayerShip);
+    PhysPt guns[16];
+    const int n = ship ? ship_guns(ship, guns, 16) : 0;
+    const PhysPt w = ship ? ship_weapons(ship) : 0;
+    wclog(1, "Privateer: guns %.1f: ship ds:%04X, %d guns, the weapons' seat %d, view %d, turrets ds:%04X ds:%04X", t, ship, n,
+          w ? mem_readb(w + 0x3F) : -1, priv_r8(0x143C), priv_r16(0x143D), priv_r16(0x143F));
+    for (int i = 0; i < n; i++) {
+        char name[9] = "";
+        for (int k = 0; k < 8; k++) { const Bit8u c = mem_readb(guns[i] + 8 + k); name[k] = (c >= 32 && c < 127) ? c : 0; name[k + 1] = 0; if (!c) break; }
+        wclog(1, "Privateer: guns %.1f:   gun %d %s: mount %d, group %d, station %d, on %d, since %d of %d, energy %d", t, i, name, mem_readb(guns[i] + 0x21),
+              mem_readb(guns[i] + 0x20), mem_readb(guns[i] + 0x22), mem_readb(guns[i] + 0x35), (int)mem_readd(guns[i] + 0x2F), (int)mem_readd(guns[i] + 0x2B),
+              (Bit16s)mem_readw(guns[i] + 0x33));
+    }
+    for (int k = 0; k < 2; k++) {
+        const Bit16u tu = priv_r16((Bit16u)(0x143D + 2 * k));
+        if (!tu) continue;
+        char hex[3 * 0x50 + 1];
+        for (int j = 0; j < 0x50; j++) snprintf(hex + 3 * j, 4, "%02X ", priv_r8((Bit16u)(tu + j)));
+        wclog(1, "Privateer: guns %.1f:   turret %d ds:%04X: %s", t, k + 1, tu, hex);
+    }
+    Bit16u bolts[64];
+    wclog(1, "Privateer: guns %.1f:   %d bolts in the scene", t, priv_scene_bolt_shooters(bolts, 64));
+}
+
 static bool fire_record(Bit16u obj, PhysPt *rec);
 enum { kFireGroupBits = 0x78 };     // (the record's +0x1E bits 3-6: gun groups 0-3)
 // The flight reads every input device once a frame (seg108:0028 -> seg133:008E), and the game port's turn
@@ -1644,6 +1700,7 @@ bool priv_check_hooks(Bit32u ip) {
             brain_dump_frame();
             plan_dump_frame();
             dmg_dump_frame();
+            guns_dump_frame();
             stack_paint_frame();
             gun_stress_frame();
             turn_step();
@@ -1652,6 +1709,10 @@ bool priv_check_hooks(Bit32u ip) {
             priv_session_frame();       // (once a frame in flight: the puppets placed, our state sent)
         }
         run_calls();
+        return true;
+    }
+    if (ip == kShipLoad && codeSeg == (Bit16u)(g_privLoadSeg + kStub273)) {
+        priv_crew_ship_load();
         return true;
     }
     if (ip == kDeathEject && codeSeg == (Bit16u)(g_privLoadSeg + kSeg053)) {
@@ -1801,6 +1862,7 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kDeathSound);
     watch(kHitPlace);
     watch(kFireGuns);
+    watch(kShipLoad);
     const std::vector<WatchPlace> &w = watch_places();
     for (size_t i = 0; i < w.size(); i++) {
         watch(w[i].off);
@@ -1814,6 +1876,7 @@ static bool far_of(Bit16u at, PhysPt *out);
 static bool far_at(PhysPt at, PhysPt *out);
 
 bool priv_script_item(const std::string &item, double t) {
+    if (priv_crew_script_item(item, t)) return true;
     if (item.compare(0, 8, "!privds=") == 0 && g_found) {
         const char *dir = getenv("WCNET_DUMP_DIR");
         std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(8) + ".ds";
@@ -2132,6 +2195,10 @@ bool priv_script_item(const std::string &item, double t) {
         const bool queued = item[10] == '1' && priv_ship_fire_guns(ship, 0x18);
         if (item[10] != '1') priv_ship_fire(ship, false);
         wclog(1, "key script %.1fs: ds:%04X %s", t, ship, item[10] == '1' ? (queued ? "fires" : "cannot fire") : "fire bit let go");
+        return true;
+    }
+    if (item.compare(0, 9, "!privguns") == 0 && g_found) {
+        g_gunsDump = true;      // (at the next frame: the weapons are far data)
         return true;
     }
     if (item.compare(0, 12, "!privprovoke") == 0 && g_found) {

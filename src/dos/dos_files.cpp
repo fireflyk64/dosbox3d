@@ -27,6 +27,7 @@
 #include "mem.h"
 #include "regs.h"
 #include "../cpu/wcnet_tie.h"
+#include "../cpu/wcnet_priv.h"
 #include "dos_inc.h"
 #include "drives.h"
 #include "cross.h"
@@ -385,6 +386,7 @@ bool DOS_ReadFile(Bit16u entry,Bit8u * data,Bit16u * amount) {
 	Bit16u toread=*amount;
 	bool ret=Files[handle]->Read(data,&toread);
 	*amount=toread;
+	if (ret) wc::priv_file_read(entry,data,toread);	// (Privateer's crew: the pilot's ship read in the gunner's game, wcnet_priv_crew.cpp)
 	return ret;
 }
 
@@ -407,6 +409,7 @@ bool DOS_WriteFile(Bit16u entry,Bit8u * data,Bit16u * amount) {
 	Bit16u towrite=*amount;
 	bool ret=Files[handle]->Write(data,&towrite);
 	*amount=towrite;
+	if (ret) wc::priv_file_written(entry,data,towrite);
 	return ret;
 }
 
@@ -436,6 +439,7 @@ bool DOS_CloseFile(Bit16u entry) {
 	if (Files[handle]->IsOpen()) {
 		Files[handle]->Close();
 	}
+	wc::priv_file_closed(entry);
 	DOS_PSP psp(dos.psp());
 	psp.SetFileHandle(entry,0xff);
 	if (Files[handle]->RemoveRef()<=0) {
@@ -512,6 +516,7 @@ bool DOS_CreateFile(char const * name,Bit16u attributes,Bit16u * entry) {
 		Files[handle]->SetDrive(drive);
 		Files[handle]->AddRef();
 		psp.SetFileHandle(*entry,handle);
+		wc::priv_file_opened(fullname,*entry,true);
 		return true;
 	} else {
 		if(!PathExists(name)) DOS_SetError(DOSERR_PATH_NOT_FOUND); 
@@ -547,7 +552,8 @@ bool DOS_OpenFile(char const * name,Bit8u flags,Bit16u * entry) {
 	char fullname[DOS_PATHLENGTH];Bit8u drive;Bit8u i;
 	/* First check if the name is correct */
 	if (!DOS_MakeName(name,fullname,&drive)) return false;
-	wc::tie_voice_open(fullname,&drive);	// (TIE Fighter's Z-95 challenge: its own voices' bank, wcnet_tie_voice.cpp)
+	wc::tie_voice_open(fullname,&drive);
+	wc::priv_file_opening(fullname,drive,flags);	// (Privateer's crew: the pilot's ship for a gunner's flight, wcnet_priv_crew.cpp)	// (TIE Fighter's Z-95 challenge: its own voices' bank, wcnet_tie_voice.cpp)
 	Bit8u handle=255;		
 	/* Check for a free file handle */
 	for (i=0;i<DOS_FILES;i++) {
@@ -577,6 +583,7 @@ bool DOS_OpenFile(char const * name,Bit8u flags,Bit16u * entry) {
 	if (exists || device ) { 
 		Files[handle]->AddRef();
 		psp.SetFileHandle(*entry,handle);
+		if (!device) wc::priv_file_opened(fullname,*entry,false);
 		return true;
 	} else {
 		//Test if file exists, but opened in read-write mode (and writeprotected)
