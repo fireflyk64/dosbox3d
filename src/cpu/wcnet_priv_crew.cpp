@@ -89,13 +89,18 @@ struct Flight {
     double since, viewAt, jumpAt, landAt, toldAt;
     bool joined, firing, killed;
     int systemId;
+    int bolts;                  // our own bolts in the scene at the last frame
+    unsigned shots;             // our turret's volleys this flight
 } g_flight;
 // The gunners' turrets as their games tell them (the pilot's side).
 struct TurretNow {
     double at;
     Bit32s yaw, pitch, m[9];
     bool fire;
+    unsigned shots, shown;      // its volleys as it counts them, and those shown here
+    bool counted;
 } g_turrets[3];
+int g_turretTurn;
 
 bool read_whole(Bit8u drive, const char *fullname, std::vector<Bit8u> &out) {
     DOS_File *f = NULL;
@@ -198,6 +203,9 @@ void priv_file_opening(const char *fullname, Bit8u drive, Bit8u flags) {
         g_phase = PHASE_FLIGHT;
         g_flight.ship = 0;
         g_flight.joined = false;
+        g_flight.shots = 0;
+        g_flight.bolts = 0;
+        for (int k = 0; k < 3; k++) g_turrets[k].counted = false;
         if (g_role == 1) {
             // (the pilot's: our ship as the game has just written it, for the gunners' flights)
             if (read_whole(drive, fullname, g_mine.file)) {
@@ -469,6 +477,15 @@ void gunner_frame(double now) {
         f.viewAt = now;
         priv_tap_key(seat == 1 ? KBD_f5 : KBD_f6);
     }
+    {
+        // our volleys, counted by our bolts appearing (the pilot's game shows one for each)
+        Bit16u shooters[64];
+        const int nb = priv_scene_bolt_shooters(shooters, 64);
+        int mine = 0;
+        for (int i = 0; i < nb; i++) mine += shooters[i] == ship;
+        if (mine > f.bolts) f.shots++;
+        f.bolts = mine;
+    }
     const PilotNow &p = g_pilotNow;
     if (rig || !p.known) return;
     if (p.destroyed) {
@@ -525,11 +542,17 @@ void pilot_frame(double now) {
         g_way.path.push_back(id);
         priv_session_event(6);      // (told at once: the gunners follow)
     }
-    for (int k = 1; k <= 2; k++) {
+    for (int i = 0; i < 2; i++) {
+        // (the two turrets in turn: one shot of ours is made a frame)
+        const int k = 1 + (g_turretTurn + i) % 2;
         TurretNow &t = g_turrets[k];
         if (now - t.at > 400 || now < t.at) continue;
         if (priv_view() != 3 + k) priv_turret_set(k, t.yaw, t.pitch, t.m);      // (not while the pilot sits in it)
-        if (t.fire && now - t.at < 250) priv_fire_station(k);
+        if (t.shots - t.shown > 3) t.shown = t.shots - 3;                       // (a burst of reports lost: no catching up)
+        if (t.shots != t.shown && priv_fire_station(k)) {
+            t.shown++;
+            g_turretTurn = k % 2;
+        }
     }
 }
 
@@ -576,15 +599,16 @@ int priv_crew_system_id() {
     return priv_in_flight() ? g_flight.systemId : 0;        // (as the last frame read it)
 }
 
-bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9], bool *fire) {
+bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9], bool *fire, unsigned *shots) {
     if (g_role != 2 || !priv_in_flight() || g_ownFlight || !g_flight.joined) return false;
     if (g_turret < 1 || g_turret > 2 || !priv_turret(g_turret, yaw, pitch, m)) return false;
     *turret = g_turret;
     *fire = g_flight.firing && priv_view() == 3 + g_turret;
+    *shots = g_flight.shots;
     return true;
 }
 
-void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire) {
+void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire, unsigned shots) {
     if (g_role != 1 || turret < 1 || turret > 2) return;
     TurretNow &t = g_turrets[turret];
     t.at = PIC_FullIndex();
@@ -592,6 +616,9 @@ void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[
     t.pitch = pitch;
     for (int i = 0; i < 9; i++) t.m[i] = m[i];
     t.fire = fire;
+    if (!t.counted || shots < t.shots) t.shown = shots;     // (the first word of a flight: nothing to show yet)
+    t.counted = true;
+    t.shots = shots;
 }
 
 bool priv_crew_key(int kbdKey, bool pressed) {

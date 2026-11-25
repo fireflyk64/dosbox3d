@@ -3580,6 +3580,7 @@ void station_shot_before(int tag) {
         if (mem_readb(guns[i] + kGunStation) == s.station) {
             mem_writeb(guns[i] + kGunOn, 1);
             mem_writew(guns[i] + kGunEnergy, 0);
+            mem_writed(guns[i] + 0x2F, mem_readd(guns[i] + 0x2B));      // (ready: the gunner's game timed the shot)
         }
     }
     s.nBefore = all_bolts(s.before, 96);

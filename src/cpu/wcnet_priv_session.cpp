@@ -1044,7 +1044,7 @@ void handle(Peer *p, NetworkMessage &msg) {
             Bit32s m[9] = { 256, 0, 0, 0, 256, 0, 0, 0, 256 };
             for (int i = 0; i < 9 && i < t.m_size(); i++) m[i] = t.m(i);
             // (a gunner's turret is its seat's: seat 1 the first, seat 2 the second)
-            if ((int)t.turret() == p->player) priv_crew_take_turret(p->player, t.yaw(), t.pitch(), m, t.fire());
+            if ((int)t.turret() == p->player) priv_crew_take_turret(p->player, t.yaw(), t.pitch(), m, t.fire(), t.shots());
         }
     } else if (msg.has_chat()) {
         if (!p->hello) {
@@ -2714,7 +2714,8 @@ void priv_session_frame() {
             int turret = 0;
             Bit32s yaw = 0, pitch = 0, m[9];
             bool fire = false;
-            if (priv_crew_turret_report(&turret, &yaw, &pitch, m, &fire)) {
+            unsigned shots = 0;
+            if (priv_crew_turret_report(&turret, &yaw, &pitch, m, &fire, &shots)) {
                 g_net->turretAt = now;
                 NetworkMessage msg;
                 PrivTurret *t = msg.mutable_priv_turret();
@@ -2724,6 +2725,7 @@ void priv_session_frame() {
                 t->set_pitch(pitch);
                 for (int i = 0; i < 9; i++) t->add_m(m[i]);
                 t->set_fire(fire);
+                t->set_shots(shots);
                 for (size_t i = 0; i < g_net->peers.size(); i++) {
                     if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) g_net->peers[i]->conn.send_best_effort(msg);
                 }

@@ -289,8 +289,8 @@ void priv_crew_pilot_state(const std::string &system, const double pos[3], const
 // Once a frame in flight (before the session's): a gunner's ship put where the pilot's is, its view and guns its turret's.
 void priv_crew_frame();
 // A gunner's turret to tell the pilot (false: nothing to tell now), and told (the pilot's side: seat, turret...).
-bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9], bool *fire);
-void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire);
+bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9], bool *fire, unsigned *shots);
+void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire, unsigned shots);
 // A gunner's keys: true, not the game's (the ship is the pilot's to fly).
 bool priv_crew_key(int kbdKey, bool pressed);
 // A gunner's control record after the controls were read (seg088:0BBD): no missile is the gunner's to launch.

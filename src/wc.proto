@@ -685,6 +685,7 @@ message PrivTurret {
     optional sint32 pitch = 4;
     repeated sint32 m = 5 [packed = true];
     optional bool fire = 6;
+    optional uint32 shots = 7;          // its volleys so far this flight (the pilot's game shows one for each)
 }
 message PrivShot {
     optional uint32 player = 1;

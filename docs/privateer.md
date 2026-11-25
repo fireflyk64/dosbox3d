@@ -1472,3 +1472,96 @@ emulated CPU's cs:ip noted at each periodic call (every 1,000 instructions under
 segment; Chrome's own profiler through CDP (the page's wasm has its functions' names).  A rig's trap: runs of one
 scene differ by tens in 100 with where the planet ends up (the turn is a held key), so levels are compared within one
 flight (the ` key), never between flights.
+
+## 30. One ship, crewed: the guests in the host's turrets (2026-11-24)
+
+The user: "Wc2 has the ability for a secondary pilot to fly in a turret. I would love to launch privateer in a different
+mode where player two (for Orion) or three (for galaxy) flies in the turret of the associated ship. Since the turrets
+don't have ai adding the second player adds real value to the pilot. And it makes the idea of a team working on a
+galaxy palatable. In this mode the secondary player ideally visits the same planets as the main character. They can
+talk to bartenders etc and have money they can spend. But they are effectively inert. Then when the player launches
+they can also click launch to join as the turret. This clearly should have the same shared high Rez code but the net
+code may look different. It needs to work across jump and landing and auto."  And: "Ideally a game mode set in the
+lobby"; "if the turret has different gunnery (eg mass driver + tachyon) does the gunner get access and see that exact
+complement of bolts" (yes: below).
+
+**The room.**  The host's choice in the lobby, the page's Ships menu (Privateer's rooms only): "everyone their own"
+(sections 7-18) or "one ship, crewed" (`lobby.privCrew`, told in the lobby's hello and start as the other host's
+choices are; `WCPRIVCREW=1` for the emulator, whose hello tells the guests: `PrivHello.crew`).  The host is the pilot;
+seat 1 mans turret 1 and seat 2 turret 2 (the game's F5 and F6: the Orion's and the Centurion's tail turret, the
+Galaxy's two), three seats at most.  A guest whose turret the ship does not have rides as a passenger (any view, no
+guns).  Everybody keeps their own game: their own pilot, saved games, money, bases' screens.
+
+**What the game has** (found for this: the turrets were never looked at before).
+
+| place | what |
+|---|---|
+| ds:143C | the view: 0 forward, 1 and 2 the sides, 3 back, 4 and 5 turrets 1 and 2 (F1-F6; seg038) |
+| ds:143D, ds:143F | the player's ship's two turrets (near pointers, 0 none): +4 its attitude within the ship (3x3 int32), +0x28 its place, +0x34 / +0x38 its yaw and pitch (256 a degree, limits at +0x3C..+0x48: 60 degrees each way on the Centurion's), +0x4C its turn rate (90 degrees a second), +0x4E it is there |
+| ovr394:0295 | a turret turned from the control record's yaw and pitch while its view is on (the ship then does not answer the stick: measured, its attitude unchanged) |
+| weapons +0x3F | the seat the ship's guns are fired from (seg125:024B, from the view by the ship's vtable +0x4C): 0 the pilot's, 1 and 2 the turrets' |
+| a gun +0x20 / +0x22 / +0x35 | its group, its station (0, 1, 2), switched on (the G key, for the seat's guns): seg120:0004 fires a gun only when it is on and its station is the weapons' seat |
+| ds:655E | the hull the player owns: 0 Tarsus, 1 Orion, 2 Centurion, 3 Galaxy (beside the credits at ds:655A) |
+| ds:6556, ds:6557 | where the game is: the base and its system (QUADRANT.IFF's id), written by a landing, read by a launch |
+| PLAYTYPE.IFF | the player's ship (an IFF FORM REAL: guns with their mounts, launchers, missiles, shields, armour, the hold, the credits, the jump drive, `TRRT` the turrets): written by the game at every launch, read back at once by the flight (seg111, the type "PLAYTYPE") |
+| stub273:0020 -> ovr273:0000 | `(base ship near, hull, flight records far)`: the base's ship built -- from PLAYTYPE.IFF when the records are 0 (a new pilot, a loaded game: ovr269:4B05), from the ship just flown at a landing (ovr269:49F0: guns, shields, armour, hold and credits from the flight's objects; the file only opened) |
+
+**A gunner's launch** (src/cpu/wcnet_priv_crew.cpp; DOS's file calls are followed for it, `priv_file_*` from
+src/dos/dos_files.cpp).  The pilot's game tells its ship at every launch (`PrivCrewShip`: the file's bytes as the
+game wrote them, and the hull byte) and where it is (`PrivPresence`: `base`, `base_system`, and `path`, the systems
+flown through since the launch).  When a gunner clicks Launch while the pilot flies:
+- as the game begins to write its own PLAYTYPE.IFF the hull byte becomes the pilot's (later -- at the flight's read of
+  the file, or at the score's read before it -- is the game's error 6482) and the two bytes of where the game is
+  become the pilot's base's (a new pilot's game at Achilles in Troy launched over Oxford with Oxford's two: measured);
+- before the flight reads the file back, the gunner's own file is read and kept and the pilot's written over it.
+So the flight is flown in the pilot's ship exactly -- its hull and cockpit, every gun on its mount (a turret of a mass
+driver and a tachyon cannon: the gunner's game lists those two, fires both, and its hits arrive in the pilot's game as
+26 and 50, measured), its shields, its jump drive and fuel -- from the pilot's base.
+At the landing the game would make the base's ship from the ship just flown: the gunner would own a copy of the
+pilot's ship, hold and credits.  At stub273:0020 the call is turned into the other kind: the gunner's own file
+written back over PLAYTYPE.IFF, the hull argument and the hull byte its own, the records 0.  Measured: a new pilot's
+Tarsus game flew the Centurion twice and had its Tarsus and its credits after each landing (2,000, 1,950, 1,900: the
+landing fees), no error of the game's.  (Tried first and wrong: the hull byte or the file put back at the landing's
+read of the file, the game's error 7022; the file alone, and the base had the Centurion, the pilot's 189,137
+credits and its cargo.)
+
+**In flight** (`gunner_frame`, once a frame before the session's): the gunner's copy of the ship is put where the
+pilot's state says (`PrivState`, sent every frame while a gunner flies, carried on by its velocity for a quarter of a
+second at most), with its shields and armour; its view is kept its turret's (F5 or F6 pressed for it; the other view
+keys, the autopilot, the jump, the hold's ejection, the missiles and the afterburner are not a gunner's: its keys are
+filtered, its record's launcher bit cleared); its turret's guns are on and every other gun off.  The turret is turned
+and fired by the game itself, from the gunner's stick and trigger.  Nothing hits the copy (the pilot's game decides
+what hits the ship); a gunner's game spawns no wings (`priv_session_allow_wing`): the world is the pilot's, shown by
+the scene reports of section 9, and a gunner's hit on a ship of it goes to the pilot's game as any guest's (section
+10).  Measured: the two games' places of the ship within 2-7 m (a frame at 250 kps); a pirate kept 250 m behind the
+ship destroyed in the pilot's game by the gunner's neutron guns (62 a hit).
+- **Autopilot:** the pilot's alone; the copy follows the pilot's state to the new place (both at Nav 0 within 2 m).
+- **Jumps:** when the pilot's system is another, the gunner's ship is put at the jump point of its own system that
+  leads to the next system of the pilot's way and J is pressed: the game's own jump (Oxford, Saxtogue, New Detroit:
+  the gunner arrived some 4 s after the pilot each time).  The same way takes a gunner who launches late after a
+  pilot already systems away.  (A jump point's destination is its own: the sphere record's byte written made no
+  difference, which is why the launch begins at the pilot's base instead.)
+- **Landing:** the pilot at a base, the gunner's ship is put at the nearest base and the game lands it.
+- **The pilot's ship destroyed:** the gunner's is too (its game's own death).
+- **Launching before the pilot** (or while the pilot sits at another base): no flight of a gunner's -- the launch
+  begins at the pilot's base in the gunner's own ship and is landed there at once ("Your pilot has not launched").
+  So a gunner's Launch always takes it to its pilot: into the turret, or to the pilot's base.
+
+**The gunner's fire in the pilot's game.**  The gunner tells its turret's angles and attitude and its volleys
+(`PrivTurret`, 15 a second: `shots` counted by its own bolts appearing); the pilot's game turns that turret of its own
+ship and, for every volley, calls the game's gun routine with the weapons' seat that turret's for the call, its guns
+on, ready and free (`priv_fire_station`: the gunner's game took the energy from its copy).  Those bolts are pictures
+(`priv_copy_bolt`: their hits do nothing); both turrets of the Galaxy in turn.
+
+**The rig:** `scripts/privtests/crew.sh` (the host loads a saved game, the guests register new pilots in Troy and
+launch after it; `PLAYERS=3 SAVE=<a Galaxy's>` for two gunners; `GUNNER_AT=30 PILOT_AT=75` the early launch).  Aids:
+`!privguns` (every gun's station and state, the turrets), `!privtail=<m>:<s>` (the last spawned ship kept straight
+behind ours: a tail turret's target), `!privjump[=<system>]`, `!privkillme`, `!privr8` / `!privw8` / `!privfar`,
+`PRIVFILELOG=1` (the game's files, with who opens PLAYTYPE.IFF), `PRIVCREWTYPE=<file>:<hull>` (one machine alone
+flown in a ship file).  Saved games for it were made from the user's OXFORD01.SAV by bytes (the first record's hull
+byte, the REAL form's GUNS and TRRT: a Galaxy with both turrets armed).
+
+**Open:** the page's test of the lobby's choice in two browsers; the gunner's picture between the pilot's reports
+(the attitude is not carried on: fine at 28 reports a second on one machine, to be looked at over a real link); a
+gunner's energy is its own copy's (the pilot's is not taken by the turret); the landing fee (50) of a gunner's
+bounce; Righteous Fire flown as a crew (the same program: not yet run).
