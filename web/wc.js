@@ -710,6 +710,7 @@ const isArmada = () => source?.game.id === "armada" || source?.game.id === "arma
 // A room's seats at most: 3, or as many as the game's registry entry allows (`maxSeats`: Privateer's rooms of up to 8,
 // each pilot flying its own career: docs/privateer.md).
 const maxSeats = () => (gameInfo() && gameInfo().maxSeats) || 3;
+const PRIV_CREWS = ["own", "crew"];
 const minSeats = () => (gameInfo() && gameInfo().minSeats) || 1;
 // (the terrain branch's playtest copy at /terrain/ keeps its own: its RetroVega's saved game is another version's,
 // and the site's storage is shared with /dosbox)
@@ -1097,7 +1098,10 @@ function renderMission() {
   $("privMouseLabel").hidden = !isPriv() && !isArmada();
   $("privMouseLabel").title = isArmada() ? ARM_MOUSE_TITLE : PRIV_MOUSE_TITLE;
   $("armHiresLabel").hidden = !isArmada();
-  $("privFFLabel").hidden = !isPriv() || one;
+  $("privFFLabel").hidden = !isPriv() || one || lobby.privCrew === "crew";     // (one ship: nobody to hit)
+  $("privCrewLabel").hidden = !isPriv() || one;
+  $("privCrew").value = lobby.privCrew;
+  $("privCrew").disabled = !isHost() || running;
   $("privFF").disabled = !isHost();       // (the host's counts, as Collide's)
   // (Terminal Velocity: the craft each pilot flies as in the others' games, the host's choice)
   $("tvCraftLabel").hidden = $("tvCraftGuestLabel").hidden = !isTvRoom() || one;
@@ -1189,6 +1193,9 @@ const lobby = { game: null, names: new Map(), links: new Map(), flying: new Set(
                 // a game's difficulty (its registry's `difficulty`: RetroVega's), "easy", "medium" or "hard": the
                 // host's, as its own game has it (the settings file the game and the menu both write)
                 difficulty: "medium",
+                // Privateer's room: "own" (everybody flies their own ship) or "crew" (the host flies, the others man
+                // its ship's turrets: docs/privateer.md section 30): the host's choice
+                privCrew: "own",
                 // the exchange mode, "low" (the default) or "high" latency, or
                 // "auto" (the host's game measures the connection and picks,
                 // which proved disruptive in play): the host's choice
@@ -1223,7 +1230,8 @@ function soloGame(code) {
 const ROOM_HINT = $("lobbyHint").textContent;
 const SOLO_HINT = "A room of one, on this page alone: nobody else comes in. Leave it and join a room with Players at 2 or 3 to fly with company.";
 // The seats of a room this page makes: 1, 2 (the default) or 3; a game's registry may allow more (maxSeats).
-const seatCount = () => Math.min(maxSeats(), Math.max(minSeats(), Math.round(Number($("seats").value)) || 2));
+// (Privateer's one ship, crewed: the pilot and a gunner a turret, 3 at most)
+const seatCount = () => Math.min(isPriv() && lobby.privCrew === "crew" ? 3 : maxSeats(), Math.max(minSeats(), Math.round(Number($("seats").value)) || 2));
 // A phone or a tablet makes a room of one to begin with (the user, 2026-11-03,
 // after a host on a phone was dropped at random: "default the number of
 // people per room in mobile to 1..that way mobile players can try the game
@@ -1281,6 +1289,7 @@ const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: 
   game: source ? source.game.id : "", voice: voice.choice(),
   mission: isHost() ? missionKey(lobby.mission) : undefined, rocks: isHost() ? lobby.rocks : undefined,
   wingBumps: isHost() ? lobby.wingBumps : undefined, difficulty: isHost() ? lobby.difficulty : undefined,
+  privCrew: isHost() && isPriv() ? lobby.privCrew : undefined,
   latency: isHost() ? lobby.latency : undefined, fps: isHost() ? lobby.fps : undefined,
   capHull: isHost() ? lobby.capHull : undefined, private: isHost() ? privateOn() : undefined, ...buildFields() }, to);
 
@@ -1678,6 +1687,16 @@ function onLobbyEvent(ev) {
           chatLine(`${esc(m.name)} set the difficulty ${lobby.difficulty}`, "sys");
           renderMission();
         }
+        // (a host's hello without the word -- another game's, an older page's -- is everyone their own)
+        if (ev.from === 0 && !isHost() && (PRIV_CREWS.includes(m.privCrew) ? m.privCrew : "own") !== lobby.privCrew) {
+          lobby.privCrew = PRIV_CREWS.includes(m.privCrew) ? m.privCrew : "own";
+          // (said when the host's word changes; "their own" only after a "crewed": a guest's own last room as a host
+          // may have been one, which is no news of this room)
+          if (lobby.privCrew === "crew") chatLine(`${esc(m.name)} set the room to one ship, crewed: ${esc(m.name)} flies and you man a turret. Launch after ${esc(m.name)} does.`, "sys");
+          else if (lobby.privCrewTold) chatLine(`${esc(m.name)} set the room to everyone their own ship.`, "sys");
+          lobby.privCrewTold = lobby.privCrew === "crew";
+          renderMission();
+        }
         if (ev.from === 0 && !isHost() && typeof m.latency === "string" && latencyMode(m.latency) !== lobby.latency) {
           lobby.latency = latencyMode(m.latency);
           chatLine(`${esc(m.name)} set ${latencyLabel(lobby.latency)}`, "sys");
@@ -1709,6 +1728,7 @@ function onLobbyEvent(ev) {
         if (typeof m.latency === "string") lobby.latency = latencyMode(m.latency);
         if (typeof m.fps === "number") lobby.fps = fpsValue(m.fps);
         if (typeof m.capHull === "boolean") lobby.capHull = m.capHull;
+        if (PRIV_CREWS.includes(m.privCrew)) lobby.privCrew = m.privCrew;
         renderMission();
         chatLine(`${esc(lobby.names.get(0) || "The host")} started ${esc(missionLabel(lobby.mission))}`, "sys");
         lobby.flying.add(0); renderRoster();
@@ -2257,7 +2277,7 @@ buildMissionMenu();
 $("fly").addEventListener("click", () => {
   if (!source || !lobby.game || running || $("fly").disabled) return;
   if (isHost()) for (const [seat, rel] of lobby.builds) if (rel !== "same") chatLine(`${esc(lobby.names.get(seat) || `Player ${seat + 1}`)} won't fly along (${rel === "site" ? "another page" : rel === "newer" ? "this page is out of date" : "their page is out of date"}).`, "sys");
-  if (isHost()) sendLobby({ t: "start", game: source.game.id, mission: missionKey(lobby.mission), rocks: lobby.rocks, wingBumps: lobby.wingBumps, latency: lobby.latency, fps: lobby.fps, capHull: lobby.capHull });
+  if (isHost()) sendLobby({ t: "start", game: source.game.id, mission: missionKey(lobby.mission), rocks: lobby.rocks, wingBumps: lobby.wingBumps, latency: lobby.latency, fps: lobby.fps, capHull: lobby.capHull, privCrew: isPriv() ? lobby.privCrew : undefined });
   void start(true);
 });
 // Fly Alone: the empty room left for a room of one of the same code (soloGame: no lobby server, nobody can
@@ -2401,6 +2421,23 @@ $("armHires").addEventListener("change", () => {
   try { localStorage.setItem(ARM_HIRES_KEY, $("armHires").checked ? "1" : "0"); } catch (e) { /* not kept */ }
   const M = running && window.DOSBox;
   if (M && M._wc_web_arm_hires && isArmada()) M._wc_web_arm_hires(armHiresLevel());
+});
+// Privateer's room, the host's choice (src/cpu/wcnet_priv_session.cpp, crew_from_env; docs/privateer.md section 30; the
+// user, 2026-11-24: "launch privateer in a different mode where player two (for Orion) or three (for galaxy) flies in
+// the turret of the associated ship", "a game mode set in the lobby"): everybody their own ship, or the host's ship
+// with the others in its turrets.  The host's last choice is this browser's next room's.
+const PRIV_CREW_KEY = "wc:privCrew";
+try { const v = localStorage.getItem(PRIV_CREW_KEY); if (PRIV_CREWS.includes(v)) lobby.privCrew = v; } catch (e) { /* the first */ }
+$("privCrew").addEventListener("change", () => {
+  if (!isHost()) { $("privCrew").value = lobby.privCrew; return; }
+  lobby.privCrew = PRIV_CREWS.includes($("privCrew").value) ? $("privCrew").value : "own";
+  try { localStorage.setItem(PRIV_CREW_KEY, lobby.privCrew); } catch (e) { /* not kept */ }
+  if (lobby.game) {
+    chatLine(lobby.privCrew === "crew" ? "One ship, crewed: you fly, the others man your turrets (up to 3 in the room). They launch after you do."
+      : "Everyone their own ship.", "sys");
+    sayHello();
+  }
+  renderMission();
 });
 // (Privateer's friendly fire between pilots, the host's counts: src/cpu/wcnet_priv_session.cpp, ff_from_env)
 const PRIV_FF_KEY = "wc:privFF";
@@ -2642,6 +2679,7 @@ async function start(fromGesture) {
     if (isArmada() && armHiresLevel()) env.WCARMHIRES = "1";
     if (isPriv() && PRIV_CLASSIC) env.WCPRIVCLASSIC = "1";
     if (isPriv() && together) env.WCPRIVFF = $("privFF").value;
+    if (isPriv() && together && lobby.privCrew === "crew") env.WCPRIVCREW = "1";
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;
     if (cfg.firstname && !solo) env.WCFIRSTNAME = cfg.firstname;

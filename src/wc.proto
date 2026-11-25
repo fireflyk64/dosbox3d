@@ -579,6 +579,8 @@ message PrivHello {
     optional uint32 seats = 3;
     optional string face = 4;       // the pilot's face on the others' comm screens: "<cast>:<id>" (MER_DP:14 the merchant woman)
     optional uint32 friendly_fire = 5;  // (the host's reply) its room's rule: 0 between two pilots targeting each other, 1 always, 2 never
+    optional uint32 crew = 6;           // (the host's reply) 1: a crew's room -- the host flies, the guests man its ship's turrets
+                                        // (docs/privateer.md section 30)
 }
 // Where a pilot is (Privateer): flying or not, its system (the name the game shows), its place in the system (the
 // game's world units: 256 to the game's metre), and why it was sent now (PrivWhy).  Sent on those occasions and every
@@ -595,6 +597,13 @@ message PrivPresence {
     optional sint32 nav = 9;        // the nav sphere the pilot is in (the game's sphere id, 0..7; -1 none)
     optional string face = 11;      // its face ("<cast>:<id>", as its hello)
     repeated uint32 missions = 10 [packed = true];  // the nav spheres the pilot has a mission objective at
+    optional uint32 system_id = 12; // the system's id (QUADRANT.IFF's, as the game's sphere records have it; 0 not known)
+    // (a crew's pilot) the base it is at, or launched from, and that base's system (the game's own two bytes, ds:6556
+    // and ds:6557), and the systems it has flown through since that launch, the launch's first: a gunner's launch
+    // begins at that base and follows that way
+    optional uint32 base = 13;
+    optional uint32 base_system = 14;
+    repeated uint32 path = 15 [packed = true];
 }
 // A nav point's owner (the host's word, docs/privateer.md section 9): of the pilots present at it, the one whose game
 // runs its encounter for everybody.  Sent reliably when it changes and every few seconds.
@@ -658,6 +667,25 @@ message PrivPodTaken {
     optional uint32 owner = 2;
     optional uint32 id = 3;
 }
+// A crew's room: the pilot's ship as its game wrote it at its launch (PLAYTYPE.IFF, an IFF FORM REAL) and the hull it
+// is flown as (0 Tarsus, 1 Orion, 2 Centurion, 3 Galaxy): a gunner's flight is flown in it (reliable; at every launch
+// of the pilot's, and to a gunner who joins).
+message PrivCrewShip {
+    optional uint32 player = 1;
+    optional uint32 hull = 2;
+    optional bytes file = 3;
+    optional uint32 serial = 4;         // the pilot's launches, counted
+}
+// A gunner's turret as its own game turns and fires it (best effort, some 15 a second while it moves or fires): which
+// (1, 2), its angles (256 a degree) and attitude within the ship (3x3, 1.0 = 256), its guns firing.
+message PrivTurret {
+    optional uint32 player = 1;
+    optional uint32 turret = 2;
+    optional sint32 yaw = 3;
+    optional sint32 pitch = 4;
+    repeated sint32 m = 5 [packed = true];
+    optional bool fire = 6;
+}
 message PrivShot {
     optional uint32 player = 1;
     optional uint32 id = 2;             // the ship that fired, in the sender's game (0: the sender's own ship)
@@ -717,6 +745,8 @@ message NetworkMessage {
     optional PrivHit priv_hit = 45;
     optional PrivShot priv_shot = 46;
     optional PrivPodTaken priv_pod_taken = 47;
+    optional PrivCrewShip priv_crew_ship = 48;
+    optional PrivTurret priv_turret = 49;
     // Terminal Velocity's (from 60: docs/terminalvelocity.md)
     optional TvHello tv_hello = 60;
     optional TvState tv_state = 61;

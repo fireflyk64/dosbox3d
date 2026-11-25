@@ -98,6 +98,14 @@ enum {
     kControlFire = 0x1E,            // the control record's fire bits: 4 the guns, 2 the launcher
     kShipWeapons = 0x4E,            // a ship's weapons record (far; seg120:0004's first argument)
     kSeg125 = 0x4B2B,
+    kView = 0x143C,                 // the view: 0 forward, 1 2 the sides, 3 back, 4 5 the turrets (seg038)
+    kTurrets = 0x143D,              // the player's ship's two turrets (near pointers, 0 none): +4 its attitude within the ship
+    kTurretMatrix = 0x04,           //   (3x3 int32), +0x28 its place, +0x34 / +0x38 its yaw and pitch (256 a degree; limits
+    kTurretYaw = 0x34,              //   at +0x3C..+0x48), +0x4C its turn rate, +0x4E it is there (ovr394:0295 turns it from
+    kTurretPitch = 0x38,            //   the control record while its view is on)
+    kTurretThere = 0x4E,
+    kWeaponsSeat = 0x3F,            // the weapons record's seat: the station whose guns fire (seg125:024B, from the view)
+    kGunStation = 0x22, kGunOn = 0x35, kGunEnergy = 0x33,
     kStub273 = 0x6A66,              // stub273's paragraph: the thunks of the overlay that builds the base's ship
     kShipLoad = 0x0020,             // stub273:0020 -> ovr273:0000 (wcnet_priv_crew.cpp, priv_crew_ship_load)
     kWeaponsUpdate = 0x0158,        // seg125:0158(weapons far, scene, control record far): a ship's guns (and launcher) as its record says
@@ -200,12 +208,13 @@ struct PrivCall {
     void (*done)(int tag, Bit16u ax, Bit16u dx);
     void (*doneObj)(int tag, Bit16u obj);      // (a spawn's: the object made, 0 none)
     void (*cancel)(int tag);                    // the call dropped before it ran (its guard failed, or the flight changed)
+    void (*before)(int tag);                    // just before it runs (what the function must find set)
     int tag;
     int castSlot;                               // (a spawn's cast name: its slot, -1 none)
     // the object the call works on: checked just before it runs (still that kind, in the scene, its damage model the
     // same): what was queued in one frame may have died, been freed or been left behind by the next
     Bit16u guardObj, guardVtable, guardModelOff, guardModelSeg;
-    PrivCall() : para(0), off(0), done(NULL), doneObj(NULL), cancel(NULL), tag(0), castSlot(-1), guardObj(0), guardVtable(0), guardModelOff(0),
+    PrivCall() : para(0), off(0), done(NULL), doneObj(NULL), cancel(NULL), before(NULL), tag(0), castSlot(-1), guardObj(0), guardVtable(0), guardModelOff(0),
                  guardModelSeg(0) {}
 };
 enum { kStackArg = 0x10000, kCastArg = 0x40000 };     // kCastArg + slot: the near address of that cast's name
@@ -295,6 +304,7 @@ bool run_calls() {
     }
     FillFlags();
     const PrivCall &c = g_calls.front();
+    if (c.before) c.before(c.tag);
     const Bit16u castAt = cast_slot_address(c.castSlot);
     g_saved.active = true;
     g_saved.ip = reg_ip;
@@ -1205,6 +1215,7 @@ static void watch_tick();
 static bool hostile_cast_name(const std::string &c);
 static bool g_scriptStickOn;                 // !privstick: the page's stick, said every tick as the page does
 static double g_scriptStickX, g_scriptStickY;
+static void tap_step();
 void priv_tick() {
     priv_session_tick();
     priv_crew_tick();
@@ -1220,6 +1231,7 @@ void priv_tick() {
         trace_step(now);
     }
     watch_tick();
+    tap_step();
     if (now < g_nextReportMs) {
         return;
     }
@@ -1271,6 +1283,21 @@ struct { Bit16u obj; double x, y, z, at; bool firing; double missileAt; bool bur
 // an escort flown at its charge's side, at its pace -- every frame, until the time is up, a hostile ship comes within
 // 6 km, or the charge comes within 3 km of the sphere's edge... of its centre plus our distance)
 struct { std::string cast; double metres, until; int sphere; } g_follow = { "", 0, -1e9, -1 };
+// !privtail=<metres>:<seconds>: the last ship a spawn of ours made kept that far straight behind our ship, its AI held (a
+// rig's target for a tail turret)
+struct { double metres, until; } g_tail = { 0, -1e9 };
+static void tail_step() {
+    if (PIC_FullIndex() > g_tail.until || !priv_in_flight()) return;
+    const Bit16u ship = priv_r16(kPlayerShip), target = priv_last_spawned();
+    if (!ship || !target || !priv_ship_is_alive(target)) return;
+    Bit32s pos[3], m[9];
+    priv_player_pos(pos);
+    priv_player_matrix(m);
+    Bit32s at[3];
+    for (int k = 0; k < 3; k++) at[k] = pos[k] - (Bit32s)(g_tail.metres * m[3 + k]);     // (the second row is forward, 1.0 = 256: metres x 256)
+    priv_ship_set(target, at, m);
+    priv_hold_ai(priv_ship_controller(target), true);
+}
 static void follow_step() {
     const double now = PIC_FullIndex();
     if (now > g_follow.until) return;
@@ -1705,7 +1732,9 @@ bool priv_check_hooks(Bit32u ip) {
             gun_stress_frame();
             turn_step();
             follow_step();
+            tail_step();
             priv_spheres_refresh();
+            priv_crew_frame();          // (a crew's gunner: its ship put where the pilot's is, before anything looks at it)
             priv_session_frame();       // (once a frame in flight: the puppets placed, our state sent)
         }
         run_calls();
@@ -1780,7 +1809,7 @@ bool priv_check_hooks(Bit32u ip) {
         const int damage = (Bit16s)mem_readw(bp - 6);
         // what of the hit our game keeps (the session decides: the shooter's game decides a hit, a copy's shot is
         // harmless, a hit on another machine's ship goes to it and does nothing here)
-        const int keep = priv_session_hit(target, source, bump, (Bit16s)mem_readw(bp + 0xC), damage);
+        const int keep = priv_copy_bolt(hitter) ? 0 : priv_crew_hit(target, source) ? 0 : priv_session_hit(target, source, bump, (Bit16s)mem_readw(bp + 0xC), damage);
         if (keep != damage) {
             mem_writew(bp - 6, (Bit16u)keep);
         }
@@ -2022,6 +2051,13 @@ bool priv_script_item(const std::string &item, double t) {
             node = priv_r16(node);
         }
         wclog(1, "key script %.1fs: %d objects in the scene", t, n);
+        return true;
+    }
+    if (item.compare(0, 10, "!privtail=") == 0 && g_found) {
+        double secs = 30;
+        sscanf(item.c_str() + 10, "%lf:%lf", &g_tail.metres, &secs);
+        g_tail.until = PIC_FullIndex() + secs * 1000;
+        wclog(1, "key script %.1fs: the last spawned ship kept %.0f m behind ours for %.0f s", t, g_tail.metres, secs);
         return true;
     }
     if (item.compare(0, 9, "!privhold") == 0 && g_found) {
@@ -3445,6 +3481,189 @@ std::string priv_system_name() {
         out += (char)c;
     }
     return "";
+}
+
+int priv_places(PrivPlace out[], int cap) {
+    if (!priv_in_flight()) return 0;
+    const int n = priv_r16(kSphereList);
+    const Bit16u arr = priv_r16((Bit16u)(kSphereList + 2));
+    int k = 0;
+    for (int i = 0; i < n && i < 48 && k < cap; i++) {
+        const Bit16u off = priv_r16((Bit16u)(arr + 4 * i)), seg = priv_r16((Bit16u)(arr + 4 * i + 2));
+        if (!seg) continue;
+        const PhysPt rec = ((PhysPt)seg << 4) + off;
+        Bit8u b[19];
+        bool ok = true;
+        for (int j = 0; j < 19 && ok; j++) ok = !mem_readb_checked(rec + j, &b[j]);
+        if (!ok) continue;
+        PrivPlace &s = out[k++];
+        s.id = b[0];
+        s.system = b[1];
+        s.x = (Bit32s)(b[2] | (b[3] << 8) | (b[4] << 16) | ((Bit32u)b[5] << 24));
+        s.y = (Bit32s)(b[6] | (b[7] << 8) | (b[8] << 16) | ((Bit32u)b[9] << 24));
+        s.z = (Bit32s)(b[10] | (b[11] << 8) | (b[12] << 16) | ((Bit32u)b[13] << 24));
+        s.radius = b[14] | (b[15] << 8);
+        s.kind = b[16];
+        s.what = b[17];
+        s.nav = b[18];
+        s.rec = rec;
+    }
+    return k;
+}
+
+void priv_place_set_what(const PrivPlace &p, int what) {
+    if (p.rec) mem_writeb(p.rec + 17, (Bit8u)what);
+}
+
+int priv_view() { return priv_r8(kView); }
+
+bool priv_turret(int k, Bit32s *yaw, Bit32s *pitch, Bit32s m[9]) {
+    const Bit16u tu = (k == 1 || k == 2) && priv_in_flight() ? priv_r16((Bit16u)(kTurrets + 2 * (k - 1))) : 0;
+    if (!tu || !priv_r8((Bit16u)(tu + kTurretThere))) return false;
+    if (yaw) *yaw = (Bit32s)priv_r32((Bit16u)(tu + kTurretYaw));
+    if (pitch) *pitch = (Bit32s)priv_r32((Bit16u)(tu + kTurretPitch));
+    for (int i = 0; m && i < 9; i++) m[i] = (Bit32s)priv_r32((Bit16u)(tu + kTurretMatrix + 4 * i));
+    return true;
+}
+
+void priv_turret_set(int k, Bit32s yaw, Bit32s pitch, const Bit32s m[9]) {
+    const Bit16u tu = (k == 1 || k == 2) && priv_in_flight() ? priv_r16((Bit16u)(kTurrets + 2 * (k - 1))) : 0;
+    if (!tu || !priv_r8((Bit16u)(tu + kTurretThere))) return;
+    mem_writed(ds_at((Bit16u)(tu + kTurretYaw)), (Bit32u)yaw);
+    mem_writed(ds_at((Bit16u)(tu + kTurretPitch)), (Bit32u)pitch);
+    for (int i = 0; m && i < 9; i++) mem_writed(ds_at((Bit16u)(tu + kTurretMatrix + 4 * i)), (Bit32u)m[i]);
+}
+
+int priv_guns_seat(Bit16u ship, int station) {
+    PhysPt guns[16];
+    const int n = ship ? ship_guns(ship, guns, 16) : 0;
+    int mine = 0;
+    for (int i = 0; i < n; i++) {
+        const bool on = station >= 0 && mem_readb(guns[i] + kGunStation) == station;
+        mem_writeb(guns[i] + kGunOn, on ? 1 : 0);
+        mine += on;
+    }
+    return mine;
+}
+
+// A gunner's shot in the pilot's game: the game's own gun routine (seg120:0004(weapons far, scene)) fires the guns that
+// are switched on and whose station is the weapons record's seat (+0x3F: the seat the ship is flown from, set by the
+// game every frame from the view).  For the call the seat is the turret's, that turret's guns are on and cost nothing
+// (the gunner's own game has taken their energy from its copy of the ship); afterwards everything is as it was, and the
+// bolts the call made are remembered: they are pictures here (the gunner's game decides what its shots hit).
+namespace {
+struct StationShot {
+    int station;
+    Bit8u seat;
+    Bit8u on[16];
+    Bit16u energy[16];
+    Bit16u before[96];
+    int nBefore;
+} g_stationShot;
+std::vector<Bit16u> g_copyBolts;            // (a list has a cap: 64)
+int all_bolts(Bit16u out[], int cap) {
+    int n = scene_objects(out, cap, kBoltVtable);
+    n += scene_objects(out + n, cap - n, kBolt2Vtable);
+    return n;
+}
+void station_shot_before(int tag) {
+    StationShot &s = g_stationShot;
+    const Bit16u ship = (Bit16u)tag;
+    const PhysPt w = ship_weapons(ship);
+    PhysPt guns[16];
+    const int n = ship_guns(ship, guns, 16);
+    s.seat = mem_readb(w + kWeaponsSeat);
+    mem_writeb(w + kWeaponsSeat, (Bit8u)s.station);
+    for (int i = 0; i < n; i++) {
+        s.on[i] = mem_readb(guns[i] + kGunOn);
+        s.energy[i] = mem_readw(guns[i] + kGunEnergy);
+        if (mem_readb(guns[i] + kGunStation) == s.station) {
+            mem_writeb(guns[i] + kGunOn, 1);
+            mem_writew(guns[i] + kGunEnergy, 0);
+        }
+    }
+    s.nBefore = all_bolts(s.before, 96);
+}
+void station_shot_done(int tag, Bit16u ax, Bit16u dx) {
+    (void)ax; (void)dx;
+    StationShot &s = g_stationShot;
+    const Bit16u ship = (Bit16u)tag;
+    if (!priv_ship_is_alive(ship)) return;
+    const PhysPt w = ship_weapons(ship);
+    PhysPt guns[16];
+    const int n = ship_guns(ship, guns, 16);
+    mem_writeb(w + kWeaponsSeat, s.seat);
+    for (int i = 0; i < n; i++) {
+        mem_writeb(guns[i] + kGunOn, s.on[i]);
+        mem_writew(guns[i] + kGunEnergy, s.energy[i]);
+    }
+    Bit16u now[96];
+    const int nn = all_bolts(now, 96);
+    for (size_t i = 0; i < g_copyBolts.size();) {
+        if (std::find(now, now + nn, g_copyBolts[i]) == now + nn) g_copyBolts.erase(g_copyBolts.begin() + i); else i++;
+    }
+    int made = 0;
+    for (int i = 0; i < nn; i++) {
+        if (std::find(s.before, s.before + s.nBefore, now[i]) == s.before + s.nBefore && g_copyBolts.size() < 64) {
+            g_copyBolts.push_back(now[i]);
+            made++;
+        }
+    }
+    static unsigned shots, bolts;
+    shots++;
+    bolts += made;
+    if (made && bolts % 20 < (unsigned)made) wclog(2, "Privateer: crew: a gunner's turret %d fired here: %u bolts shown so far (%u calls)", s.station, bolts, shots);
+}
+}  // namespace
+
+bool priv_fire_station(int station) {
+    const Bit16u ship = priv_r16(kPlayerShip);
+    if (!ship || !priv_ship_is_alive(ship) || station < 1 || station > 2 || g_calls.size() >= 8) return false;
+    const Bit16u off = priv_r16((Bit16u)(ship + kShipWeapons)), seg = priv_r16((Bit16u)(ship + kShipWeapons + 2));
+    if (!seg) return false;
+    for (size_t i = 0; i < g_calls.size(); i++) {
+        if (g_calls[i].before == station_shot_before) return false;     // (one at a time: its state is one)
+    }
+    PrivCall c;
+    c.para = kSeg120;
+    c.off = kFireGuns;
+    c.args.push_back(off);
+    c.args.push_back(seg);
+    c.args.push_back(kScene);
+    c.guardObj = ship;
+    c.guardVtable = kShipVtable;
+    c.before = station_shot_before;
+    c.done = station_shot_done;
+    c.tag = ship;
+    g_stationShot.station = station;
+    return queue_call(c);
+}
+
+bool priv_copy_bolt(Bit16u hitter) {
+    return hitter && std::find(g_copyBolts.begin(), g_copyBolts.end(), hitter) != g_copyBolts.end();
+}
+
+namespace { int g_tapKey = -1; double g_tapAt; bool g_tapDown, g_tapNow; }
+void priv_tap_key(int kbdKey) {
+    if (g_tapKey >= 0) return;
+    g_tapKey = kbdKey;
+    g_tapDown = false;
+}
+bool priv_tapping() { return g_tapNow; }
+// (from the tick: pressed, and let go 120 ms later)
+static void tap_step() {
+    if (g_tapKey < 0) return;
+    const double now = PIC_FullIndex();
+    g_tapNow = true;
+    if (!g_tapDown) {
+        KEYBOARD_AddKey((KBD_KEYS)g_tapKey, true);
+        g_tapDown = true;
+        g_tapAt = now;
+    } else if (now - g_tapAt > 120 || now < g_tapAt) {
+        KEYBOARD_AddKey((KBD_KEYS)g_tapKey, false);
+        g_tapKey = -1;
+    }
+    g_tapNow = false;
 }
 
 }  // namespace wc

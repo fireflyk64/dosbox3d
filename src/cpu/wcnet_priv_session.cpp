@@ -242,8 +242,11 @@ struct PrivNet {
     double vx, vy, vz;
     double ownShotAt;           // our own ship's last shot sent
     int friendlyFire;           // the room's rule (the host's): 0 between two pilots targeting each other, 1 always, 2 never
+    bool crew;                  // a crew's room (the host's choice, WCPRIVCREW=1): the host flies, the guests man its turrets
+    unsigned crewShipSent;      // (the pilot's) the launch whose ship the gunners were last told
+    double turretAt;            // (a gunner's) our turret last told
     unsigned copiesFired, copiesSkipped;
-    PrivNet() : ownShotAt(-1e9), friendlyFire(0), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
+    PrivNet() : crew(false), crewShipSent(0), turretAt(-1e9), ownShotAt(-1e9), friendlyFire(0), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
                 sentAt(-1e9), stateAt(-1e9), frame(0), flightShip(0), lastX(0), lastY(0), lastZ(0), lastAt(-1e9), vx(0), vy(0), vz(0) {}
     ~PrivNet() {
         for (size_t i = 0; i < peers.size(); i++) {
@@ -293,6 +296,14 @@ const char *ff_name(int rule) {
     return rule == 1 ? "always" : rule == 2 ? "never" : "only between two pilots targeting each other";
 }
 
+// A crew's room (the user, 2026-11-24: "launch privateer in a different mode where player two (for Orion) or three (for
+// galaxy) flies in the turret of the associated ship"; "a game mode set in the lobby"): the host's choice.
+bool crew_from_env() {
+    const char *env = getenv("WCPRIVCREW");
+    return env && env[0] == '1';
+}
+enum { kCrewSeats = 3 };            // the pilot and a gunner a turret (the Galaxy's two)
+
 // "<cast>:<id>" from WCPRIVFACE (the page's Face choice), MER_DP:-1 without.
 std::string own_face() {
     const char *env = getenv("WCPRIVFACE");
@@ -341,6 +352,7 @@ bool start() {
     PrivNet *n = new PrivNet();
     n->friendlyFire = ff_from_env();     // (a guest's is the host's, from its hello)
     n->callsign = own_callsign();
+    n->crew = crew_from_env();          // (a guest's is the host's, from its hello)
     n->seats = net_config.lobby_players > 0 ? net_config.lobby_players : 2;
     if (n->seats > kMaxSeats) {
         n->seats = kMaxSeats;
@@ -418,12 +430,14 @@ bool start() {
         n->host = true;
         n->self = 0;
         n->pilots[0].callsign = n->callsign;
+        if (n->crew && n->seats > kCrewSeats) n->seats = kCrewSeats;
+        priv_crew_role(n->crew ? 1 : 0, 0);
     }
     g_net = n;
     wclog(1, "Privateer: %s at %s, %d seats, callsign %s", n->host ? "HOST" : "GUEST", where.c_str(), n->seats, n->callsign.c_str());
     if (n->host) wclog(1, "Privateer: friendly fire in this room: %s", ff_name(n->friendlyFire));
     if (n->host) {
-        notice("Room open: everybody flies their own Privateer");
+        notice(n->crew ? "Room open: you fly, the others man your ship's turrets" : "Room open: everybody flies their own Privateer");
     }
     return true;
 }
@@ -463,6 +477,19 @@ PrivPresence own_presence(int why) {
         if (navs & (1u << n)) pr.add_missions((Bit32u)n);
     }
     pr.set_face(own_face());
+    if (g_net->crew) {
+        pr.set_system_id((Bit32u)priv_crew_system_id());
+        if (priv_crew_pilot()) {
+            int base = -1, baseSystem = -1;
+            std::vector<int> path;
+            priv_crew_own_way(&base, &baseSystem, &path);
+            if (base >= 0) {
+                pr.set_base((Bit32u)base);
+                pr.set_base_system((Bit32u)baseSystem);
+            }
+            for (size_t i = 0; i < path.size(); i++) pr.add_path((Bit32u)path[i]);
+        }
+    }
     return pr;
 }
 
@@ -540,6 +567,11 @@ enum { kOwnerReserved = -2 };
 // it (its game is the one that makes the mission's ships there: an escort's ship to meet, a target; a wing refused is
 // lost, so a helper there first must not take the nav's spawn)
 int choose_owner(unsigned present, int nav, unsigned &done, unsigned *missionOut, const std::string &system) {
+    if (g_net->crew) {
+        // (a crew's room: one ship, one game that runs the world -- the pilot's)
+        if (missionOut) *missionOut = 0;
+        return (present & 1u) ? 0 : -1;
+    }
     const unsigned mission = mission_holders(present, nav);
     if (missionOut) *missionOut = mission;
     if (!mission && mission_holders_flying(system, nav)) {
@@ -715,6 +747,11 @@ void take_presence(const PrivPresence &pr, int seat) {
     for (int i = 0; i < pr.missions_size(); i++) {
         if (pr.missions(i) < 32) p.missions |= 1u << pr.missions(i);
     }
+    if (g_net->crew && seat == 0) {
+        std::vector<int> path;
+        for (int i = 0; i < pr.path_size(); i++) path.push_back((int)pr.path(i));
+        priv_crew_pilot_presence(p.flying, p.system, (int)pr.system_id(), pr.has_base() ? (int)pr.base() : -1, pr.has_base_system() ? (int)pr.base_system() : -1, path);
+    }
     const int why = (int)pr.why();
     wclog(2, "Privateer: %s (pilot %d) %s in %s at %d, %d, %d (why %d)", p.callsign.c_str(), seat + 1, p.flying ? "flying" : "landed",
           p.system.c_str(), (int)pr.x(), (int)pr.y(), (int)pr.z(), why);
@@ -744,6 +781,19 @@ double now_ms() { return PIC_FullIndex(); }
 
 void take_state(const PrivState &st, int seat) {
     if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) {
+        return;
+    }
+    if (g_net->crew) {
+        // a crew's room: nobody's ship is another's puppet -- the gunners are aboard the pilot's, whose state is where
+        // their own copies of it are put (wcnet_priv_crew.cpp)
+        if (seat == 0 && priv_crew_gunner()) {
+            const double pos[3] = { (double)st.x(), (double)st.y(), (double)st.z() }, vel[3] = { (double)st.vx(), (double)st.vy(), (double)st.vz() };
+            Bit32s m[9] = { 256, 0, 0, 0, 256, 0, 0, 0, 256 }, a[4] = { 0, 0, 0, 0 }, sh[4] = { 0, 0, 0, 0 };
+            for (int i = 0; i < 9 && i < st.m_size(); i++) m[i] = st.m(i);
+            const bool damage = st.armor_size() == 4 && st.shield_size() == 4;
+            for (int i = 0; damage && i < 4; i++) { a[i] = st.armor(i); sh[i] = st.shield(i); }
+            priv_crew_pilot_state(st.system(), pos, vel, m, a, sh, damage, st.destroyed());
+        }
         return;
     }
     Puppet &p = g_net->puppets[seat];
@@ -813,7 +863,23 @@ void handle(Peer *p, NetworkMessage &msg) {
             reply.mutable_priv_hello()->set_seats((Bit32u)g_net->seats);
             reply.mutable_priv_hello()->set_face(own_face());
             reply.mutable_priv_hello()->set_friendly_fire((Bit32u)g_net->friendlyFire);
+            reply.mutable_priv_hello()->set_crew(g_net->crew ? 1 : 0);
             p->conn.send(reply);
+            if (g_net->crew) {
+                // (the pilot's ship as last launched, should the newcomer launch into a flight under way)
+                std::string file;
+                int hull = 0;
+                const unsigned serial = priv_crew_own_ship(&file, &hull);
+                if (serial) {
+                    NetworkMessage ship;
+                    PrivCrewShip *cs = ship.mutable_priv_crew_ship();
+                    cs->set_player(0);
+                    cs->set_hull((Bit32u)hull);
+                    cs->set_file(file);
+                    cs->set_serial(serial);
+                    p->conn.send(ship);
+                }
+            }
             // (everybody known so far, to the newcomer: their presences as the host has them)
             for (int s = 0; s < kMaxSeats; s++) {
                 const Pilot &q = g_net->pilots[s];
@@ -835,7 +901,8 @@ void handle(Peer *p, NetworkMessage &msg) {
             }
             g_pendingWhy = WHY_HELLO;      // (ours to everybody, the newcomer with them)
             char line[160];
-            snprintf(line, sizeof(line), "%s joined as pilot %d of %d", p->callsign.c_str(), player + 1, g_net->seats);
+            if (g_net->crew) snprintf(line, sizeof(line), "%s joined: %s", p->callsign.c_str(), player <= 2 ? (player == 1 ? "the gunner of turret 1" : "the gunner of turret 2") : "a passenger");
+            else snprintf(line, sizeof(line), "%s joined as pilot %d of %d", p->callsign.c_str(), player + 1, g_net->seats);
             notice(line);
         } else {
             p->callsign = h.callsign();
@@ -850,9 +917,12 @@ void handle(Peer *p, NetworkMessage &msg) {
                 g_net->friendlyFire = (int)h.friendly_fire();
                 wclog(1, "Privateer: friendly fire in this room (the host's rule): %s", ff_name(g_net->friendlyFire));
             }
+            g_net->crew = h.crew() == 1;
+            priv_crew_role(g_net->crew ? 2 : 0, g_net->self);
             g_pendingWhy = WHY_HELLO;
             char line[160];
-            snprintf(line, sizeof(line), "In %s's room as pilot %d of %d", p->callsign.c_str(), g_net->self + 1, g_net->seats);
+            if (g_net->crew) snprintf(line, sizeof(line), "Aboard %s's ship: you man turret %d. Launch after your pilot does", p->callsign.c_str(), g_net->self);
+            else snprintf(line, sizeof(line), "In %s's room as pilot %d of %d", p->callsign.c_str(), g_net->self + 1, g_net->seats);
             notice(line);
         }
     } else if (msg.has_priv_presence()) {
@@ -963,6 +1033,19 @@ void handle(Peer *p, NetworkMessage &msg) {
                 }
             }
         }
+    } else if (msg.has_priv_crew_ship()) {
+        if (p->hello && !g_net->host && g_net->crew) {
+            const PrivCrewShip &cs = msg.priv_crew_ship();
+            priv_crew_take_ship(cs.file(), (int)cs.hull(), cs.serial());
+        }
+    } else if (msg.has_priv_turret()) {
+        if (p->hello && g_net->host && g_net->crew && p->player >= 1) {
+            const PrivTurret &t = msg.priv_turret();
+            Bit32s m[9] = { 256, 0, 0, 0, 256, 0, 0, 0, 256 };
+            for (int i = 0; i < 9 && i < t.m_size(); i++) m[i] = t.m(i);
+            // (a gunner's turret is its seat's: seat 1 the first, seat 2 the second)
+            if ((int)t.turret() == p->player) priv_crew_take_turret(p->player, t.yaw(), t.pitch(), m, t.fire());
+        }
     } else if (msg.has_chat()) {
         if (!p->hello) {
             return;
@@ -1035,6 +1118,7 @@ void shutdown() {
         return;
     }
     wclog(1, "Privateer: session closed");
+    priv_crew_role(0, 0);
     delete g_net;
     g_net = NULL;
 #ifdef C_LOBBYLINK
@@ -1146,6 +1230,24 @@ void priv_session_tick() {
         decide_owners(now, changed);
         if (changed || now - g_net->ownersAt >= kOwnersEveryMs) {
             send_owners();
+        }
+    }
+    if (g_net->crew && g_net->host) {
+        std::string file;
+        int hull = 0;
+        const unsigned serial = priv_crew_own_ship(&file, &hull);
+        if (serial && serial != g_net->crewShipSent) {
+            g_net->crewShipSent = serial;
+            NetworkMessage ship;
+            PrivCrewShip *cs = ship.mutable_priv_crew_ship();
+            cs->set_player(0);
+            cs->set_hull((Bit32u)hull);
+            cs->set_file(file);
+            cs->set_serial(serial);
+            for (size_t i = 0; i < g_net->peers.size(); i++) {
+                if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) g_net->peers[i]->conn.send(ship);
+            }
+            wclog(1, "Privateer: crew: our ship told to the gunners (launch %u, hull %d, %u bytes)", serial, hull, (unsigned)file.size());
         }
     }
     if (g_pendingWhy >= 0) {
@@ -2233,6 +2335,9 @@ unsigned pilots_with_us() {
 }
 
 bool priv_session_allow_wing(int sphereId) {
+    if (priv_crew_no_wings()) {
+        return false;       // (a crew's gunner: the pilot's game makes the nav point's ships, ours shows them)
+    }
     if (!g_net || g_net->self < 0 || g_system.empty()) {
         return true;
     }
@@ -2288,6 +2393,10 @@ bool priv_session_allow_wing(int sphereId) {
         return false;
     }
     return true;        // (no owner could be chosen: as alone)
+}
+
+void priv_session_notice(const std::string &text) {
+    notice(text);
 }
 
 bool priv_session_chat(const std::string &text) {
@@ -2388,6 +2497,9 @@ int priv_session_hit(Bit16u target, Bit16u source, bool bump, int loc, int damag
         // encounter ships: nothing (no pilot of either game is in it).
         if (!targetPuppet && !sourcePuppet) {
             return damage;
+        }
+        if (priv_crew_gunner()) {
+            return 0;       // (a gunner's copy of the ship rams nothing: the pilot's game, whose ship it is, decides)
         }
         const Bit16u own = priv_player_ship();
         if (is_pilot_obj(target) || is_pilot_obj(source)) {
@@ -2591,7 +2703,33 @@ void priv_session_frame() {
         const double d = s == g_net->self ? -1 : distance_to(g_net->pilots[s]);
         wanted = d >= 0 && d < kStateMetres;
     }
-    if (wanted && now - g_net->stateAt >= 1000.0 / kStatesPerSecond) {
+    if (g_net->crew) {
+        // a crew's room: the pilot's state every frame while a gunner flies (their copies of the ship are put where it
+        // says); a gunner's own is nobody's business, but its turret is the pilot's (15 a second)
+        wanted = false;
+        if (priv_crew_pilot()) {
+            for (int s = 1; s < kMaxSeats && !wanted; s++) wanted = g_net->pilots[s].known && g_net->pilots[s].flying;
+            if (wanted) send_state(now);
+        } else if (now - g_net->turretAt >= 1000.0 / kStatesPerSecond) {
+            int turret = 0;
+            Bit32s yaw = 0, pitch = 0, m[9];
+            bool fire = false;
+            if (priv_crew_turret_report(&turret, &yaw, &pitch, m, &fire)) {
+                g_net->turretAt = now;
+                NetworkMessage msg;
+                PrivTurret *t = msg.mutable_priv_turret();
+                t->set_player((Bit32u)g_net->self);
+                t->set_turret((Bit32u)turret);
+                t->set_yaw(yaw);
+                t->set_pitch(pitch);
+                for (int i = 0; i < 9; i++) t->add_m(m[i]);
+                t->set_fire(fire);
+                for (size_t i = 0; i < g_net->peers.size(); i++) {
+                    if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) g_net->peers[i]->conn.send_best_effort(msg);
+                }
+            }
+        }
+    } else if (wanted && now - g_net->stateAt >= 1000.0 / kStatesPerSecond) {
         send_state(now);
     }
     // the encounter ships of a nav point we own, and our cargo pods, to the others near
@@ -2606,8 +2744,8 @@ void priv_session_frame() {
     // the other pilots
     frame_npcs(now, pos);
     for (int s = 0; s < kMaxSeats; s++) {
-        if (s == g_net->self) {
-            continue;
+        if (s == g_net->self || g_net->crew) {
+            continue;       // (a crew's room: nobody's ship is shown beside ours -- they are aboard it)
         }
         Puppet &p = g_net->puppets[s];
         if (p.obj && !priv_ship_alive(p.obj, p.type)) {

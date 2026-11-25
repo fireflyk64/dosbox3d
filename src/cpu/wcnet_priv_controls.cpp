@@ -109,6 +109,9 @@ PhysPt control_record() {
 }  // namespace
 
 bool priv_controls_key(int kbdKey, bool pressed) {
+    if (priv_crew_key(kbdKey, pressed)) {
+        return true;        // (a crew's gunner: the ship is the pilot's to fly, wcnet_priv_crew.cpp)
+    }
     // (the keys go to the game as they are: the ramp works on what it read; A in flight is an occasion for the room)
     if (pressed && kbdKey == KBD_a && priv_in_flight()) {
         priv_session_event(1);
@@ -169,6 +172,7 @@ void priv_controls_join() {
     if (priv_r8(kNoControlsA) || priv_r8(kNoControlsB)) {
         return;
     }
+    priv_crew_controls(control_record());
     const double now = PIC_FullIndex();
     const bool live = now - g_stickAt < kStickMs;
     const bool empty = priv_r8(kModeJoystick) && !port;

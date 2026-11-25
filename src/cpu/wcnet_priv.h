@@ -227,6 +227,35 @@ void priv_session_event(int why);
 // Once a frame in flight (seg088:0B2E's entry, before the player's controls): the puppets placed, our state sent.
 void priv_session_frame();
 bool priv_session_active();
+// A line on the emulator's own line over the picture (what cannot be said in the game).
+void priv_session_notice(const std::string &text);
+
+// Every record of the system's sphere list (ds:66C2; at the frame: far data): the nav spheres (kind 0xFF) and what sits
+// in them -- a jump point (kind 2, `what` the system it leads to) or a base (kind 1) -- with the system's own id.
+struct PrivPlace {
+    int id, system, kind, what, nav, radius;
+    Bit32s x, y, z;
+    Bit32u rec;                 // the record's linear address
+};
+int priv_places(PrivPlace out[], int cap);
+void priv_place_set_what(const PrivPlace &p, int what);
+// The view (ds:143C: 0 forward, 1 and 2 the sides, 3 back, 4 and 5 turrets 1 and 2).
+int priv_view();
+// The player's ship's turrets (k = 1, 2; ds:143D, ds:143F: 0 none): its angles (256 a degree) and its attitude within
+// the ship (3x3, 1.0 = 256); false: the ship has no such turret.
+bool priv_turret(int k, Bit32s *yaw, Bit32s *pitch, Bit32s m[9]);
+void priv_turret_set(int k, Bit32s yaw, Bit32s pitch, const Bit32s m[9]);
+// A ship's guns by seat (a gun's station: 0 the pilot's, 1 and 2 the turrets'): that seat's switched on and every other
+// seat's off (-1: all off); how many that seat has.
+int priv_guns_seat(Bit16u ship, int station);
+// The player's ship's guns of that seat fired once by the game's own routine at the next frame (a gunner's shot shown in
+// the pilot's game: no energy taken, its bolts harmless here); false: not queued.
+bool priv_fire_station(int station);
+// The bolt (or whatever hit) is one of those copies'.
+bool priv_copy_bolt(Bit16u hitter);
+// A key pressed and let go for the game by the layer itself (past the crew's key filter).
+void priv_tap_key(int kbdKey);
+bool priv_tapping();
 
 // The crew (wcnet_priv_crew.cpp, docs/privateer.md section 30): DOS's file calls while the program runs -- a file opened
 // or created (its full name on its drive, the handle's entry), read into or written from the caller's buffer, closed.
@@ -240,9 +269,37 @@ void priv_file_closed(Bit16u entry);
 void priv_crew_tick();
 // At stub273:0020, the game about to build the base's ship (ovr273:0000).
 void priv_crew_ship_load();
-// We are a gunner of the room's ship (not its pilot).
-bool priv_crew_gunner();
 bool priv_crew_script_item(const std::string &item, double t);
+// The room's kind and our part in it (the session's word, at its hello): role 0 none (everybody flies their own ship),
+// 1 the crew's pilot, 2 a gunner in the pilot's turret `turret` (1, 2; more gunners than turrets ride as passengers).
+void priv_crew_role(int role, int turret);
+bool priv_crew_gunner();
+bool priv_crew_pilot();
+// The pilot's ship as its game wrote it at its last launch (the pilot's side: to send; serial 0 none yet), and taken (a
+// gunner's side: the ship its next flight is flown in).
+unsigned priv_crew_own_ship(std::string *file, int *hull);
+void priv_crew_take_ship(const std::string &file, int hull, unsigned serial);
+// The pilot as the room tells of it (a gunner's side): where it is (its presence) and its ship's state (15 and more a
+// second while it flies).
+void priv_crew_pilot_presence(bool flying, const std::string &system, int systemId, int base, int baseSystem, const std::vector<int> &path);
+// (the pilot's side) the base we are at or launched from, its system, and the systems flown through since (the launch's first).
+void priv_crew_own_way(int *base, int *baseSystem, std::vector<int> *path);
+void priv_crew_pilot_state(const std::string &system, const double pos[3], const double vel[3], const Bit32s m[9], const Bit32s armor[4],
+                           const Bit32s shield[4], bool damage, bool destroyed);
+// Once a frame in flight (before the session's): a gunner's ship put where the pilot's is, its view and guns its turret's.
+void priv_crew_frame();
+// A gunner's turret to tell the pilot (false: nothing to tell now), and told (the pilot's side: seat, turret...).
+bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9], bool *fire);
+void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire);
+// A gunner's keys: true, not the game's (the ship is the pilot's to fly).
+bool priv_crew_key(int kbdKey, bool pressed);
+// A gunner's control record after the controls were read (seg088:0BBD): no missile is the gunner's to launch.
+void priv_crew_controls(Bit32u rec);
+// A gunner's game spawns no wings (the pilot's does), and nothing hits its copy of the ship (the pilot's game decides).
+bool priv_crew_no_wings();
+bool priv_crew_hit(Bit16u target, Bit16u source);
+// Our system's id as the game's sphere records have it (0: not known; read at the frame).
+int priv_crew_system_id();
 
 }  // namespace wc
 
