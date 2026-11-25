@@ -7,7 +7,7 @@
 # (default 62), after the pilot's launch.  HOSTX / GUESTX: more of the key script (the host's clock; a guest's runs
 # GUEST_LAG, 2 s, behind).
 #
-#   scripts/privtests/crew.sh [seconds]          (default 130)   PLAYERS=2 OUT=/tmp/privcrew DOSBOX= HOSTX= GUESTX=
+#   scripts/privtests/crew.sh [seconds]          (default 130)   PLAYERS=2 OUT=/tmp/privcrew DOSBOX= HOSTX= GUESTX= RF=1
 # Printed: each machine's crew lines, errors and deaths.
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DUR=${1:-130}; PLAYERS=${PLAYERS:-2}; OUT=${OUT:-/tmp/privcrew}
@@ -22,6 +22,15 @@ H="4:esc,7:!mouse=0.38:0.94,7.5:!button=0:1,7.8:!button=0:0,10:!mouse=0.31:0.405
 # a guest: a new pilot (privrun.sh's route), the pad's ship (0.45, 0.6) at GUNNER_AT
 GA=${GUNNER_AT:-62}
 G="4:esc,8:!mouse=0.14:0.94,8.3:!button=0:1,8.6:!button=0:0,10:j,10.3:o,10.6:e,11:enter,11.5:a,11.8:c,12.1:e,12.5:enter,$((GA - 1)):!mouse=0.45:0.6,$GA:!button=0:1,$GA.3:!button=0:0"
+if [ -n "${RF:-}" ]; then
+  # Righteous Fire (RF=1): the host's NEW answers "Load an old Privateer ship?" with y and takes the saved game's ship
+  # and credits into the new campaign (the pad's ship at 0.5, 0.6); a guest answers n and registers a new pilot
+  export RF
+  PA=${PILOT_AT:-50}
+  H="4:esc,6:esc,10:!mouse=0.14:0.94,10.5:!button=0:1,10.8:!button=0:0,14:y,17:!mouse=0.31:0.405,17.5:!button=0:1,17.8:!button=0:0,19:!mouse=0.31:0.345,19.5:!button=0:1,19.8:!button=0:0,22:!mouse=0.85:0.345,22.5:!button=0:1,22.8:!button=0:0"
+  [ -z "${HOST_STAYS:-}" ] && H="$H,$((PA - 1)):!mouse=0.5:0.6,$PA:!button=0:1,$PA.3:!button=0:0"
+  G="4:esc,6:esc,10:!mouse=0.14:0.94,10.5:!button=0:1,10.8:!button=0:0,14:n,16:j,16.3:o,16.6:e,17:enter,17.5:a,17.8:c,18.1:e,18.5:enter,$((GA - 1)):!mouse=0.5:0.6,$GA:!button=0:1,$GA.3:!button=0:0"
+fi
 OUT=$OUT PLAYERS=$PLAYERS LINES_EACH=0 "$ROOT/scripts/privnet.sh" "$DUR" "$H${HOSTX:+,$HOSTX}" "$G${GUESTX:+,$GUESTX}" > /dev/null 2>&1
 for d in host $(seq -f guest%g 1 $((PLAYERS - 1))); do
   f=$OUT/$d/run.err

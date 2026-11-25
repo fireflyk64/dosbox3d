@@ -1568,7 +1568,25 @@ pilot's base in the pilot's Centurion, sits in its turret and fires, and lands w
 Centurion and the guest's own Tarsus on the same pad (looked at on both screens).  A gunner who launched first was
 taken to the pilot's base and set down, as natively.
 
-**Open:** the gunner's picture between the pilot's reports
+**The Orion and Righteous Fire** (the user, 2026-11-25: "can you test the stock orion's tail turret and righteous fire
+by importing thecenturion from the Priv1 oxford save").
+- *The Orion* (`scripts/privtests/crewsave.py orion`: the ship file the game itself wrote for an Orion bought at the
+  dealer with its Tail Turret mounted, given lasers on the type's own four mounts -- 2 and 3 in front, 5 and 7 in the
+  turret -- and the type's shields; the dealer's own gun mounting needs a click on a hardpoint that no rig of ours
+  makes yet): `SAVE=privsaves/ORION01.SAV scripts/privtests/crew.sh`.  The gunner's game listed the two turret lasers
+  as its seat's (station 1, on) and the two in front off; a pirate kept 700 m behind was destroyed in the pilot's game
+  by 16 hits of 20, the laser's; the volleys shown in the pilot's game; landed with the pilot at Oxford, its own
+  Tarsus its own again.  (The rig's target at 250 m died of the Orion's own bumps before a shot: the two ships'
+  collision reaches that far.)
+- *Righteous Fire* (`RF=1 scripts/privtests/crew.sh`): the host's NEW answers "Load an old Privateer ship?" with y
+  and picks OXFORD01 -- the Centurion with its 189,187 credits on Jolson's pad -- and launches; the guest registers a
+  new Righteous Fire pilot (n) and launches after it: aboard in the tail turret, the pinned pirate destroyed in the
+  pilot's game (six hits of 62), the pilot's jump to Oxford followed 6 s behind.  No error of the game's on either.
+Seen on the way: a pilot sitting at the title screen tells a base of the title's own bytes (Righteous Fire's said base
+0 of system 58 before the import): a gunner launching then would be taken there.  Not met in play (the pilot is in a
+game by the time anybody launches); left.
+
+**Open:** the dealer's gun mounting by a rig (the hardpoint's click); the gunner's picture between the pilot's reports
 (the attitude is not carried on: fine at 28 reports a second on one machine, to be looked at over a real link); a
 gunner's energy is its own copy's (the pilot's is not taken by the turret); the landing fee (50) of a gunner's
 bounce; Righteous Fire flown as a crew (the same program: not yet run).
