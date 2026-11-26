@@ -1706,3 +1706,15 @@ Two runs of one script cannot be compared byte for byte: two runs with JEMM's ow
 flight frame (DOSBox sets the BIOS clock from the host's), and a twin takes fewer emulated cycles, so everything
 after it happens earlier.  JEMM's instructions in the solo Oxford fight: 33,700 a frame on average (546,000 at most)
 with its own code, 9,200 (57,000) with the twin -- its entry and VCPI trips are left.
+
+## 36. The twins' copies and fills written a page at a time (2026-11-26)
+
+The browser's profile of a two-pilot fight (section 34) had a fifth of its busy time in the core hooks, half of it
+in their own code: the twins' results applied a byte at a time.  A copy's or a fill's bytes are kept as (place,
+value) pairs and were each written through `mem_writeb_checked`: some 117 KB a frame in a fight, seg181:000A clearing
+the view (13 calls, 79 KB) and seg205:0002 showing the cockpit's window (37 KB).  Now a run of consecutive places in
+one 4 KB page has its first byte written as before (the TLB filled as that write fills it, the page's dirty bit set
+as it sets it) and, where the TLB then writes that page directly (memory), the rest of the run is copied at once --
+what each byte's write would have done; a page with a handler (the VGA's: two thirds of the bytes are memory, a third
+the VGA's) still gets every byte through its handler.  `WCPRIVTWINS_VERIFY=1` reads every run back through DOSBox's
+own reads: 160 million bytes in a solo fight at Oxford, none differed; the crew test as before.

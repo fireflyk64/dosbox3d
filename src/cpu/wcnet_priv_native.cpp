@@ -823,7 +823,36 @@ void apply(const Run &r, Bit16u retIp, Bit16u retCs, int pop) {
         else if (r.size[i] == 2) mem_writew_checked(r.at[i], (Bit16u)r.val[i]);
         else mem_writeb_checked(r.at[i], (Bit8u)r.val[i]);
     }
-    for (int i = 0; i < r.bytes; i++) mem_writeb_checked(g_byteAt[i], g_byteVal[i]);
+    // A copy's or a fill's bytes (some 117 KB a frame in a fight: the view cleared, the cockpit's window shown), a
+    // byte at a time, were a tenth of the browser's busy time.  A run of consecutive places within one 4 KB page has
+    // its first byte written as before (the TLB filled as that write fills it); where the page is then memory the TLB
+    // writes directly, the rest of the run is copied there at once -- what each byte's write would have done; a page
+    // with a handler (the VGA's) still gets every byte through it.  WCPRIVTWINS_VERIFY=1 (a test): each run read back.
+    static int verify = -1;
+    if (verify < 0) {
+        const char *env = getenv("WCPRIVTWINS_VERIFY");
+        verify = env && env[0] == '1';
+    }
+    for (int i = 0; i < r.bytes;) {
+        const PhysPt a = g_byteAt[i];
+        int n = 1;
+        while (i + n < r.bytes && g_byteAt[i + n] == a + (PhysPt)n && ((a + n) & 0xFFF)) n++;
+        mem_writeb_checked(a, g_byteVal[i]);
+        const HostPt w = n > 1 ? get_tlb_write(a + 1) : 0;
+        if (w) memcpy(w + a + 1, &g_byteVal[i + 1], n - 1);
+        else for (int k = 1; k < n; k++) mem_writeb_checked(a + k, g_byteVal[i + k]);
+        if (verify) {
+            static unsigned long long readBack, differ;
+            for (int k = 0; k < n; k++) {
+                Bit8u b = 0;
+                if ((mem_readb_checked(a + k, &b) || b != g_byteVal[i + k]) && ++differ <= 5)
+                    wclog(0, "Privateer twins: a run's byte at %08X reads %02X, written %02X", a + k, b, g_byteVal[i + k]);
+            }
+            if ((readBack += n) % 20000000ull < (unsigned long long)n)
+                wclog(1, "Privateer twins: %llu bytes of runs read back, %llu differ", readBack, differ);
+        }
+        i += n;
+    }
     if (r.clearDirection) {
         SETFLAGBIT(DF, false);
         cpu.direction = 1;
