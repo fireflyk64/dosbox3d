@@ -8,6 +8,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include "wc_fprof.h"
 #include <string.h>
 #include <string>
 #include <map>
@@ -24,6 +25,7 @@
 #include "regs.h"
 #include "pic.h"
 #include "cpu.h"
+#include "callback.h"
 #include "lazyflags.h"
 #include "paging.h"
 #include "keyboard.h"
@@ -198,6 +200,240 @@ void trace_step(double now) {
 }
 
 PhysPt ds_at(Bit16u off) { return ((PhysPt)g_ds << 4) + off; }
+
+// The slow-frame log (a test aid; include/wc_fprof.h): WCPRIVSLOW=<ms> measures every flight frame -- wall and
+// emulated time, the guest's instructions (a sample of its CS:IP every periodic tick, 1000 instructions), the host's
+// time by the main loop's buckets, the software interrupts by number, AH and caller -- writes a row a frame to
+// WCNET_DUMP_DIR/fprof.csv and logs each frame longer than <ms> on the wall clock, with where its time went.
+double g_slowMs = -1;                   // -1: not read yet, 0: off
+double g_fpWall = -1, g_fpEmu, g_fpWall0;
+double g_fpMs[FP_N];
+unsigned g_fpCount[FP_N];
+std::vector<Bit32u> g_fpPCs;
+struct FpIntSite { unsigned n; Bit16u stack[8]; Bit16u chain[6]; bool v86; };
+std::map<unsigned long long, FpIntSite> g_fpInts;
+unsigned g_fpIntsAll;
+Bit32u g_fpTlbClears, g_fpTlbInits;
+std::vector<Bit32u> g_fpSeeks;          // DOS seeks of the frame (from the start: CX:DX), the first 48
+unsigned g_fpReads, g_fpReadBytes;      // DOS reads of the frame
+FILE *g_fpCsv;
+unsigned g_fpFrame, g_fpSlow;
+double g_fpProbe;                       // this probe's own time at the last frame (in the next frame's callbacks)
+
+void fprof_int(Bitu num, Bitu oldeip) {
+    g_fpIntsAll++;
+    if (num == 0x21 && reg_ah == 0x42 && reg_al == 0 && g_fpSeeks.size() < 48) g_fpSeeks.push_back(((Bit32u)reg_cx << 16) | reg_dx);
+    if (num == 0x21 && reg_ah == 0x3F) {
+        g_fpReads++;
+        g_fpReadBytes += reg_cx;
+    }
+    if (g_fpInts.size() > 4096) return;
+    const Bit16u ip = (Bit16u)(oldeip - 2);
+    const unsigned long long key = ((unsigned long long)(num & 0xff) << 40) | ((unsigned long long)reg_ah << 32) |
+                                   ((unsigned long long)(Bit16u)SegValue(cs) << 16) | ip;
+    FpIntSite &site = g_fpInts[key];
+    if (site.n++) return;
+    site.v86 = !cpu.pmode || (reg_flags & FLAG_VM);
+    if (!site.v86) return;
+    const PhysPt ssb = SegPhys(ss);
+    for (int k = 0; k < 8; k++) {
+        if (mem_readw_checked(ssb + (Bit16u)(reg_sp + 2 * k), &site.stack[k])) site.stack[k] = 0xDEAD;
+    }
+    Bit16u bp = reg_bp;
+    for (int k = 0; k < 3; k++) {       // (a far frame: [bp] the caller's bp, [bp+2] the return IP, [bp+4] its CS)
+        Bit16u next = 0;
+        if (mem_readw_checked(ssb + (Bit16u)(bp + 2), &site.chain[2 * k]) ||
+            mem_readw_checked(ssb + (Bit16u)(bp + 4), &site.chain[2 * k + 1]) || mem_readw_checked(ssb + bp, &next)) {
+            site.chain[2 * k] = site.chain[2 * k + 1] = 0xDEAD;
+        }
+        bp = next;
+    }
+}
+
+std::map<Bit32u, std::pair<unsigned, unsigned>> g_fpHooks;     // CS:IP -> calls, of them handled
+
+std::map<Bit32u, unsigned> g_fpTlbBy;
+void fprof_tlb_clear() { g_fpTlbBy[((Bit32u)(Bit16u)SegValue(cs) << 16) | (reg_eip & 0xffff)]++; }
+
+void fprof_hooks_dump() {
+    {
+        std::vector<std::pair<unsigned, Bit32u>> v;
+        for (const auto &it : g_fpTlbBy) v.push_back({ it.second, it.first });
+        std::sort(v.rbegin(), v.rend());
+        std::string line;
+        char buf[48];
+        for (size_t k = 0; k < v.size() && k < 16; k++) {
+            snprintf(buf, sizeof buf, " %04X:%04X %u", (unsigned)(v[k].second >> 16), (unsigned)v[k].second & 0xffff, v[k].first);
+            line += buf;
+        }
+        wclog(1, "Privateer: TLB clears by the guest's CS:IP at the time:%s", line.c_str());
+        for (size_t k = 0; k < v.size() && k < 2; k++) {
+            const Bit16u cs = (Bit16u)(v[k].second >> 16), ip = (Bit16u)v[k].second;
+            std::string bytes;
+            for (int i = -16; i < 32; i++) {
+                Bit8u b = 0;
+                if (mem_readb_checked(((PhysPt)cs << 4) + (Bit16u)(ip + i), &b)) b = 0xEE;
+                snprintf(buf, sizeof buf, "%s%02X", i == 0 ? " [" : i == 1 ? "] " : " ", b);
+                bytes += buf;
+            }
+            wclog(1, "Privateer: TLB clears: the code at %04X:%04X-16:%s (linear, as the V86 machine sees it)", cs, ip, bytes.c_str());
+        }
+    }
+    std::vector<std::pair<unsigned, Bit32u>> v;
+    unsigned all = 0, handled = 0;
+    for (const auto &it : g_fpHooks) {
+        v.push_back({ it.second.first, it.first });
+        all += it.second.first;
+        handled += it.second.second;
+    }
+    std::sort(v.rbegin(), v.rend());
+    std::string line;
+    char buf[64];
+    for (size_t k = 0; k < v.size() && k < 40; k++) {
+        snprintf(buf, sizeof buf, " %04X:%04X %u/%u", (unsigned)(v[k].second >> 16), (unsigned)v[k].second & 0xffff, v[k].first,
+                 g_fpHooks[v[k].second].second);
+        line += buf;
+    }
+    wclog(1, "Privateer: core hook calls over %u frames: %u (%u handled), at %u places; the busiest (calls/handled):%s", g_fpFrame,
+          all, handled, (unsigned)g_fpHooks.size(), line.c_str());
+}
+
+void fprof_sample() {
+    if (g_slowMs > 0 && g_fpPCs.size() < (1u << 20)) g_fpPCs.push_back(((Bit32u)(Bit16u)SegValue(cs) << 16) | (reg_eip & 0xffff));
+}
+
+void fprof_frame() {
+    if (g_slowMs < 0) {
+        const char *env = getenv("WCPRIVSLOW");
+        g_slowMs = env && env[0] ? atof(env) : 0;
+        if (g_slowMs <= 0) return;
+        wc_fprof_on = true;
+        wc_fprof_int = fprof_int;
+        const char *hooks = getenv("WCPRIVSLOW_HOOKS");
+        wc_fprof_hooks = hooks && hooks[0] ? atoi(hooks) : 0;
+        if (wc_fprof_hooks) wc_tlb_clear_probe = fprof_tlb_clear;
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        const std::string path = std::string(dir && dir[0] ? dir : ".") + "/fprof.csv";
+        g_fpCsv = fopen(path.c_str(), "w");
+        if (g_fpCsv) {
+            fprintf(g_fpCsv, "frame,emu_ms,wall_ms,frame_wall,frame_emu,kinstr,core,corehook,corehook_n,callback,net,"
+                             "events,vsync,present,ticks,yield,yield_n,yield_max,idle,idle_n,idle_max,other,ints,int67,int21,core_max,cb_max,cb_id,probe,tlb_clears,tlb_inits,framehook\n");
+        }
+        wclog(1, "Privateer: frames longer than %.1f ms logged (load segment %04X), each frame to %s", g_slowMs,
+              g_privLoadSeg, path.c_str());
+    }
+    if (g_slowMs <= 0) return;
+    const double wall = wc_fprof_now(), emu = PIC_FullIndex();
+    if (g_fpWall < 0) g_fpWall0 = wall;
+    if (g_fpWall >= 0 && emu - g_fpEmu < 2000) {
+        double d[FP_N];
+        unsigned n[FP_N];
+        for (int b = 0; b < FP_N; b++) {
+            d[b] = wc_fprof_ms[b] - g_fpMs[b];
+            n[b] = wc_fprof_count[b] - g_fpCount[b];
+        }
+        const double w = wall - g_fpWall, e = emu - g_fpEmu;
+        const double other = w - d[FP_CORE] - d[FP_CALLBACK] - d[FP_EVENTS] - d[FP_TICKS] - d[FP_YIELD] - d[FP_IDLE];
+        unsigned int67 = 0, int21 = 0;
+        for (const auto &it : g_fpInts) {
+            if ((it.first >> 40) == 0x67) int67 += it.second.n;
+            if ((it.first >> 40) == 0x21) int21 += it.second.n;
+        }
+        g_fpFrame++;
+        if (wc_fprof_hooks && g_fpFrame % 500 == 0) fprof_hooks_dump();
+        if (g_fpCsv) {
+            fprintf(g_fpCsv, "%u,%.2f,%.2f,%.2f,%.2f,%u,%.2f,%.2f,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%u,%.2f,%.2f,%u,%.2f,"
+                    "%.2f,%u,%u,%u,%.2f,%.2f,%u,%.2f,%u,%u,%.2f\n", g_fpFrame, g_fpEmu, g_fpWall - g_fpWall0, w, e, (unsigned)g_fpPCs.size(),
+                    d[FP_CORE], d[FP_COREHOOK], n[FP_COREHOOK], d[FP_CALLBACK], d[FP_NET], d[FP_EVENTS], d[FP_VSYNC],
+                    d[FP_PRESENT], d[FP_TICKS], d[FP_YIELD], n[FP_YIELD], wc_fprof_max[FP_YIELD], d[FP_IDLE], n[FP_IDLE],
+                    wc_fprof_max[FP_IDLE], other, g_fpIntsAll, int67, int21,
+                    wc_fprof_max[FP_CORE], wc_fprof_cb_max, (unsigned)wc_fprof_cb_max_id, g_fpProbe,
+                    wc_tlb_clears - g_fpTlbClears, wc_tlb_inits - g_fpTlbInits, d[FP_FRAMEHOOK]);
+        }
+        if (w > g_slowMs) {
+            g_fpSlow++;
+            wclog(1, "Privateer: slow frame %u (#%u) at emulated %.3f s: %.1f ms (emulated %.1f), guest %uk instructions; "
+                  "host: core %.1f (its hooks %.1f, %u calls), callbacks %.1f (network wait %.1f), events %.1f (hi-res "
+                  "retrace %.1f, present %.1f), ticks %.1f, yielded %.1f (%u, longest %.1f), idle %.1f (%u, longest %.1f), "
+                  "unaccounted %.1f; the frame's hook %.1f; longest core run %.1f, longest callback %.1f (number %u, called at %04X:%04X: %s); this log %.1f; core and events and callbacks and ticks sampled 1 in 16",
+                  g_fpSlow, g_fpFrame, g_fpEmu / 1000, w, e, (unsigned)g_fpPCs.size(), d[FP_CORE],
+                  d[FP_COREHOOK], n[FP_COREHOOK], d[FP_CALLBACK], d[FP_NET], d[FP_EVENTS], d[FP_VSYNC], d[FP_PRESENT],
+                  d[FP_TICKS], d[FP_YIELD], n[FP_YIELD], wc_fprof_max[FP_YIELD], d[FP_IDLE], n[FP_IDLE],
+                  wc_fprof_max[FP_IDLE], other, d[FP_FRAMEHOOK], wc_fprof_max[FP_CORE], wc_fprof_cb_max, (unsigned)wc_fprof_cb_max_id,
+                  wc_fprof_cb_max_at >> 16, wc_fprof_cb_max_at & 0xffff, CALLBACK_GetDescription(wc_fprof_cb_max_id), g_fpProbe);
+            // the interrupts, most made first
+            std::vector<std::pair<unsigned, unsigned long long>> ints;
+            for (const auto &it : g_fpInts) ints.push_back({ it.second.n, it.first });
+            std::sort(ints.rbegin(), ints.rend());
+            std::string line;
+            char buf[256];
+            for (size_t k = 0; k < ints.size() && k < 8; k++) {
+                const unsigned long long key = ints[k].second;
+                const FpIntSite &site = g_fpInts[key];
+                snprintf(buf, sizeof buf, "%sint %02X/%02X x%u at %04X:%04X", k ? "; " : "", (unsigned)(key >> 40),
+                         (unsigned)(key >> 32) & 0xff, ints[k].first, (unsigned)(key >> 16) & 0xffff, (unsigned)key & 0xffff);
+                line += buf;
+                if (site.v86 && k < 4) {
+                    snprintf(buf, sizeof buf, " (stack %04X %04X %04X %04X %04X %04X; bp chain %04X:%04X %04X:%04X %04X:%04X)",
+                             site.stack[0], site.stack[1], site.stack[2], site.stack[3], site.stack[4], site.stack[5],
+                             site.chain[1], site.chain[0], site.chain[3], site.chain[2], site.chain[5], site.chain[4]);
+                    line += buf;
+                }
+            }
+            wclog(1, "Privateer: slow frame %u: %u interrupts: %s", g_fpSlow, g_fpIntsAll, ints.empty() ? "none" : line.c_str());
+            if (g_fpReads || !g_fpSeeks.empty()) {
+                line.clear();
+                for (const Bit32u at : g_fpSeeks) {
+                    snprintf(buf, sizeof buf, " %X", at);
+                    line += buf;
+                }
+                wclog(1, "Privateer: slow frame %u: %u DOS reads, %u bytes; seeks to%s", g_fpSlow, g_fpReads, g_fpReadBytes, line.c_str());
+            }
+            // the guest's code: by segment, then the busiest places
+            std::map<Bit16u, unsigned> bySeg;
+            std::map<Bit32u, unsigned> byPc;
+            for (const Bit32u pc : g_fpPCs) {
+                bySeg[pc >> 16]++;
+                byPc[pc]++;
+            }
+            std::vector<std::pair<unsigned, Bit32u>> segs, pcs;
+            for (const auto &it : bySeg) segs.push_back({ it.second, it.first });
+            for (const auto &it : byPc) pcs.push_back({ it.second, it.first });
+            std::sort(segs.rbegin(), segs.rend());
+            std::sort(pcs.rbegin(), pcs.rend());
+            line.clear();
+            for (size_t k = 0; k < segs.size() && k < 10; k++) {
+                snprintf(buf, sizeof buf, "%s%04X %u", k ? ", " : "", (unsigned)segs[k].second, segs[k].first);
+                line += buf;
+            }
+            line += "; places";
+            for (size_t k = 0; k < pcs.size() && k < 10; k++) {
+                snprintf(buf, sizeof buf, " %04X:%04X %u", (unsigned)(pcs[k].second >> 16), (unsigned)pcs[k].second & 0xffff,
+                         pcs[k].first);
+                line += buf;
+            }
+            wclog(1, "Privateer: slow frame %u: code (samples of 1000 instructions, by CS): %s", g_fpSlow, line.c_str());
+            if (g_fpCsv) fflush(g_fpCsv);
+        }
+    }
+    g_fpWall = wall;
+    g_fpEmu = emu;
+    for (int b = 0; b < FP_N; b++) {
+        g_fpMs[b] = wc_fprof_ms[b];
+        g_fpCount[b] = wc_fprof_count[b];
+        wc_fprof_max[b] = 0;
+    }
+    wc_fprof_cb_max = 0;
+    g_fpPCs.clear();
+    g_fpInts.clear();
+    g_fpIntsAll = 0;
+    g_fpSeeks.clear();
+    g_fpReads = g_fpReadBytes = 0;
+    g_fpTlbClears = wc_tlb_clears;
+    g_fpTlbInits = wc_tlb_inits;
+    g_fpProbe = wc_fprof_now() - wall;
+}
+
 
 // Calls of the game's functions from the layer (TIE Fighter's way, for a 16-bit program): at seg088:0B2E's entry the
 // registers are kept, the call's data put on the stack (SS is DGROUP there: the game passes stack addresses as near
@@ -1225,6 +1461,7 @@ void priv_tick() {
     if (!g_found) {
         return;
     }
+    fprof_sample();
     const double now = PIC_FullIndex();
     if (g_scriptStickOn) {
         priv_controls_stick(g_scriptStickX, g_scriptStickY);
@@ -1709,7 +1946,12 @@ bool priv_check_hooks(Bit32u ip) {
     }
     const Bit16u codeSeg = (Bit16u)SegValue(cs);
 #if !(defined(EMSCRIPTEN) && defined(EM_ASYNCIFY))
-    if (priv_core_hook(ip)) {           // (in the browser wc_net_hook_exit has made it, in the core)
+    if (GCC_UNLIKELY(wc_fprof_hooks)) {
+        WcFprof prof(wc_fprof_hooks > 1 ? FP_COREHOOK : -1);
+        const bool handled = priv_core_hook(ip);
+        wc_fprof_hook(ip, handled);
+        if (handled) return true;
+    } else if (priv_core_hook(ip)) {        // (in the browser wc_net_hook_exit has made it, in the core)
         return true;
     }
 #endif
@@ -1728,7 +1970,9 @@ bool priv_check_hooks(Bit32u ip) {
     if (ip == kControlsEntry && codeSeg == (Bit16u)(g_privLoadSeg + kSeg088)) {
         g_frameSp = reg_sp;
         g_flightFrameAt = PIC_FullIndex();
+        WcFprof frameHook(FP_FRAMEHOOK);
         if (!g_saved.active) {
+            fprof_frame();
             pilot_dump_frame();
             comm_log_frame();
             armor_dump_frame();
@@ -3794,3 +4038,9 @@ static void tap_step() {
 }
 
 }  // namespace wc
+
+void wc_fprof_hook(Bit32u ip, bool handled) {
+    auto &c = wc::g_fpHooks[((Bit32u)(Bit16u)SegValue(cs) << 16) | (ip & 0xffff)];
+    c.first++;
+    if (handled) c.second++;
+}

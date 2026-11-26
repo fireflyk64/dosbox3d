@@ -45,6 +45,8 @@
 #include "ints/int10.h"
 #include "render.h"
 #include "pci_bus.h"
+#include "wc_fprof.h"
+#include <chrono>
 
 #if !SDL_VERSION_ATLEAST(2,0,0)
 #define SDL_TICKS_PASSED(A, B)  ((Sint32)((B) - (A)) <= 0)
@@ -128,6 +130,24 @@ static LoopHandler * loop;
 
 bool SDLNetInited;
 
+bool wc_fprof_on;
+double wc_fprof_ms[FP_N];
+unsigned wc_fprof_count[FP_N];
+double wc_fprof_max[FP_N];
+void (*wc_fprof_int)(Bitu num, Bitu oldeip);
+double wc_fprof_cb_max;
+int wc_fprof_hooks;
+unsigned wc_fprof_slice;
+Bitu wc_fprof_cb_max_id;
+Bit32u wc_fprof_cb_max_at;
+double wc_fprof_now() {
+#ifdef EMSCRIPTEN
+	return emscripten_get_now();
+#else
+	return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+#endif
+}
+
 static Bit32u ticksRemain;
 static Bit32u ticksLast;
 static Bit32u ticksAdded;
@@ -157,7 +177,10 @@ static Bitu Normal_Loop(void) {
 	if (SDL_TICKS_PASSED(ticksEntry, last_sleep + 10)) {
 		if (nosleep_lock == 0) {
 			last_sleep = ticksEntry;
-			emscripten_sleep(0);
+			{
+				WcFprof prof(FP_YIELD);
+				emscripten_sleep(0);
+			}
 			ticksEntry = GetTicks();
 		} else if (SDL_TICKS_PASSED(ticksEntry, last_sleep + 2000) &&
 		           !SDL_TICKS_PASSED(ticksEntry, last_loop + 200)) {
@@ -176,18 +199,40 @@ static Bitu Normal_Loop(void) {
 #endif
 #endif
 	while (1) {
-		if (PIC_RunQueue()) {
-			ret = (*cpudecoder)();
+		bool events;
+		{
+			WcFprofSampled prof(FP_EVENTS);
+			events = PIC_RunQueue();
+		}
+		if (events) {
+			{
+				WcFprofSampled prof(FP_CORE);
+				ret = (*cpudecoder)();
+			}
 			if (GCC_UNLIKELY(ret<0)) return 1;
 			if (ret>0) {
 				if (GCC_UNLIKELY(ret >= CB_MAX)) return 0;
-				Bitu blah = (*CallBack_Handlers[ret])();
+				Bitu blah;
+				{
+					const Bit32u at = wc_fprof_on ? ((Bit32u)SegValue(cs) << 16) | (reg_eip & 0xffff) : 0;
+					WcFprofSampled prof(FP_CALLBACK);
+					blah = (*CallBack_Handlers[ret])();
+					if (prof.start >= 0) {
+						const double d = wc_fprof_now() - prof.start;
+						if (d > wc_fprof_cb_max) {
+							wc_fprof_cb_max = d;
+							wc_fprof_cb_max_id = ret;
+							wc_fprof_cb_max_at = at;
+						}
+					}
+				}
 				if (GCC_UNLIKELY(blah)) return blah;
 			}
 #if C_DEBUG
 			if (DEBUG_ExitLoop()) return 0;
 #endif
 		} else {
+			WcFprofSampled prof(FP_TICKS);
 			GFX_Events();
 			if (ticksRemain>0) {
 				TIMER_AddTick();
@@ -356,6 +401,7 @@ increaseticks:
 #endif
 		} else {
 			ticksAdded = 0;
+			WcFprof prof(FP_IDLE);
 #ifndef EMSCRIPTEN
 			SDL_Delay(1);
 #elif defined(EM_ASYNCIFY)

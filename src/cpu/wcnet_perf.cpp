@@ -3,6 +3,7 @@
 #include <string.h>
 #include <chrono>
 #include "dosbox.h"
+#include "wc_fprof.h"
 #include "cpu.h"
 #include "pic.h"
 #include "wcnet_perf.h"
@@ -30,6 +31,7 @@ double perf_now_ms() {
 
 void perf_wait(double ms) {
     g_wait += ms;
+    if (wc_fprof_on) wc_fprof_ms[FP_NET] += ms;
 }
 
 void perf_idle_wait(double emulatedMs) {

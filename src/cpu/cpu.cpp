@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include "dosbox.h"
 #include "cpu.h"
+#include "wc_fprof.h"
 #include "memory.h"
 #include "debug.h"
 #include "mapper.h"
@@ -546,6 +547,7 @@ void CPU_Exception(Bitu which,Bitu error ) {
 Bit8u lastint;
 void CPU_Interrupt(Bitu num,Bitu type,Bitu oldeip) {
 	lastint=num;
+	if (GCC_UNLIKELY(wc_fprof_int != 0) && (type & CPU_INT_SOFTWARE)) wc_fprof_int(num, oldeip);
 	FillFlags();
 #if C_DEBUG
 	switch (num) {

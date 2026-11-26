@@ -37,8 +37,9 @@ CD (157 MB: `PRIV.TRE` 89 MB and `RF.TRE` 73 MB, the two campaigns' data, plus f
 (`__support/app/dosboxPRIV.conf`: machine svga_s3, memsize 16, cycles max, a Sound Blaster 16 on IRQ 5, EMS, XMS
 and UMBs on).  `PRIV.CFG` names the archives (`=D:priv.tre`, `=D:rf.tre`); `SOUND.CFG` the sound card.
 
-The programs: `PRIV.EXE` (8 KB) is Origin's loader: it installs JEMM, Origin's own EMS manager, when the machine has
-none (DOSBox has: it uses DOSBox's), and runs `PRCD.EXE` through DOS.  `PRCD.EXE` (937,760 bytes) is the game: a
+The programs: `PRIV.EXE` (8 KB) is Origin's loader: it always installs JEMM (`JEMM.OVL`, "ORIGIN EMS Driver" 4.31),
+Origin's own EMS manager, as a VCPI client of DOSBox's EMS when there is one, and runs `PRCD.EXE` through DOS (this
+said before that it used DOSBox's EMS: JEMM's protected-mode code at selector 18h is what runs; section 34).  `PRCD.EXE` (937,760 bytes) is the game: a
 real-mode Borland C++ 1991 overlay program, as the Wing Commanders are (454 segments, 183 overlays, DGROUP at
 paragraph 0x6E4D of the image), so `scripts/wcexe.py -e <game>/PRCD.EXE ...` disassembles it (`segs`, `dis`,
 `refs`, `xref`, `str`).  It runs paged, in chained mode 13h (320x200, double-scanned to 400 lines, pixels 1.2 times as tall
@@ -1628,3 +1629,51 @@ the pilot), the tractor beam.
 (the attitude is not carried on: fine at 28 reports a second on one machine, to be looked at over a real link); a
 gunner's energy is its own copy's (the pilot's is not taken by the turret); the landing fee (50) of a gunner's
 bounce; Righteous Fire flown as a crew (the same program: not yet run).
+
+## 34. Slow frames: the per-frame probe, and what makes a fight's frames slow (2026-11-25)
+
+The user: in multiplayer in Chrome from the Oxford save, "usually pegged at 29.8 fps but sometimes it drops down to
+17 fps. On some of these the time is spent in JEMM, but other times is unclear ... can you log traces for any frame
+longer than 47 ms"; then "I'm less concerned about the frame of ship appearances for the first time than the more
+steady state fights that can last minutes and still have min frames".
+
+**The probe.** `WCPRIVSLOW=<ms>` (on the page `?env.WCPRIVSLOW=47`) measures every flight frame, from one controls
+entry (seg088:0B2E) to the next: wall and emulated time, the guest's instructions (its CS:IP sampled at every
+periodic call, one per 1000 instructions), the host's time by the main loop's parts (`include/wc_fprof.h`: the core,
+callbacks, timed events with the 640 x 400 retrace and the present, the ms ticks, the yields to the browser, the idle
+sleeps, the frame hook itself), the software interrupts by number, AH and caller (the first call's stack and BP chain),
+the DOS seeks and reads, DOSBox's TLB clears and refills.  A row a frame goes to `WCNET_DUMP_DIR/fprof.csv`; a frame
+longer than the threshold on the wall clock is logged in three or four lines ("slow frame N ... host: core ...", its
+interrupts, its reads, its code by segment).  `WCPRIVSLOW_HOOKS=1` also counts the core hooks by place and the TLB
+clears by the guest's CS:IP (logged every 500 frames), `=2` times every hook call.
+
+Measuring is not free in a browser: a clock read from wasm is about a microsecond, and the core leaves for the
+layer's periodic call every 1000 instructions, so the main loop's slices (some thousands a frame) are timed one in 16
+and counted 16 times; timing every slice took 3.5 ms a frame, timing every hook call 5 ms more.  Chrome's tracing makes
+a third of the main thread "(program)", and starting or stopping its profiler holds a timer back 80 ms.
+
+**The page's log.**  `log()` (web/wc.js) rewrote the whole text of `#log` (up to 200,000 characters, wrapped) for every
+line and read the layout back for its scroll: about 15 ms a line, more with several, so every line the layer logged in
+flight ("a hit", the nav points, comms) was a missed frame.  Lines now go to the page at most four times a second, each
+batch a block of its own (only the new block laid out); "Copy log" takes what is pending first.
+
+**What was measured** (headless Chrome on the dev machine, two pilots in a loose room at Oxford, five pirates spawned,
+the two turning toward each other and firing for 60 s): 28 to 29 frames in every wall second, about 11 ms of a frame
+to spare; with Chrome's CPU slowed down twice, 16 frames a second at the median and nearly every frame late on the
+host (the guest's work fits its 35 emulated ms; the browser cannot run it in 35 real ones).  So a slower computer's
+low frames are the frames with the most guest work.  What makes that work vary from frame to frame (share of the
+variance of the instructions a frame): seg198, the magnified ship's columns (the loops round the column fills: 24% for
+the host, 59% for the guest with the other pilot close and large), seg039 (collision tests and the AI's vector maths,
+8-16%), JEMM (5-10%, some 44,000 instructions in every frame), seg000 (3-7%).
+
+**JEMM's maps.**  seg145:05B3 turns an EMS address into a far pointer through a window of six of the large frame's
+pages (physical pages 12h-17h, slot = logical page mod (7 - pages wanted)); when a slot's page changes it maps all
+24 entries of its table at DS:68A4 at once (INT 67h AX=5000h CX=18h).  JEMM's map routine (live 0018:5C4C, JEMM.OVL
+offset 394Dh: live = file + 22FFh) writes four page-table entries a pair, about 45 instructions, then reloads CR3: some
+1,100 instructions a call, 70 or more calls a frame, 98% of JEMM's time in a fight.  JEMM's real-mode part (01A2)
+also switches to protected mode through DOSBox's VCPI (INT 67h DE0Ch) some 60 times a frame: with CR3 and CR0 that is
+some 420 clears of DOSBox's TLB and 2,300 pages looked up again a frame, but only 1 to 1.5% of the browser's time.
+
+**First appearances.**  The first ship or weapon of a type in a flight is read from PRIV.TRE (`TYPES\TALNWIMP.IFF`,
+`APPEARNC\GLADIUS.IFF`, `HEATSEEK.IFF` ...) and parsed through the EMS window: 1,300 to 3,000 maps, 100 to 190 ms in
+one frame.

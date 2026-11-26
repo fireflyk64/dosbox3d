@@ -22,6 +22,7 @@
 #include <string.h>
 
 #include "dosbox.h"
+#include "wc_fprof.h"
 #include "mem.h"
 #include "paging.h"
 #include "regs.h"
@@ -317,6 +318,7 @@ public:
 		} else return true;
 	}
 	Bitu InitPage(Bitu lin_addr,bool writing) {
+		wc_tlb_inits++;
 		Bitu lin_page=lin_addr >> 12;
 		Bitu phys_page;
 		if (paging.enabled) {
@@ -654,7 +656,11 @@ void PAGING_InitTLB(void) {
 	paging.links.used=0;
 }
 
+Bit32u wc_tlb_clears, wc_tlb_inits;
+void (*wc_tlb_clear_probe)();
 void PAGING_ClearTLB(void) {
+	wc_tlb_clears++;
+	if (wc_tlb_clear_probe) wc_tlb_clear_probe();
 	Bit32u * entries=&paging.links.entries[0];
 	for (;paging.links.used>0;paging.links.used--) {
 		Bitu page=*entries++;

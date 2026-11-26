@@ -8,6 +8,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include "wc_fprof.h"
 #include <string.h>
 #include <ctype.h>
 #include <signal.h>
@@ -2739,8 +2740,15 @@ Bitu wc_net_hook_exit(Bit32u ip) {
     }
     // (Privateer's drawing calls for its 640 x 480 picture, its native twins and its idled wait: some thousands a
     // frame, all made here in the core)
-    if (ip < 0x10000 && wc_net_countdown >= 0 && wc_net_watch[ip] && wc::priv_core_hook(ip)) {
-        return 0;
+    if (ip < 0x10000 && wc_net_countdown >= 0 && wc_net_watch[ip]) {
+        if (GCC_UNLIKELY(wc_fprof_hooks)) {
+            WcFprof prof(wc_fprof_hooks > 1 ? FP_COREHOOK : -1);
+            const bool handled = wc::priv_core_hook(ip);
+            wc_fprof_hook(ip, handled);
+            if (handled) return 0;
+        } else if (wc::priv_core_hook(ip)) {
+            return 0;
+        }
     }
     // (a watched offset passed by another segment's code: not a hook's place)
     if (ip < 0x10000 && wc_net_countdown >= 0 && wc_net_watch_cs[ip] && wc_net_watch_cs[ip] != SegValue(cs)) {

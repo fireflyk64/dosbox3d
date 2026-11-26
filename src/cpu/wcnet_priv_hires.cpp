@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 #include "dosbox.h"
+#include "wc_fprof.h"
 #include "dos_inc.h"
 #include "wcnet_priv_hires.h"
 #include "wcnet_priv_font.h"
@@ -2637,7 +2638,9 @@ bool priv_hires_hook(Bit32u ip) {
 }  // namespace wc
 
 void wc_priv_hires_vsync() {
-    if (!wc::g_override || !RENDER_StartUpdate()) return;
+    if (!wc::g_override) return;
+    WcFprof prof(FP_VSYNC);
+    if (!RENDER_StartUpdate()) return;
     wc::compose();
     for (int y = 0; y < wc::HH; y++) RENDER_DrawLine(wc::g_out + y * wc::HW);
     RENDER_EndUpdate(false);

@@ -42,6 +42,7 @@
 
 #include "version.h"
 #include "dosbox.h"
+#include "wc_fprof.h"
 #include "video.h"
 #include "render.h"
 #include "mouse.h"
@@ -1813,6 +1814,7 @@ void GFX_RedrawOverlay(void) {
 }
 
 void GFX_EndUpdate( const Bit16u *changedLines ) {
+    WcFprof prof(FP_PRESENT);
     Bit16u fakeChangedLines[2];
     if (true) {
         {
