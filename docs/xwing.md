@@ -25,8 +25,22 @@ is made from.
 * **The CD.** The game looks for `\BWING.EXE` on a drive and reads `RESOURCE\`, `MISSION\` (the missions: `.XWI`, with
   `.BRF` briefings), `CLASSIC\`, `TALK\` and `CP\` (the cockpits) from it; the disc's top holds every file of the
   installed game too. The installed game is 59 files (pilots `*.PLT`, `OPTIONS.CFG`, `SETMUSE.INI`, the sound drivers).
-* **GOG's "X-Wing Special Edition"** (not seen here; its listing from gogdb.org): the 1994 game's folder, "Star Wars
-  - X-Wing CD (1994)", is the installed game's files with `game.gog` (the disc's image, 90 MB) beside them.
+* **GOG's "STAR WARS: X-Wing Collector's CD (1994)"** (product 1207667213; its installer not seen here, its Galaxy
+  build of 2025-04-10, "1.01 GOG V3", listed on gogdb.org): the game's folder, "Star Wars - X-Wing CD (1994)", holds
+  at its top the 55 files a hard-disk install leaves (the user's `XWING/` has all but EMUSET.EXE and MEGAEM.EXE, which
+  this CD lacks too; GOG's has no saved pilots, replays or XWINGCD2.BAT) with `game.gog` (the disc's image, 90 MB:
+  raw 2352-byte sectors, as TIE Fighter's) and `game.ins` (its cue sheet); `__support/app/dosbox_xwingcd.conf` and
+  `dosbox_xwingcd_single.conf`, `__support/save/TOPACE5.PLT`, `goggame-1207667213.*`; the offline installer adds GOG's
+  DOSBox and its furniture. TIE Fighter's Collector's CD from GOG has the same make, plus the disc's folders copied
+  beside the game (MISSION/, RESOURCE/ ...); X-Wing's are only in game.gog.
+* **GOG's installers inside** (read off TIE Fighter's, Inno Setup 5.6.2 unicode): every game file is a "GOG Galaxy"
+  file, cut into 8 MiB parts, each deflated and stored in a chunk of its own under `{tmp}\xx\yy\<md5>`; the name is
+  in the first part's `before_install('<md5>', '<path>', <parts>)`, the sizes in `after_install(...)`, the languages
+  in `check_if_install('en-US#', '32#64#', '')`. innoextract `--gog` (the page's) puts them back together.
+  `scripts/xwing-gog-exe.py` writes an installer of that make from your own CD (`scripts/innosetup.py`; a PE stub of
+  our own with the loader's offset table, GOG's DOSBox and furniture as placeholders): `--hd xwingcd/XWING --iso
+  xwingcd/xwing.iso -o OUT.exe --verify` (43 MB; innoextract 1.9 lists, tests and unpacks it). `--subdir`,
+  `--image-at`, `--image-name`, `--cooked` make the other layouts the page must take.
 * **The files here** (`~/dev/dosbox3d/xwingcd`, untracked, the user's): `XWING/` the installed game, `xwing.iso` the
   disc (78 MB), `XWNOCP/` and `XWINGCD.bak/` an installed game with the disc's files in `CD/`. `XWNOCP/CD`'s seven
   forward cockpits (`CP\*12*.LFD`) are 2,199-byte blanks and its OPTIONS.CFG has the cockpit off: flown from it the
@@ -43,14 +57,25 @@ is made from.
 * **What is dropped**: GOG's installer or a zip of its folder (`game.gog` beside the game); a zip of an installed
   game with the disc's files in a folder (any name: the folder holding `MISSION\*.XWI`) or the disc's image in it;
   or the disc's image alone, an `.iso` (`expandCdImages`: the files at its top are the installed game's, put beside
-  it). `xwDisc` finds the disc among the files: the largest `.iso`/`.gog`/`.bin`/`.img` of 10 MB and more, mounted with
-  `imgmount d ... -t iso`, else the folder, mounted with `mount d ... -t cdrom`.
+  it, when no BWING.EXE was dropped).
+* **The disc is found by what is in it, not by names** (the user, 2026-11-26: "make the detector resilient to the
+  guess"): `xwDisc` takes a file of 10 MB and more that is ISO 9660 in a layout the emulator mounts (`ISO_LAYOUTS`:
+  2048-byte sectors, raw 2352 with the data at 16 or 24, as src/dos/cdrom_image.cpp reads them) and whose top holds
+  BWING.EXE or MISSION\ (any name, any extension or none, any depth; of several the shallowest, then the largest),
+  else the folder holding `MISSION\*.XWI`, else any other CD image. When none is among the game's own files,
+  `gatherDisc` (identifyGame) runs the same search over the whole drop (an image above the game's folder, beside it,
+  in an installer's own folder; the disc's files in a folder of their own) and puts it with the game (the image at
+  its top, a folder as `CD\`). In an installer whose game is a folder down, the worker unpacks the big files outside
+  that folder too (a game with a disc only). The image is mounted with `imgmount d ... -t iso`, a folder with
+  `mount d ... -t cdrom`. `node scripts/web-xwing-layouts.mjs INSTALLER.exe XWING_ISO [XWNOCP]` tries 21 layouts
+  (GOG's unpacked from the test installer, renamed images, other folders and sector layouts, loose disc folders);
+  ends "XWING LAYOUTS OK". Before this, GOG's own layout was found, six of the others were not.
 * **Settings** (`xwPrepare`): LANDRU.CFG `fast`, `ems`, `diff`; SETMUSE.INI's two drivers (its first 28 bytes, 14 a
   name) made FM4.MDR and SB16.WDR whatever card the copy was set up for; OPTIONS.CFG the installer's FASTYES.CFG with
   the cockpit on when there is none. The machine: an S3, 16 MB, EMS, a Sound Blaster 16 at 220/7/1, 30,000 cycles.
 * **Kept in the browser**: the pilots (`*.PLT`), the high scores (`*.HGH`), OPTIONS.CFG.
-* `node scripts/web-xwing.mjs PAGE_URL ISO|ZIP [seconds]`: one page, the game dropped, a room of one flown from boot
-  to Tour of Duty I's first mission. Ends "XWING PAGE OK".
+* `node scripts/web-xwing.mjs PAGE_URL ISO|ZIP|EXE [seconds]`: one page, the game dropped (an installer unpacked in
+  the page), a room of one flown from boot to Tour of Duty I's first mission. Ends "XWING PAGE OK".
 
 ## 3. The program in memory (src/cpu/wcnet_xw.cpp)
 

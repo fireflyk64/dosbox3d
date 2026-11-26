@@ -16,7 +16,7 @@ import { initControls, KEY, stepped } from "./gamepad.js";
 import { initTouch } from "./touch.js";
 import { initVoice } from "./voice.js";
 import { loadSo3 } from "./so3.js";
-import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles, expandSplitZips, expandInnerZips, expandCdImages,
+import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles, expandSplitZips, expandInnerZips, expandCdImages, ISO_LAYOUTS,
          saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild, legacyOf, legacyAdvice, GAMES } from "./gamefiles.js";
 import { newRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, CALLSIGNS, pickCallsign, givesWay, sameName } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
@@ -523,9 +523,9 @@ async function useFiles(files, label, { persist = true } = {}) {
   }
 }
 
-// Is the file an ISO 9660 image (its volume descriptor at sector 16: 2048-byte sectors, or raw 2352-byte ones)?
+// Is the file an ISO 9660 image (its volume descriptor at sector 16, in any layout the emulator mounts: ISO_LAYOUTS)?
 async function isCdImage(file) {
-  for (const at of [16 * 2048, 16 * 2352 + 16]) {
+  for (const at of ISO_LAYOUTS.map(([size, data]) => 16 * size + data)) {
     if (file.size < at + 6) continue;
     const b = new Uint8Array(await file.slice(at, at + 6).arrayBuffer());
     if (b[0] === 1 && String.fromCharCode(...b.subarray(1, 6)) === "CD001") return true;

@@ -374,42 +374,68 @@ function tfMusicOnFm(FS, root) {
   return `TIE Fighter's music: ${name || "none"} (General MIDI: no synthesizer in the browser) changed to FM4.MDR, the Sound Blaster's OPL3`;
 }
 
-// A file of a CD image among the game's files (ISO 9660: 2048-byte sectors, or raw 2352-byte ones as GOG's game.gog
-// holds them), by its path ("RESOURCE/ICONS640.ICO", any case): its bytes, or null.
+// The CD images the emulator mounts (imgmount -t iso: src/dos/cdrom_image.cpp's LoadIsoFile): ISO 9660 in sectors of
+// 2048 bytes, or raw sectors of 2352 with the data 16 bytes in (MODE1: GOG's game.gog, a .bin) or 24 (MODE2 form 1),
+// as [sector size, where its 2048 bytes of data start].
+export const ISO_LAYOUTS = [[2048, 0], [2352, 16], [2352, 24]];
+// An ISO 9660 image read through at(position, length) -> its bytes there (fewer past the end): null when it is not one
+// in those layouts; else { ss, hdr, read(sector, size), root, list(dir), find(path) }, a directory or file being
+// { name (upper case, no ";1" nor the trailing dot), extent, size, dir }.
+export function isoImage(at) {
+  let ss = 0, hdr = 0;
+  for (const [s, h] of ISO_LAYOUTS) {
+    const p = at(16 * s + h, 7);
+    if (p.length === 7 && p[0] === 1 && String.fromCharCode(...p.subarray(1, 6)) === "CD001" && p[6] === 1) { ss = s; hdr = h; break; }
+  }
+  if (!ss) return null;
+  const u32 = (d, i) => (d[i] | d[i + 1] << 8 | d[i + 2] << 16 | d[i + 3] << 24) >>> 0;
+  const read = (sector, size) => {
+    const out = new Uint8Array(size);
+    for (let k = 0; k * 2048 < size; k++) {
+      const piece = at((sector + k) * ss + hdr, Math.min(2048, size - k * 2048));
+      out.set(piece, k * 2048);
+      if (piece.length < 2048) break;
+    }
+    return out;
+  };
+  const pvd = read(16, 2048);
+  const root = { name: "", extent: u32(pvd, 158), size: u32(pvd, 166), dir: true };     // (the root's record, at 156)
+  const list = (dir) => {
+    const d = read(dir.extent, Math.min(dir.size, 1 << 20));
+    const out = [];
+    for (let i = 0; i < d.length;) {
+      if (!d[i]) { i = (Math.floor(i / 2048) + 1) * 2048; continue; }     // (a record never spans sectors)
+      const n = d[i + 32];
+      if (n > 1 || d[i + 33] > 1) {     // (not "." nor "..")
+        out.push({ name: String.fromCharCode(...d.subarray(i + 33, i + 33 + n)).replace(/;\d+$/, "").replace(/\.$/, "").toUpperCase(),
+                   extent: u32(d, i + 2), size: u32(d, i + 10), dir: (d[i + 25] & 2) !== 0 });
+      }
+      i += d[i];
+    }
+    return out;
+  };
+  const find = (path) => {
+    let at = root;
+    for (const part of path.toUpperCase().split("/")) {
+      if (!at.dir) return null;
+      at = list(at).find((e) => e.name === part) || null;
+      if (!at) return null;
+    }
+    return at;
+  };
+  return { ss, hdr, read, root, list, find };
+}
+// ... of bytes in memory.
+const isoOfBytes = (d) => (d && d.length >= 17 * 2048 ? isoImage((p, n) => d.subarray(p, p + n)) : null);
+
+// A file of a CD image among the game's files, by its path ("RESOURCE/ICONS640.ICO", any case): its bytes, or null.
 function readFromImage(FS, imagePath, wanted) {
   let stream;
   try { stream = FS.open(imagePath, "r"); } catch (e) { return null; }
   try {
-    const at = (pos, len) => { const b = new Uint8Array(len); FS.read(stream, b, 0, len, pos); return b; };
-    let ss = 0, hdr = 0;
-    for (const [s, h] of [[2048, 0], [2352, 16]]) {
-      const p = at(16 * s + h, 6);
-      if (p[0] === 1 && String.fromCharCode(...p.subarray(1, 6)) === "CD001") { ss = s; hdr = h; break; }
-    }
-    if (!ss) return null;
-    const read = (sector, size) => {
-      const out = new Uint8Array(size);
-      for (let k = 0; k * 2048 < size; k++) out.set(at((sector + k) * ss + hdr, Math.min(2048, size - k * 2048)), k * 2048);
-      return out;
-    };
-    const u32 = (d, i) => (d[i] | d[i + 1] << 8 | d[i + 2] << 16 | d[i + 3] << 24) >>> 0;
-    const pvd = read(16, 2048);
-    let extent = u32(pvd, 158), size = u32(pvd, 166);     // (the root directory's record, at 156)
-    const parts = wanted.toUpperCase().split("/");
-    for (let n = 0; n < parts.length; n++) {
-      const d = read(extent, size);
-      let found = null;
-      for (let i = 0; i < d.length;) {
-        if (!d[i]) { i = (Math.floor(i / 2048) + 1) * 2048; continue; }     // (a record never spans sectors)
-        const name = String.fromCharCode(...d.subarray(i + 33, i + 33 + d[i + 32])).replace(/;\d+$/, "").toUpperCase();
-        if (name === parts[n]) { found = { extent: u32(d, i + 2), size: u32(d, i + 10), dir: (d[i + 25] & 2) !== 0 }; break; }
-        i += d[i];
-      }
-      if (!found || found.dir !== (n < parts.length - 1)) return null;
-      extent = found.extent;
-      size = found.size;
-    }
-    return read(extent, size);
+    const iso = isoImage((pos, len) => { const b = new Uint8Array(len); return b.subarray(0, FS.read(stream, b, 0, len, pos)); });
+    const f = iso && iso.find(wanted);
+    return f && !f.dir ? iso.read(f.extent, f.size) : null;
   } catch (e) {
     return null;
   } finally {
@@ -588,24 +614,43 @@ function tdPrepare(FS, root) {
   return said.length ? `The TIE Fighter demo's settings, as its installer writes them: ${said.join(", ")}` : "";
 }
 
-// X-Wing Collector's CD-ROM (docs/xwing.md).  Its CD: an image among the game's files (GOG's game.gog, an .iso, a
-// .bin of raw sectors: the largest such file of 10 MB and more), or the disc's own files in a folder (the one that
-// holds MISSION\*.XWI: a copy of the CD beside the installed game, or the CD's own top, where the installed game's
-// files are too).
+// X-Wing Collector's CD-ROM (docs/xwing.md).  Its CD, found by what is in it rather than by names, which differ from
+// one copy to the next (GOG's installer has it as game.gog, raw 2352-byte sectors, at the top of the game's folder;
+// a copy from the old days may be an .iso, a .bin, an .img, a folder of the disc's files, any name, any depth):
+// 1. an image of the disc: a file of 10 MB or more that is ISO 9660 in a layout the emulator mounts (ISO_LAYOUTS)
+//    and whose top holds BWING.EXE or a MISSION folder (the X-Wing disc's top holds both); of several, the
+//    shallowest, then the largest;
+// 2. else the disc's own files in a folder: the one that holds MISSION\*.XWI (a copy of the CD beside the installed
+//    game, or the CD's own top, where the installed game's files are too), the shallowest;
+// 3. else any other CD image (none of the above, but an image all the same: the game says so if it is not its disc).
+// Files known only by their size (no bytes to look at) count as images by their extension: .gog .iso .bin .img .mdf.
+// The images count wherever they are among `files`; identifyGame also looks through the whole drop when none is
+// among the game's own files (gatherDisc).
 function xwDisc(files) {
-  let image = null;
+  const images = [];
   for (const f of files) {
-    if (!/\.(iso|gog|bin|img)$/i.test(f.path) || f.path.split("/").length > 2) continue;
-    const size = f.size !== undefined ? f.size : (f.data ? f.data.length : 0);
-    if (size >= 10e6 && (!image || size > image.size)) image = { path: f.path, size };
+    const depth = f.path.split("/").length;
+    if (f.data) {
+      if (f.data.length < 10e6) continue;
+      const iso = isoOfBytes(f.data);
+      if (!iso) continue;
+      const top = iso.list(iso.root);
+      const ours = top.some((e) => (!e.dir && e.name === "BWING.EXE") || (e.dir && e.name === "MISSION"));
+      images.push({ path: f.path, ours, depth, size: f.data.length });
+    } else if (f.size >= 10e6 && /\.(gog|iso|bin|img|mdf)$/i.test(f.path)) {
+      images.push({ path: f.path, ours: true, depth, size: f.size });
+    }
   }
-  if (image) return { image: image.path };
+  images.sort((a, b) => (b.ours - a.ours) || (a.depth - b.depth) || (b.size - a.size));
+  if (images.length && images[0].ours) return { image: images[0].path };
+  const fdepth = (p) => (p ? p.split("/").length : 0);
   let folder = null;
   for (const f of files) {
     const m = /^(?:(.*)\/)?mission\/[^/]+\.xwi$/i.exec(f.path);
-    if (m && (folder === null || (m[1] || "").length < folder.length)) folder = m[1] || "";
+    if (m && (folder === null || fdepth(m[1] || "") < fdepth(folder))) folder = m[1] || "";
   }
-  return folder === null ? null : { folder };
+  if (folder !== null) return { folder };
+  return images.length ? { image: images[0].path } : null;
 }
 // Its settings, as its installer leaves them for a fast machine with a Sound Blaster 16: LANDRU.CFG ("fast", "ems",
 // "diff"); SETMUSE.INI's two drivers (the file's first 28 bytes: the music's driver, then the digitized sound's, 14
@@ -963,9 +1008,10 @@ export const GAMES = [
     help: "The TIE Fighter demo of early 1994, the one given away with the Dodge Neon: a single mission (T/F Alpha against the Rebel repair yard at Remitik, the Rebels fleeing Hoth after), in a build from before the game's release. Here it is the first of four: win it and you fly on, the same game with new missions written in by this page: The Shuttles Run (TIE interceptors after a dozen fleeing shuttles, X-wings and Y-wings in the way), Corvette Hunt (TIE bombers with proton torpedoes against four corvettes) and Escort the Prowlers (TIE fighters against waves of Y-wings, and whatever comes after). A mission failed or a pilot down: that mission again. It opens in the Dodge Neon's showroom (click Go to game, or press any key but Esc: Esc there leaves the demo), then the opening plays (Esc skips it), then the missions, then the ending, and back to the showroom. The TIE Fighter demo button under step 1 fetches it from the Internet Archive once (TIE_Fighter_Preview__Dodge_Neon.zip, the preview's two floppies, 1.7 MB), installs it as its installer does and keeps it in this browser; its zip dropped on step 1 works too. Flown together, up to 3 pilots: everybody's mission starts at the same moment (the host's game waits at the end of the opening until everybody has got there), each pilot flies their own TIE fighter of T/F Alpha, and the battle is one battle: the same Rebels in the same places on every screen, every shot seen by everybody, every hit counted where it lands, a craft destroyed for one destroyed for all. If a pilot is shot down, the flight ends for everybody a moment later.",
     keys: "<b>TIE Fighter demo in flight:</b> the arrow keys steer (a tap turns a little, held they build to the game's own keyboard turn in a third of a second; <kbd>Shift</kbd> with an arrow is the whole stick at once, the mouse's sharpest turn; <kbd>Up</kbd> dives as a stick pushed forward), the keypad's <kbd>Ins</kbd> and <kbd>Del</kbd> roll. The mouse, as the <b>Flight</b> choice beside Controller has it: <i>point to aim</i> (the default: a ring shows the pointer; the middle is still, the further the pointer the faster the turn; the craft turns and climbs without banking, and the right button held with the mouse moved across rolls), <i>point to aim, banking</i> (the same with the game's own bank into each turn), <i>drag to steer</i> (the game's own, 1994: the right button held a moment with the mouse moved across rolls, a click picks a target), or nothing (the keyboard alone, or a joystick: a controller picked above, which also rolls and fires); <kbd>F12</kbd> in flight switches between the first four. <kbd>Space</kbd> or the left button fires; <kbd>+</kbd> and <kbd>-</kbd> the throttle, <kbd>Backspace</kbd> full, <kbd>\\</kbd> none, <kbd>[</kbd> and <kbd>]</kbd> a third and two thirds; <kbd>X</kbd> single, dual or quad fire, <kbd>F9</kbd> the lasers' recharge rate; <kbd>R</kbd> the nearest enemy fighter, <kbd>T</kbd> and <kbd>Y</kbd> the next and previous target, <kbd>U</kbd> the ship in the sight; <kbd>W</kbd> the bomber's proton torpedoes (and back to the lasers); <kbd>Space</kbd> is still the game's when the onboard computer suggests something (it approves); <kbd>Ctrl</kbd> the threat display; the keypad's digits look around. <kbd>Esc</kbd> is kept from the game (it would end the demo at once, back to DOS), so it only leaves full screen. <kbd>`</kbd> (or <kbd>Shift</kbd>+<kbd>`</kbd>, the one with Voice on push to talk) turns the 640×400 picture off, the game's own 320×200 in its place, and on again.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
-  // X-Wing Collector's CD-ROM (LucasArts, 1994): the installed game with its CD (GOG's "X-Wing Special Edition": the
-  // 1994 game's folder with game.gog, the disc; a zip of the installed folder with the CD's files or an image of it
-  // inside; or the CD's image alone, whose top holds the installed game's files too: expandCdImages).  BWING.EXE is
+  // X-Wing Collector's CD-ROM (LucasArts, 1994): the installed game with its CD (GOG's "X-Wing Collector's CD (1994)":
+  // the installed game's files with game.gog, the disc, at the top of its folder; a zip of the installed folder with
+  // the CD's files or an image of it inside or beside; or the CD's image alone, whose top holds the installed game's
+  // files too: expandCdImages; the disc found by what is in it, wherever it is: xwDisc, gatherDisc).  BWING.EXE is
   // a 16-bit real-mode program with overlays (BFRONT.OVL the front end, BFLIGHT.OVL the flight: the TIE Fighter demo's
   // engine in an earlier build), EMS; it looks for its CD on a drive (\BWING.EXE there).  Flown together
   // (src/cpu/wcnet_xw*.cpp, the TIE demo's session ported; docs/xwing.md): rooms of up to 4, every pilot through
@@ -1131,6 +1177,7 @@ export function looksLikeInstaller(bytes) {
 export function extractInstaller(file, onLog) {
   const blob = file instanceof Blob ? file : new Blob([file]);
   const detect = [...new Set(GAMES.filter((g) => !g.partOf).flatMap((g) => g.detect))];
+  const discs = [...new Set(GAMES.filter((g) => g.disc).flatMap((g) => g.detect))];
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./inno-worker.js", import.meta.url), { type: "module" });
     worker.onmessage = (ev) => {
@@ -1140,7 +1187,7 @@ export function extractInstaller(file, onLog) {
       else if (m.type === "error") { worker.terminate(); reject(new Error(m.message)); }
     };
     worker.onerror = (e) => { worker.terminate(); reject(new Error("installer extraction failed: " + (e.message || e))); };
-    worker.postMessage({ type: "extract", blob, detect });
+    worker.postMessage({ type: "extract", blob, detect, discs });
   });
 }
 
@@ -1186,8 +1233,41 @@ export function identifyGame(files) {
   const gameFiles = normalized
     .filter((f) => f.path.startsWith(prefix) && !isJunk(f.path.slice(prefix.length)))
     .map((f) => ({ path: f.path.slice(prefix.length), data: f.data }));
-  const gathered = gatherFiles(best.game, best.root, normalized, gameFiles);
+  const gathered = gatherFiles(best.game, best.root, normalized, gameFiles).concat(gatherDisc(best.game, best.root, normalized, gameFiles));
   return { game: best.game, root: best.root, files: gameFiles, gathered };
+}
+
+// A game's disc (the registry's `disc`) that is not among the game's own files but elsewhere in the drop: an image in
+// a folder beside the program's (a zip of XWING\ and CD\XWING.ISO), above it (game.gog at the top, the game one
+// folder down), in an installer's own folder; or a folder of the disc's files beside the game's.  The same search
+// (`disc`) is run over everything dropped, the installer's furniture left out (images count even there: they are
+// known by what is in them), and what it finds is put with the game: an image at the game folder's top under its
+// own name (CD_ before it when the game has a file of that name), a folder as CD\ (CD1\ ... when taken).  Returns
+// what was moved, for the page's log.
+function gatherDisc(game, root, all, gameFiles) {
+  if (!game.disc || game.disc(gameFiles)) return [];
+  const prefix = root ? root + "/" : "";
+  const outside = all.filter((f) => !f.path.startsWith(prefix) || !prefix);
+  const found = game.disc(outside.filter((f) => !isJunk(f.path) || (f.data && f.data.length >= 10e6)));
+  if (!found) return [];
+  const have = new Set(gameFiles.map((f) => f.path.toUpperCase()));
+  if (found.image) {
+    const f = all.find((g) => g.path === found.image);
+    let to = base(f.path);
+    while (have.has(to.toUpperCase())) to = "CD_" + to;
+    gameFiles.push({ path: to, data: f.data });
+    return [`${f.path} -> ${to} (the CD)`];
+  }
+  const from = found.folder ? found.folder + "/" : "";
+  let to = "CD", n = 0;
+  while ([...have].some((p) => p.startsWith(to.toUpperCase() + "/"))) to = "CD" + ++n;
+  let count = 0;
+  for (const f of outside) {
+    if (!f.path.startsWith(from) || isJunk(f.path.slice(from.length)) || (prefix && f.path.startsWith(prefix))) continue;
+    gameFiles.push({ path: `${to}/${f.path.slice(from.length)}`, data: f.data });
+    count++;
+  }
+  return [`${found.folder || "the top"}/ -> ${to}/ (the CD's ${count} files)`];
 }
 
 // A game whose files are not all beside its program (the user, 2026-11-15: "very loose on finding the .EXE and
@@ -1252,43 +1332,23 @@ export async function expandInnerZips(files) {
 
 // A CD's image dropped by itself, or beside nothing that is a game (an .iso of the X-Wing Collector's CD: the disc's top
 // holds the installed game's own files): the files at the image's top put beside it, when one of them is a program
-// the registry knows that comes with a disc (`disc`).  ISO 9660, 2048-byte sectors or raw 2352-byte ones.
+// the registry knows that comes with a disc (`disc`) and no such program is among the dropped files already (an
+// installed game beside its image, GOG's game.gog, keeps its own files; the image is found as its disc).  Any layout
+// of ISO_LAYOUTS.
 export function expandCdImages(files) {
   const known = new Set(GAMES.filter((g) => g.disc).flatMap((g) => g.detect));
+  if (files.some((f) => known.has(base(f.path.replace(/\\/g, "/")).toUpperCase()))) return files;
   let out = files;
   for (const f of files) {
-    const d = f.data;
-    if (!d || d.length < 2e6) continue;
-    let ss = 0, hdr = 0;
-    for (const [s, h] of [[2048, 0], [2352, 16]]) {
-      const p = 16 * s + h;
-      if (d[p] === 1 && String.fromCharCode(...d.subarray(p + 1, p + 6)) === "CD001") { ss = s; hdr = h; break; }
-    }
-    if (!ss) continue;
-    const read = (sector, size) => {
-      const o = new Uint8Array(size);
-      for (let k = 0; k * 2048 < size; k++) {
-        const from = (sector + k) * ss + hdr, n = Math.min(2048, size - k * 2048);
-        if (from + n > d.length) break;
-        o.set(d.subarray(from, from + n), k * 2048);
-      }
-      return o;
-    };
-    const u32 = (b, i) => (b[i] | b[i + 1] << 8 | b[i + 2] << 16 | b[i + 3] << 24) >>> 0;
-    const pvd = read(16, 2048);
-    const rootDir = read(u32(pvd, 158), Math.min(u32(pvd, 166), 1 << 20));
-    const top = [];
-    for (let i = 0; i < rootDir.length;) {
-      if (!rootDir[i]) { i = (Math.floor(i / 2048) + 1) * 2048; continue; }
-      const name = String.fromCharCode(...rootDir.subarray(i + 33, i + 33 + rootDir[i + 32])).replace(/;\d+$/, "").replace(/\.$/, "").toUpperCase();
-      if (!(rootDir[i + 25] & 2) && name.length > 1) top.push({ name, extent: u32(rootDir, i + 2), size: u32(rootDir, i + 10) });
-      i += rootDir[i];
-    }
+    if (!f.data || f.data.length < 2e6) continue;
+    const iso = isoOfBytes(f.data);
+    if (!iso) continue;
+    const top = iso.list(iso.root).filter((e) => !e.dir && e.name.length > 1);
     if (!top.some((e) => known.has(e.name))) continue;
     const at = dir(f.path.replace(/\\/g, "/"));
     const prefix = at ? at + "/" : "";
     const have = new Set(out.map((g) => g.path.replace(/\\/g, "/").toUpperCase()));
-    const added = top.filter((e) => !have.has((prefix + e.name).toUpperCase()) && e.size < 64e6).map((e) => ({ path: prefix + e.name, data: read(e.extent, e.size) }));
+    const added = top.filter((e) => !have.has((prefix + e.name).toUpperCase()) && e.size < 64e6).map((e) => ({ path: prefix + e.name, data: iso.read(e.extent, e.size) }));
     out = out.concat(added);
   }
   return out;
