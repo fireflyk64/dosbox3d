@@ -214,7 +214,7 @@ scanline pass, the game's 320x200 (cockpit, instruments, text) doubled behind it
   Two pages in a room: 56 to 62 at the fewest (30 once, both pages on one machine).
 * **Seen**: the cockpit, the view without it, the look-around views, the in-flight map, fire, a kill, the rescue
   scenes after a death.
-* `WCNET_TIE640=0` keeps the game's own picture; `WCNET_T640_NATIVE=0` draws the quarters by the game's own code
+* `WCNET_TIE640=0` keeps the game's own picture (in flight the `` ` `` key, or Shift+`` ` ``, turns it off and on: `xw640_flip`); `WCNET_T640_NATIVE=0` draws the quarters by the game's own code
   (four times the scene's work: 32 frames a second where the one pass makes 62).
 
 ## 6. Open

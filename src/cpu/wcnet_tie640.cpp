@@ -768,13 +768,15 @@ bool tie640_fast_trip(Bit32u ip) {
 }
 
 static float g_fps = 70; static double g_ratio = 1;       // the picture's rate and shape as given to the emulator's renderer
-void tie640_tick(bool flight, Bit16u loadSeg) {
+static void wanted_init() {     // (static: this file is compiled twice, for X-Wing too)
     if (g_wanted < 0) {
         const char *env = getenv("WCNET_TIE640");
-
-
         g_wanted = env && env[0] == '0' ? 0 : 1;
     }
+}
+
+void tie640_tick(bool flight, Bit16u loadSeg) {
+    wanted_init();
     g_load = loadSeg;
     const bool want = g_wanted && flight && vga.mode == M_VGA && code_known();
     if (flight) tie640_fast_tick(loadSeg);      // FAST
@@ -800,6 +802,16 @@ void tie640_tick(bool flight, Bit16u loadSeg) {
         wc_hires_watch = false;
         VGA_SetOverride(false);
     }
+}
+
+// The backquote key (wcnet_hooks.cpp; with the page's voice on push to talk, Shift+` -- either works at any time):
+// the 640x400 picture off, the game's own 320x200 in its place, or on again, as Privateer's and Armada's flip theirs
+// (the user, 2026-11-26: "is it possible to make ` toggle resolution in tie demo and xwing cd?").  The picture follows
+// at the next tick, which also turns it on at a flight's start and off at its end, wherever the game is.
+void tie640_flip() {
+    wanted_init();
+    g_wanted = !g_wanted;
+    wclog(1, T640_GAME ": the 640x400 picture %s (the ` key)", g_wanted ? "on" : "off: the game's own 320x200");
 }
 
 // The flight's frames against the HOST's clock (the user, 2026-11-23: "the interesting number is the minimum framerate

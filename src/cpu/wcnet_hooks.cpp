@@ -2573,6 +2573,10 @@ bool wc_net_key_filter(int kbdKey, bool pressed) {
         if (pressed) arm_hires_flip();      // (Armada: the same, wcnet_armada_hires.cpp)
         return true;
     }
+    if (kbdKey == KBD_grave && (tdm_found() || xw_found())) {
+        if (pressed) { if (xw_found()) xw640_flip(); else tie640_flip(); }    // (the TIE demo's and X-Wing's 640x400: wcnet_tie640.cpp)
+        return true;
+    }
     if (arm_found() && arm_hires_key(kbdKey, pressed)) {
         return true;    // (Armada's Move Resources: + and - click a row's arrows and go on, wcnet_armada_hires.cpp)
     }

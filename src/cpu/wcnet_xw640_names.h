@@ -17,6 +17,7 @@
 #define tie640_fast_tick xw640_fast_tick
 #define tie640_fast_trip xw640_fast_trip
 #define tie640_fast_watch xw640_fast_watch
+#define tie640_flip xw640_flip
 #define tie640_hook xw640_hook
 #define tie640_native_fill xw640_native_fill
 #define tie640_native_image xw640_native_image
