@@ -112,6 +112,27 @@ check("the choice is remembered", (await wing.evaluate(() => localStorage.getIte
   const typed = await wing.$eval("#chatInput", (el) => el.value);
   check("a ` typed into the chat box is typed", typed === "a`b" && !(await micOn()), typed);
   await wing.$eval("#chatInput", (el) => { el.value = ""; el.blur(); });
+  // ... and the slash talks too, by the same rules; the voice stays on while either key is held
+  await wing.evaluate(() => { window.__keys = []; });
+  await wing.keyboard.down("Slash");
+  const slashTalks = await micOn();
+  await wing.keyboard.down("Backquote");
+  await wing.keyboard.up("Slash");
+  const stillTalking = await micOn();
+  await wing.keyboard.up("Backquote");
+  const slashAfter = await micOn();
+  check("/ held talks too, and the voice stays on while either key is held", slashTalks && stillTalking && !slashAfter, { slashTalks, stillTalking, slashAfter });
+  await wing.keyboard.down("Shift");
+  await wing.keyboard.down("Slash");
+  const shiftSlash = await micOn();
+  await wing.keyboard.up("Slash");
+  await wing.keyboard.up("Shift");
+  const keys2 = await wing.evaluate(() => window.__keys);
+  await wing.click("#chatInput");
+  await wing.keyboard.type("1/3");
+  const typed2 = await wing.$eval("#chatInput", (el) => el.value);
+  await wing.$eval("#chatInput", (el) => { el.value = ""; el.blur(); });
+  check("Shift+/ and a / typed into a box are the game's and the box's", !shiftSlash && keys2.includes("Shift+Slash") && !keys2.includes("Slash") && typed2 === "1/3", { shiftSlash, keys2, typed2 });
 }
 
 // Exercise the previously silent PTT -> Always path, and check decoded audio
