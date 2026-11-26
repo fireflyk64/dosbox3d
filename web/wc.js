@@ -79,13 +79,34 @@ $("server").addEventListener("change", () => {
   hall.serverChanged();
 });
 
+// The log's lines reach the page in batches, at most four times a second, each batch a block of its own: a line at a
+// time, the whole text (up to 200,000 characters, wrapped) was rewritten and laid out again and the layout read back
+// for the scroll, some 15 ms of the main thread a line, so a line logged in flight was a frame missed.
+let logPending = [];
+let logTimer = 0;
+let logChars = 0;
 function log(line) {
   console.log(line);
-  const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 4;
-  logEl.textContent += line + "\n";
-  if (logEl.textContent.length > 200000) logEl.textContent = logEl.textContent.slice(-100000);
-  if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  logPending.push(line);
+  if (!logTimer) logTimer = setTimeout(logFlush, 250);
   noticeGameEnd(String(line));
+}
+function logFlush() {
+  clearTimeout(logTimer);
+  logTimer = 0;
+  if (!logPending.length) return;
+  const text = logPending.join("\n") + "\n";
+  logPending = [];
+  const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 4;
+  const block = document.createElement("div");
+  block.textContent = text;
+  logEl.append(block);
+  logChars += text.length;
+  while (logChars > 200000 && logEl.firstChild) {
+    logChars -= logEl.firstChild.textContent.length;
+    logEl.firstChild.remove();
+  }
+  if (atBottom) logEl.scrollTop = logEl.scrollHeight;
 }
 function status(text) { $("status").textContent = text; }
 
@@ -175,6 +196,7 @@ function emulatorFailed(what) {
 window.addEventListener("error", (e) => emulatorFailed((e.error && e.error.stack) || e.message));
 window.addEventListener("unhandledrejection", (e) => emulatorFailed((e.reason && (e.reason.stack || e.reason.message)) || String(e.reason)));
 $("copyLog").addEventListener("click", async () => {
+  logFlush();
   const text = `${navigator.userAgent}\n${location.href.replace(/([?&]callsign=)[^&]*/, "$1…")}\n\n${logEl.textContent}`;
   try { await navigator.clipboard.writeText(text); $("copyLog").textContent = "Copied"; }
   catch (e) { const r = document.createRange(); r.selectNodeContents(logEl); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); $("copyLog").textContent = "Selected: press Ctrl+C"; }
