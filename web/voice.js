@@ -20,6 +20,16 @@ const VOICE_KEY = "wc:voice";
 const INPUT_KEY = "wc:voiceInput";
 const CHOICES = ["off", "listen", "ptt", "on"];
 const PTT_CODE = "Backquote";
+// The game's sound while another player's voice comes in: lowered, by default (the user, 2026-11-26: "I had open
+// mic mode and I could hardly hear my compatriot. I think that the game audio should be quieted when someone is
+// talking"), lowered a lot, or left as it is; the share of its loudness it keeps, kept in local storage.  A voice
+// is speaking when the level its packets carry (RFC 6464, which the browsers send and report as audioLevel, 0..1
+// of full scale) is past SPEAKING, about -34 dB: the noise the browser's suppression leaves is well under it, a
+// voice well over.  Two of three readings in a row have to be past it (a click is not a voice: a syllable is), and
+// the game comes back HOLD_MS after the last syllable, gently, so that the pauses between words do not pump it.
+const DUCK_KEY = "wc:voiceDuck";
+const DUCKS = { lower: 0.3, lowest: 0.1, off: 1 };
+const SPEAKING = 0.02, HOLD_MS = 900;
 
 export function initVoice(host) {
   const $ = (id) => document.getElementById(id);
@@ -27,6 +37,7 @@ export function initVoice(host) {
   const input = $("voiceInput");
   const resume = $("voiceResume");
   const details = $("voiceDetails"), diagnostics = $("voiceDiagnostics"), inputState = $("voiceInputState");
+  const duckSel = $("voiceDuck");
   const events = [];
   let micError = "";
   function log(message) {
@@ -37,9 +48,15 @@ export function initVoice(host) {
   let choice = "off", inputId = "";
   try { const saved = localStorage.getItem(VOICE_KEY); if (CHOICES.includes(saved)) choice = saved; } catch (e) { /* off */ }
   try { inputId = localStorage.getItem(INPUT_KEY) || ""; } catch (e) { /* system default */ }
+  let duck = "lower";
+  try { const saved = localStorage.getItem(DUCK_KEY); if (saved in DUCKS) duck = saved; } catch (e) { /* lowered */ }
   sel.value = choice;
-  // (The microphone is chosen only once there is a voice to choose it for.)
-  const showInput = () => { if (input) input.parentElement.hidden = choice === "off"; };
+  if (duckSel) duckSel.value = duck;
+  // (The microphone, and the game's sound under the voices, are chosen only once there is a voice to choose them for.)
+  const showInput = () => {
+    if (input) input.parentElement.hidden = choice === "off";
+    if (duckSel) duckSel.parentElement.hidden = choice === "off";
+  };
   showInput();
   const remote = new Map();   // player id -> that player's choice
   const links = new Map();    // player id -> { pc, audio, offerer, pending }
@@ -221,7 +238,57 @@ export function initVoice(host) {
     render();
   }
 
+  // Is another player speaking?  The level of the last packet each of their voices played, from the receiver's
+  // synchronization sources: read every DUCK_TICK_MS, no statistics report and no audio graph needed.  (An entry
+  // stays for ten seconds after its last packet: one older than half a second is a voice gone, not a voice.)
+  const DUCK_TICK_MS = 50;
+  let ducked = false, voiceLoud = 0, voiceQuietSince = 0, duckTimer = 0;   // (voiceLoud: the last three readings, a bit each)
+  function voiceLevel(link) {
+    let level = 0;
+    for (const r of link.pc.getReceivers()) {
+      if (!r.track || r.track.kind !== "audio" || typeof r.getSynchronizationSources !== "function") continue;
+      for (const src of r.getSynchronizationSources()) {
+        if (typeof src.audioLevel !== "number") continue;
+        // (Chrome's timestamps have been both the epoch's milliseconds and the page clock's: either is fresh)
+        const now = src.timestamp > 1e12 ? Date.now() : performance.now();
+        if (now - src.timestamp < 500) level = Math.max(level, src.audioLevel);
+      }
+    }
+    return level;
+  }
+  function setDucked(on) {
+    if (ducked === on) return;
+    ducked = on;
+    host.gameLevel?.(on ? DUCKS[duck] : 1);
+  }
+  function duckTick() {
+    let level = 0;
+    for (const link of links.values()) if (link.audio && !link.audio.paused) level = Math.max(level, voiceLevel(link));
+    const now = performance.now();
+    voiceLoud = ((voiceLoud << 1) | (level >= SPEAKING ? 1 : 0)) & 7;
+    if (level >= SPEAKING) {
+      voiceQuietSince = 0;
+      if (voiceLoud === 3 || voiceLoud >= 5) setDucked(true);   // (two of the three bits)
+    } else {
+      if (!voiceQuietSince) voiceQuietSince = now;
+      if (now - voiceQuietSince >= HOLD_MS) setDucked(false);
+    }
+  }
+  // (listening only while a voice is connected and the game is to be lowered under it)
+  function listenForVoices() {
+    const want = links.size > 0 && DUCKS[duck] < 1;
+    if (want && !duckTimer) duckTimer = setInterval(duckTick, DUCK_TICK_MS);
+    if (!want && duckTimer) { clearInterval(duckTimer); duckTimer = 0; voiceLoud = voiceQuietSince = 0; setDucked(false); }
+  }
+  duckSel?.addEventListener("change", () => {
+    duck = duckSel.value in DUCKS ? duckSel.value : "lower";
+    try { localStorage.setItem(DUCK_KEY, duck); } catch (e) { /* not kept */ }
+    if (ducked) host.gameLevel?.(DUCKS[duck]);
+    listenForVoices();
+  });
+
   function render() {
+    listenForVoices();
     const them = others();
     const waiting = them.filter((id) => !optedIn(remote.get(id)));
     let text = "";
@@ -306,7 +373,7 @@ export function initVoice(host) {
         directions: link.pc.getTransceivers().map((t) => ({ requested: t.direction, negotiated: t.currentDirection,
           sending: t.sender.track ? { enabled: t.sender.track.enabled, readyState: t.sender.track.readyState } : null })),
         receivedTrack: link.audio?.srcObject?.getAudioTracks().map((t) => ({readyState: t.readyState, muted: t.muted})),
-        sentBytes: 0, receivedBytes: 0, receivedPackets: 0, receivedEnergy: 0 };
+        sentBytes: 0, receivedBytes: 0, receivedPackets: 0, receivedEnergy: 0, voiceLevel: voiceLevel(link) };
       try {
         const stats = await link.pc.getStats();
         stats.forEach((s) => {
@@ -329,7 +396,7 @@ export function initVoice(host) {
       } catch (e) { row.statsError = e.name; }
       peers.push(row);
     }
-    return { version: 1, time: new Date().toISOString(), choice,
+    return { version: 1, time: new Date().toISOString(), choice, gameUnderVoices: { choice: duck, lowered: ducked },
       microphone: { pending: !!micWanted, error: micError,
         tracks: mic ? mic.getAudioTracks().map((t) => ({ label: t.label, enabled: t.enabled, muted: t.muted, readyState: t.readyState })) : [] },
       participants: others().map((id) => ({id, choice: remote.get(id) || "unknown"})),

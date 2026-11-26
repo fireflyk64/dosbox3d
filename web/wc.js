@@ -2625,6 +2625,39 @@ function unlockAudio(make) {
     if (PHONE && navigator.audioSession) navigator.audioSession.type = $("voice").value === "off" ? "playback" : "auto";
   } catch (e) { /* no sound is no reason to stop */ }
 }
+// The game's loudness, the page's to set: lowered while another player's voice comes in (web/voice.js says when, and
+// how far).  The emulator's sound is one node (its SDL's ScriptProcessor) connected straight to the output of its
+// context; it is put through a gain of the page's the first time the level changes, and again when the emulator has
+// opened its sound anew (a new node).  The level goes down in about a tenth of a second and back up in about one.
+let gameOut = null, gameLevel = 1;
+function gameSound() {
+  const sdl = window.DOSBox && window.DOSBox.SDL2;
+  const node = sdl && sdl.audio && sdl.audio.scriptProcessorNode, ctx = sdl && sdl.audioContext;
+  if (!node || !ctx) return null;
+  if (!gameOut || gameOut.node !== node) {
+    try {
+      const gain = ctx.createGain();
+      gain.gain.value = gameLevel;
+      gain.connect(ctx.destination);
+      node.disconnect();
+      node.connect(gain);
+      gameOut = { node, gain, ctx };
+    } catch (e) { log(`voice: cannot set the game's loudness: ${e.name}`); return null; }
+  }
+  return gameOut;
+}
+function setGameLevel(level) {
+  const down = level < gameLevel;
+  gameLevel = level;
+  const out = gameSound();
+  if (!out) return;
+  const p = out.gain.gain, t = out.ctx.currentTime;
+  p.cancelScheduledValues(t);
+  p.setValueAtTime(p.value, t);
+  p.setTargetAtTime(level, t, down ? 0.03 : 0.25);
+}
+window.__wcGameLevel = () => ({ level: gameLevel, gain: gameOut ? gameOut.gain.gain.value : null,    // (for the page tests)
+  node: !!(window.DOSBox && window.DOSBox.SDL2 && window.DOSBox.SDL2.audio && window.DOSBox.SDL2.audio.scriptProcessorNode) });
 for (const ev of ["pointerdown", "pointerup", "touchend", "click", "keydown"]) {
   window.addEventListener(ev, (e) => unlockAudio(!!(e.target && e.target.closest && e.target.closest("#topAction, #topSolo, #fly, #flySolo, #screen"))),
     { capture: true, passive: true });
@@ -2961,6 +2994,7 @@ const voice = initVoice({
   log,
   announce: () => { if (lobby.game) sayHello(); },
   signal: (id, data) => sendLobby({ t: "voice", data }, id),
+  gameLevel: setGameLevel,
 });
 window.__wcVoiceLinks = voice.links;  // (for the page tests)
 window.__wcVoiceReport = voice.report;

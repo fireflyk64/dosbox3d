@@ -367,6 +367,11 @@
         <label id="voiceInputLabel"><span class="tag">Microphone</span><select id="voiceInput" title="Choose the microphone used for voice; turn voice on to allow access and see device names">
           <option value="">System default</option>
         </select></label>
+        <label id="voiceDuckLabel" title="How loud the game stays while another player's voice comes in: lowered to a third (the default), to a tenth, or left as it is. It comes back up a moment after they stop"><span class="tag"><span>Game</span><span>sound</span></span><select id="voiceDuck">
+          <option value="lower">lowered under voices</option>
+          <option value="lowest">lowered a lot</option>
+          <option value="off">unchanged</option>
+        </select></label>
       </form>
       <div id="voiceState" role="status"></div>
       <div id="voiceInputState" class="hint" hidden></div>
