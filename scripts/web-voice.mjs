@@ -170,6 +170,17 @@ check("left as it is when the pilot says so", !duck2.lowered, duck2);
 check("which is remembered", (await host.evaluate(() => localStorage.getItem("wc:voiceDuck"))) === "off", null);
 await host.selectOption("#voiceDuck", "lower");
 
+// The Voice volume slider: the other players' voices at the square of its share, remembered.
+const setRange = (page, id, v) => page.$eval(id, (el, v) => { el.value = String(v); el.dispatchEvent(new Event("input", { bubbles: true })); }, v);
+await setRange(host, "#voiceVolume", 50);
+{
+  const r = await host.evaluate(() => window.__wcVoiceReport());
+  const volumes = r.peers.map((p) => p.output && p.output.volume);
+  check("Voice volume at 50% plays the voices at a quarter, and is remembered", volumes.length > 0 && volumes.every((v) => Math.abs(v - 0.25) < 0.001) &&
+    (await host.evaluate(() => localStorage.getItem("wc:voiceVolume"))) === "50" && (await host.$eval("#voiceVolumeValue", (el) => el.textContent)) === "50%", volumes);
+}
+await setRange(host, "#voiceVolume", 100);
+
 await choose(host, "off");
 await sleep(2);
 check("one player off ends the voice for both", Object.keys(await links(host)).length === 0 && Object.keys(await links(wing)).length === 0, [await links(host), await links(wing)]);
@@ -178,6 +189,10 @@ check("and the one who went off sees the light", await lit(host), await voiceSta
 
 // Fly with a voice on one side only: both chats say so.
 await host.waitForFunction(() => !document.getElementById("fly").disabled, null, { timeout: 30000 });
+// (the wingman's game a quarter as loud, its voices not lowering it: its page puts the gain in by itself once the
+// emulator's sound starts, nothing else asking it to)
+await wing.selectOption("#voiceDuck", "off");
+await setRange(wing, "#gameVolume", 50);
 await host.click("#fly");
 await sleep(6);
 check("Fly warns the one who is off", /WINGMAN opted into voice and you are off: no voice this session/.test(await chat(host)), (await chat(host)).slice(-200));
@@ -210,6 +225,23 @@ check("voice comes up while both games run", lh2[1] && lh2[1].state === "connect
     setTimeout(() => { node.onaudioprocess = was; done(n); }, 1000);
   }));
   check("the emulator's sound still plays through the page's gain", asked > 5, asked);
+  // The Game volume slider: set before the game ran, the wingman's sound is at a quarter from the start ...
+  let wg = null;
+  for (let i = 0; i < 40; i++) { wg = await wing.evaluate(() => window.__wcGameLevel()); if (wg.gain !== null && Math.abs(wg.gain - 0.25) < 0.01) break; await sleep(0.25); }
+  check("Game volume set before Fly holds the game's sound at a quarter once it runs", wg.gain !== null && Math.abs(wg.gain - 0.25) < 0.01 && wg.duck === 1, wg);
+  // ... and moved during the flight, the host's goes there, lowered still further under the voice
+  await setRange(host, "#gameVolume", 50);
+  const seen = { quarter: false, underVoice: false, values: [] };
+  const until = Date.now() + 12000;
+  while (Date.now() < until && !(seen.quarter && seen.underVoice)) {
+    const g = await host.evaluate(() => window.__wcGameLevel());
+    if (seen.values.length < 80) seen.values.push(+g.gain.toFixed(3));
+    if (Math.abs(g.gain - 0.25) < 0.01) seen.quarter = true;
+    if (Math.abs(g.gain - 0.075) < 0.005) seen.underVoice = true;
+    await sleep(0.05);
+  }
+  check("Game volume during the flight: a quarter, and a third of that under a voice", seen.quarter && seen.underVoice, seen);
+  await setRange(host, "#gameVolume", 100);
 }
 await browser.close();
 console.log(results.every(Boolean) ? "VOICE OK" : "VOICE FAILED");

@@ -189,6 +189,8 @@
   #voice { width: 9.5ch; }
   #voiceInput { width: 27ch; max-width: 100%; }
   #voiceInputLabel { max-width: 100%; }
+  #voiceVolume, #gameVolume { width: 84px; }
+  #setup .vol { min-width: 4ch; color: var(--muted); font-size: 11px; }
   /* (One of the two at a time: in a room there is nothing to join.) */
   #roomPanel:has(#leave:not([hidden])) #join { display: none; }
   #voiceState { margin-top: 4px; color: var(--amber); font-size: 11px; }
@@ -372,6 +374,8 @@
           <option value="lowest">lowered a lot</option>
           <option value="off">unchanged</option>
         </select></label>
+        <label id="voiceVolumeLabel" title="How loud the other players' voices are on this page (remembered in this browser). A browser plays a voice at its full loudness at most: to hear them better, lower the game"><span class="tag"><span>Voice</span><span>volume</span></span><input type="range" id="voiceVolume" min="0" max="100" step="5" value="100"><span id="voiceVolumeValue" class="vol"></span></label>
+        <label id="gameVolumeLabel" title="How loud the game is on this page (remembered in this browser); under another player's voice it goes lower still, as Game sound says"><span class="tag"><span>Game</span><span>volume</span></span><input type="range" id="gameVolume" min="0" max="100" step="5" value="100"><span id="gameVolumeValue" class="vol"></span></label>
       </form>
       <div id="voiceState" role="status"></div>
       <div id="voiceInputState" class="hint" hidden></div>

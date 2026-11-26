@@ -31,6 +31,10 @@ const PTT_CODES = ["Backquote", "Slash"];
 const DUCK_KEY = "wc:voiceDuck";
 const DUCKS = { lower: 0.3, lowest: 0.1, off: 1 };
 const SPEAKING = 0.02, HOLD_MS = 900;
+// How loud the other players' voices play, the Voice volume slider's (the user, 2026-11-26: "ok game and vocie
+// volumne then"), squared as the ear hears, remembered in this browser.  An audio element plays at its full loudness
+// at most, so this only lowers them: the game is what is lowered to hear them better.
+const VOLUME_KEY = "wc:voiceVolume";
 
 export function initVoice(host) {
   const $ = (id) => document.getElementById(id);
@@ -39,6 +43,7 @@ export function initVoice(host) {
   const resume = $("voiceResume");
   const details = $("voiceDetails"), diagnostics = $("voiceDiagnostics"), inputState = $("voiceInputState");
   const duckSel = $("voiceDuck");
+  const volumeSlider = $("voiceVolume"), volumeShown = $("voiceVolumeValue");
   const events = [];
   let micError = "";
   function log(message) {
@@ -51,12 +56,17 @@ export function initVoice(host) {
   try { inputId = localStorage.getItem(INPUT_KEY) || ""; } catch (e) { /* system default */ }
   let duck = "lower";
   try { const saved = localStorage.getItem(DUCK_KEY); if (saved in DUCKS) duck = saved; } catch (e) { /* lowered */ }
+  let volume = 1;
+  try { const saved = parseInt(localStorage.getItem(VOLUME_KEY), 10); if (saved >= 0 && saved <= 100 && volumeSlider) volumeSlider.value = String(saved); } catch (e) { /* the whole */ }
+  const takeVolume = () => { if (!volumeSlider) return; const v = Number(volumeSlider.value); volume = (v / 100) ** 2; if (volumeShown) volumeShown.textContent = `${v}%`; };
+  takeVolume();
   sel.value = choice;
   if (duckSel) duckSel.value = duck;
   // (The microphone, and the game's sound under the voices, are chosen only once there is a voice to choose them for.)
   const showInput = () => {
     if (input) input.parentElement.hidden = choice === "off";
     if (duckSel) duckSel.parentElement.hidden = choice === "off";
+    if (volumeSlider) volumeSlider.parentElement.hidden = choice === "off";
   };
   showInput();
   const remote = new Map();   // player id -> that player's choice
@@ -168,6 +178,7 @@ export function initVoice(host) {
     pc.onicecandidate = (e) => host.signal(id, { voice: "ice", candidate: e.candidate ? e.candidate.toJSON() : null });
     pc.ontrack = (e) => {
       const a = link.audio || (link.audio = new Audio());
+      a.volume = volume;
       a.srcObject = e.streams[0] || new MediaStream([e.track]);
       a.autoplay = true;
       a.onplaying = () => { if (links.get(id) === link) { link.playbackError = ""; render(); } };
@@ -282,6 +293,11 @@ export function initVoice(host) {
     if (want && !duckTimer) duckTimer = setInterval(duckTick, DUCK_TICK_MS);
     if (!want && duckTimer) { clearInterval(duckTimer); duckTimer = 0; voiceLoud = voiceQuietSince = 0; setDucked(false); }
   }
+  volumeSlider?.addEventListener("input", () => {
+    takeVolume();
+    for (const link of links.values()) if (link.audio) link.audio.volume = volume;
+    try { localStorage.setItem(VOLUME_KEY, volumeSlider.value); } catch (e) { /* not kept */ }
+  });
   duckSel?.addEventListener("change", () => {
     duck = duckSel.value in DUCKS ? duckSel.value : "lower";
     try { localStorage.setItem(DUCK_KEY, duck); } catch (e) { /* not kept */ }
@@ -398,7 +414,7 @@ export function initVoice(host) {
       } catch (e) { row.statsError = e.name; }
       peers.push(row);
     }
-    return { version: 1, time: new Date().toISOString(), choice, gameUnderVoices: { choice: duck, lowered: ducked },
+    return { version: 1, time: new Date().toISOString(), choice, gameUnderVoices: { choice: duck, lowered: ducked }, voiceVolume: volume,
       microphone: { pending: !!micWanted, error: micError,
         tracks: mic ? mic.getAudioTracks().map((t) => ({ label: t.label, enabled: t.enabled, muted: t.muted, readyState: t.readyState })) : [] },
       participants: others().map((id) => ({id, choice: remote.get(id) || "unknown"})),

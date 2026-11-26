@@ -2625,11 +2625,17 @@ function unlockAudio(make) {
     if (PHONE && navigator.audioSession) navigator.audioSession.type = $("voice").value === "off" ? "playback" : "auto";
   } catch (e) { /* no sound is no reason to stop */ }
 }
-// The game's loudness, the page's to set: lowered while another player's voice comes in (web/voice.js says when, and
-// how far).  The emulator's sound is one node (its SDL's ScriptProcessor) connected straight to the output of its
-// context; it is put through a gain of the page's the first time the level changes, and again when the emulator has
-// opened its sound anew (a new node).  The level goes down in about a tenth of a second and back up in about one.
-let gameOut = null, gameLevel = 1;
+// The game's loudness, the page's to set: the Game volume slider's (the user, 2026-11-26: "ok game and vocie volumne
+// then"; remembered in this browser), times the share it keeps while another player's voice comes in (web/voice.js
+// says when, and how far).  The emulator's sound is one node (its SDL's ScriptProcessor) connected straight to the
+// output of its context; it is put through a gain of the page's once the level is not the whole (at once when the
+// slider moves or a voice comes, else within a second of the emulator's sound starting: GAME_SOUND_CHECK_MS), and
+// again when the emulator has opened its sound anew (a new node).  Under a voice the level goes down in about a tenth
+// of a second and back up in about one.  A slider's position is squared, as the ear hears: half of it a quarter.
+const GAME_VOLUME_KEY = "wc:gameVolume";
+const GAME_SOUND_CHECK_MS = 1000;
+let gameOut = null, gameDuck = 1, gameVolume = 1;
+const gameLevel = () => gameVolume * gameDuck;
 function gameSound() {
   const sdl = window.DOSBox && window.DOSBox.SDL2;
   const node = sdl && sdl.audio && sdl.audio.scriptProcessorNode, ctx = sdl && sdl.audioContext;
@@ -2637,7 +2643,7 @@ function gameSound() {
   if (!gameOut || gameOut.node !== node) {
     try {
       const gain = ctx.createGain();
-      gain.gain.value = gameLevel;
+      gain.gain.value = gameLevel();
       gain.connect(ctx.destination);
       node.disconnect();
       node.connect(gain);
@@ -2646,17 +2652,34 @@ function gameSound() {
   }
   return gameOut;
 }
-function setGameLevel(level) {
-  const down = level < gameLevel;
-  gameLevel = level;
+function applyGameLevel(seconds) {
+  if (!gameOut && gameLevel() === 1) return;      // (straight out, as the emulator made it)
   const out = gameSound();
   if (!out) return;
   const p = out.gain.gain, t = out.ctx.currentTime;
   p.cancelScheduledValues(t);
   p.setValueAtTime(p.value, t);
-  p.setTargetAtTime(level, t, down ? 0.03 : 0.25);
+  p.setTargetAtTime(gameLevel(), t, seconds);
 }
-window.__wcGameLevel = () => ({ level: gameLevel, gain: gameOut ? gameOut.gain.gain.value : null,    // (for the page tests)
+function setGameDuck(share) {
+  const down = share < gameDuck;
+  gameDuck = share;
+  applyGameLevel(down ? 0.03 : 0.25);
+}
+{
+  const slider = $("gameVolume"), shown = $("gameVolumeValue");
+  try { const saved = parseInt(localStorage.getItem(GAME_VOLUME_KEY), 10); if (saved >= 0 && saved <= 100) slider.value = String(saved); } catch (e) { /* the whole */ }
+  const take = () => { const v = Number(slider.value); gameVolume = (v / 100) ** 2; shown.textContent = `${v}%`; };
+  take();
+  slider.addEventListener("input", () => {
+    take();
+    applyGameLevel(0.02);
+    try { localStorage.setItem(GAME_VOLUME_KEY, slider.value); } catch (e) { /* not kept */ }
+  });
+  // (the emulator's sound comes some seconds after Fly, and anew if it opens it again: taken through the gain then)
+  setInterval(() => { if (gameLevel() !== 1) gameSound(); }, GAME_SOUND_CHECK_MS);
+}
+window.__wcGameLevel = () => ({ level: gameLevel(), volume: gameVolume, duck: gameDuck, gain: gameOut ? gameOut.gain.gain.value : null,    // (for the page tests)
   node: !!(window.DOSBox && window.DOSBox.SDL2 && window.DOSBox.SDL2.audio && window.DOSBox.SDL2.audio.scriptProcessorNode) });
 for (const ev of ["pointerdown", "pointerup", "touchend", "click", "keydown"]) {
   window.addEventListener(ev, (e) => unlockAudio(!!(e.target && e.target.closest && e.target.closest("#topAction, #topSolo, #fly, #flySolo, #screen"))),
@@ -2994,7 +3017,7 @@ const voice = initVoice({
   log,
   announce: () => { if (lobby.game) sayHello(); },
   signal: (id, data) => sendLobby({ t: "voice", data }, id),
-  gameLevel: setGameLevel,
+  gameLevel: setGameDuck,
 });
 window.__wcVoiceLinks = voice.links;  // (for the page tests)
 window.__wcVoiceReport = voice.report;
