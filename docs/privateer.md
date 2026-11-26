@@ -1677,3 +1677,32 @@ some 420 clears of DOSBox's TLB and 2,300 pages looked up again a frame, but onl
 **First appearances.**  The first ship or weapon of a type in a flight is read from PRIV.TRE (`TYPES\TALNWIMP.IFF`,
 `APPEARNC\GLADIUS.IFF`, `HEATSEEK.IFF` ...) and parsed through the EMS window: 1,300 to 3,000 maps, 100 to 190 ms in
 one frame.
+
+## 35. JEMM's map made natively (2026-11-26)
+
+The routine of section 34 (live 0018:5C4C, JEMM.OVL 394Dh, FNV-1a 138440BF over its 112h bytes) is a twin now
+(src/cpu/wcnet_priv_native.cpp, `jemm_*`): entered at its loop's top (5C83, `dec word [bp+0Ah]`), it does the pairs
+in JEMM's order -- the pair's words from the caller's array through FS, the handle's record at EBX (+2 its pages,
++0Ch its entries), DS:0DAh and DS:0EEh (or 280h in the large frame), four entries copied (or 000A0007h four times for
+a page unmapped) -- every read and write as JEMM's own, one after the other (a page-table write can change what a
+later read finds, as in JEMM's own run), and leaves at 5D44 (`mov eax,cr3`: JEMM reloads CR3 and returns itself) with
+JEMM's EAX, ECX, ESI, EDI and the flags of its last `dec` (the CF kept from the last `add`).  Every place a pair reads
+or writes is tried before the pair is begun; a place that would fault, or a pair for JEMM's error path (a physical
+page out of range: 8Bh; a logical page past the handle's: 8Ah), goes back to JEMM's own code at the loop's top with
+nothing of that pair done.  The user: "we need some way to validate it and make sure we didn't cause other bugs.
+JEMM is notoriously complex".
+
+`WCPRIVJEMM`: unset or 1 the twin, 0 JEMM's own code, `check` JEMM's own code with the twin's result worked out at
+the top (its writes kept aside, read back from there) and compared at 5D44: every byte written, EAX ECX ESI EDI and
+the six condition flags; a count of the paths taken (pairs mapped and unmapped, the large frame or the 64 KB one).
+Measured (natively, `check`): the Oxford fight in a room of two (40,000 maps a machine), the jump test (three pilots,
+shops, a jump drive bought, Troy and Pyrenees, 95,000), the load test (four pilots, eight pirates, missiles, 75,000),
+the crew test (a turret's launch and landing, 40,000) and Righteous Fire's crew (55,000): no map differed, none was
+left to JEMM; 26,000 pairs unmapped among them (all at the start), every one in the large frame (the 64 KB frame's
+and the "how" flag's paths were never taken: the twin does them as JEMM's code says, unchecked in a game).  With the
+twin the same runs end the same way (no error, no death, the program never restarted, the same jumps).
+
+Two runs of one script cannot be compared byte for byte: two runs with JEMM's own code already differ at the first
+flight frame (DOSBox sets the BIOS clock from the host's), and a twin takes fewer emulated cycles, so everything
+after it happens earlier.  JEMM's instructions in the solo Oxford fight: 33,700 a frame on average (546,000 at most)
+with its own code, 9,200 (57,000) with the twin -- its entry and VCPI trips are left.

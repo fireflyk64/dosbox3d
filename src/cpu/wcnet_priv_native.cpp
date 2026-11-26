@@ -17,15 +17,20 @@
  *
  *  WCPRIVTWINS: unset or 1 the twins; 0 the game's own code; "check" the game's own code, and at each return what
  *  it left compared with what the twin said (logged).  WCPRIVIDLE=0: the wait spins as the game's does.
+ *
+ *  JEMM's map of a handle's pages (its protected-mode routine, entered from the game's INT 67h AH=50h) is made
+ *  natively too: WCPRIVJEMM unset or 1 the twin, 0 JEMM's own code, "check" JEMM's own code compared (section 35).
  */
 #include <stdlib.h>
 #include <string.h>
 #include <vector>
+#include <map>
 #include "wcnet_priv_native.h"
 #include "wcnet_priv.h"
 #include "wcnet_log.h"
 #include "wc_net.h"
 #include "cpu.h"
+#include "lazyflags.h"
 #include "mem.h"
 #include "paging.h"
 #include "regs.h"
@@ -930,6 +935,257 @@ void frame_wait() {
     }
 }
 
+// JEMM's map of a handle's pages (docs/privateer.md section 35).  PRIV.EXE always loads JEMM.OVL, Origin's EMS manager,
+// and the game maps EMS through it: seg145:05B3 sends all 24 pages of its large frame (INT 67h AX=5000h CX=18h) each
+// time one of its six window slots changes, 70 calls a frame in a fight and thousands as a new type is read in.  JEMM's
+// routine (protected mode, selector 18h, 16-bit code; live 0018:5C4C = JEMM.OVL 394Dh) takes the pairs one by one: a
+// pair's logical and physical page from the caller's array (FS flat), the handle's four page-table entries for that
+// logical page (its record at EBX: +2 the pages, +0Ch the entries) copied to the physical page's place in the page
+// table (DS:0DAh, the frame's offset DS:0EEh or 280h for the large frame; an unmapped page gets 000A0007h four
+// times), then CR3 reloaded once: some 45 instructions a pair, 98% of JEMM's time in a fight.
+//
+// The twin is entered at the loop's top (5C83: dec word [bp+0Ah]) and does the pairs in JEMM's order, every read
+// and write as JEMM's own (the page table's writes change what later reads find, as JEMM's do), leaving at 5D44 (mov
+// eax,cr3: JEMM's own code reloads CR3 and returns) with JEMM's registers and the flags of its last dec.  Before a
+// pair is begun every place it reads or writes is tried: a place that would fault, or a pair for JEMM's error path (a
+// physical page out of range, a logical page past the handle's), goes back to JEMM's own code at the loop's top with
+// nothing of that pair done.  WCPRIVJEMM: unset or 1 the twin, 0 JEMM's own code, "check" JEMM's own code with the
+// twin's result worked out at the top (its writes kept aside) and compared at 5D44: every byte written, EAX ECX ESI
+// EDI and the six condition flags (logged).
+enum { kJemmSel = 0x18, kJemmFrom = 0x5C4C, kJemmLen = 0x112, kJemmTop = 0x5C83, kJemmExit = 0x5D44 };
+const u32 kJemmSum = 0x138440BF;        // FNV-1a of 0018:5C4C..5D5D, as in JEMM.OVL at 394Dh
+enum JemmMode { JEMM_OWN, JEMM_TWIN, JEMM_CHECK };
+
+JemmMode jemm_mode() {
+    static int m = -1;
+    if (m < 0) {
+        const char *env = getenv("WCPRIVJEMM");
+        m = !env || !env[0] ? JEMM_TWIN : !strcmp(env, "check") ? JEMM_CHECK : env[0] == '0' ? JEMM_OWN : JEMM_TWIN;
+        if (priv_classic()) m = JEMM_OWN;
+    }
+    return (JemmMode)m;
+}
+
+struct Jemm {
+    int code;                   // 0 not looked at, 1 JEMM's code as we know it, -1 not
+    unsigned calls, pairs, left, checked, differ;
+    unsigned mapped, unmapped, large, small, how2, errors, faults, emptyCalls;     // (the paths taken, pairs)
+    // the check: what the twin said at the top, compared at the exit
+    bool open;
+    Bit16u bp, sp;
+    u32 eax, ecx, esi, edi, flags;
+    std::map<PhysPt, Bit8u> wrote;
+} g_jemm;
+
+// One pass over the pairs.  `real`: memory written as JEMM writes it; else kept in `wrote` (read back from there).
+struct JemmRun {
+    bool real;
+    std::map<PhysPt, Bit8u> *wrote;
+    bool fault;
+    bool rd(PhysPt a, int size, u32 &v) {
+        v = 0;
+        for (int k = 0; k < size; k++) {
+            Bit8u b = 0;
+            if (!real) {
+                auto it = wrote->find(a + k);
+                if (it != wrote->end()) { v |= (u32)it->second << (8 * k); continue; }
+            }
+            if (mem_readb_checked(a + k, &b)) { fault = true; return false; }
+            v |= (u32)b << (8 * k);
+        }
+        return true;
+    }
+    bool probe(PhysPt a, int size) { u32 v; return rd(a, size, v); }
+    void wr(PhysPt a, int size, u32 v) {
+        if (real) {
+            if (size == 4 ? mem_writed_checked(a, v) : mem_writew_checked(a, (Bit16u)v)) fault = true;
+            return;
+        }
+        for (int k = 0; k < size; k++) (*wrote)[a + k] = (Bit8u)(v >> (8 * k));
+    }
+};
+
+bool jemm_code_known() {
+    if (g_jemm.code) return g_jemm.code > 0;
+    const PhysPt at = SegPhys(cs) + kJemmFrom;
+    u32 h = 2166136261u;
+    for (int i = 0; i < kJemmLen; i++) {
+        Bit8u b;
+        if (mem_readb_checked(at + i, &b)) return false;         // (not now: tried again next time)
+        h = (h ^ b) * 16777619u;
+    }
+    g_jemm.code = h == kJemmSum ? 1 : -1;
+    wclog(1, "Privateer: JEMM's map of handle pages %s (%08x at %04X:%04X)", g_jemm.code > 0 ? "found, made natively" :
+          "is not the code we know: JEMM's own", h, kJemmSel, kJemmFrom);
+    return g_jemm.code > 0;
+}
+
+inline bool parity_even(Bit8u v) { v ^= v >> 4; v ^= v >> 2; v ^= v >> 1; return !(v & 1); }
+
+// The pairs from the loop's top.  Returns the pairs done; *exited: the loop's end reached (the registers, flags and
+// [bp+0Ah] then as at 5D44), else the state is the loop's top before the pair that is JEMM's to do.
+int jemm_pairs(JemmRun &run, u32 &eax, u32 &ecx, u32 &esi, u32 &edi, bool &carry, bool &haveCarry, u32 &exitFlags,
+               bool &exited) {
+    const PhysPt ssb = SegPhys(ss), dsb = SegPhys(ds), fsb = SegPhys(fs);
+    const Bit16u bp = reg_bp;
+    const u32 ebx = reg_ebx;
+    auto st = [&](int off) { return ssb + (Bit16u)(bp + off); };
+    exited = false;
+    int done = 0;
+    for (;;) {
+        u32 count, pairAt, logical, physical, large, pages, list = 0, base, frame = 0, how;
+        if (!run.rd(st(0x0A), 2, count)) return done;
+        const Bit16u left = (Bit16u)(count - 1);
+        if ((Bit16s)count <= 0) {                   // dec word [bp+0Ah]; jl 5D44
+            if (!haveCarry) return done;            // (nothing done yet: the CF the dec keeps is JEMM's to keep)
+            run.wr(st(0x0A), 2, left);
+            const Bit8u lo = (Bit8u)left;
+            exitFlags = (carry ? FLAG_CF : 0) | (parity_even(lo) ? FLAG_PF : 0) | ((left & 0x0F) == 0x0F ? FLAG_AF : 0) |
+                        (left == 0 ? FLAG_ZF : 0) | ((left & 0x8000) ? FLAG_SF : 0) | ((Bit16u)count == 0x8000 ? FLAG_OF : 0);
+            exited = !run.fault;
+            return done;
+        }
+        if (!run.rd(st(0x06), 4, pairAt) || !run.rd(fsb + pairAt, 2, logical) || !run.rd(fsb + pairAt + 2, 2, physical) ||
+            !run.rd(st(-2), 1, large) || !run.rd(st(0x0C), 2, how) || !run.rd(dsb + ebx + 2, 2, pages) ||
+            !run.rd(dsb + 0xDA, 4, base)) return done;
+        if (physical > (large ? 0x17u : 3u)) { g_jemm.errors++; return done; }   // (JEMM's 8Bh)
+        const Bit16u last = (Bit16u)(pages - 1);
+        if (logical != 0xFFFF) {
+            if (logical > last) { g_jemm.errors++; return done; }                 // (JEMM's 8Ah)
+            if (!run.rd(dsb + ebx + 0x0C, 4, list)) return done;
+        }
+        u32 frameAt = 4;
+        if (!(how & 2)) {
+            if (!run.rd(dsb + 0xEE, 4, frame)) return done;
+            frameAt = large ? 0x280 : frame;
+        }
+        const u32 from = logical != 0xFFFF ? list + (logical << 4) : 0;
+        const u32 to = base + frameAt + (physical << 4);
+        for (int k = 0; k < 4; k++) {
+            if ((from && !run.probe(dsb + from + 4 * k, 4)) || !run.probe(fsb + to + 4 * k, 4)) return done;
+        }
+        if (!run.probe(st(-6), 2) || !run.probe(st(-4), 2)) return done;
+        // the pair, as JEMM does it
+        run.wr(st(0x0A), 2, left);
+        run.wr(st(0x06), 4, pairAt + 4);
+        run.wr(st(-6), 2, logical);
+        run.wr(st(-4), 2, physical);
+        esi = from;
+        edi = to;
+        ecx = frameAt & 0xFFFF0000u;                // (mov ecx,..; add edi,ecx; mov cx,4; loop x4: CX 0)
+        u32 v = 0x000A0007;
+        for (int k = 0; k < 4; k++) {
+            if (from && !run.rd(dsb + esi, 4, v)) return -1;
+            run.wr(fsb + edi, 4, v);
+            if (run.fault) return -1;
+            carry = (u64)(from ? esi : edi) + 4 > 0xFFFFFFFFu;     // (the last add's: add esi,4 or add edi,4)
+            edi += 4;
+            if (from) esi += 4;
+        }
+        eax = v;
+        haveCarry = true;
+        done++;
+        (from ? g_jemm.mapped : g_jemm.unmapped)++;
+        (large ? g_jemm.large : g_jemm.small)++;
+        if (how & 2) g_jemm.how2++;
+    }
+}
+
+void jemm_enter() {
+    if (!jemm_code_known()) return;
+    g_jemm.calls++;
+    u32 eax = reg_eax, ecx = reg_ecx, esi = reg_esi, edi = reg_edi, exitFlags = 0;
+    bool carry = false, haveCarry = false, exited = false;
+    if (jemm_mode() == JEMM_CHECK) {
+        if (g_jemm.open) return;
+        g_jemm.wrote.clear();
+        JemmRun run = { false, &g_jemm.wrote, false };
+        const int n = jemm_pairs(run, eax, ecx, esi, edi, carry, haveCarry, exitFlags, exited);
+        if (n <= 0 || !exited || run.fault) {
+            g_jemm.left++;
+            return;
+        }
+        g_jemm.open = true;
+        g_jemm.bp = reg_bp;
+        g_jemm.sp = reg_sp;
+        g_jemm.eax = eax;
+        g_jemm.ecx = ecx;
+        g_jemm.esi = esi;
+        g_jemm.edi = edi;
+        g_jemm.flags = exitFlags;
+        g_jemm.pairs += n;
+        return;
+    }
+    JemmRun run = { true, nullptr, false };
+    const int n = jemm_pairs(run, eax, ecx, esi, edi, carry, haveCarry, exitFlags, exited);
+    if (n < 0) {
+        // (a page-table write or a read that had been tried faulted after all: not expected; JEMM's code is not
+        // handed a half-done pair -- the emulation stops being exact here, so it says so loudly)
+        wclog(0, "Privateer: JEMM twin: a fault inside a pair it had tried (%04X:%04X): the map may be half done", kJemmSel, kJemmTop);
+        return;
+    }
+    if (n == 0 && !exited) {
+        g_jemm.left++;
+        return;
+    }
+    g_jemm.pairs += n;
+    reg_eax = eax;
+    reg_ecx = ecx;
+    reg_esi = esi;
+    reg_edi = edi;
+    FillFlags();
+    const u32 cond = FLAG_CF | FLAG_PF | FLAG_AF | FLAG_ZF | FLAG_SF | FLAG_OF;
+    if (exited) {
+        reg_flags = (reg_flags & ~cond) | exitFlags;
+        reg_eip = kJemmExit;
+    } else {
+        SETFLAGBIT(CF, carry);                      // (back at the top: its dec keeps CF, sets the rest)
+        reg_eip = kJemmTop;
+    }
+    lflags.type = t_UNKNOWN;
+    static unsigned n2;
+    if (++n2 % 50000 == 0) {
+        wclog(1, "Privateer: JEMM twin: %u maps made (%u pairs: %u mapped, %u unmapped, %u large frame, %u 64 KB frame), %u left "
+              "to JEMM (%u at its error paths)", g_jemm.calls, g_jemm.pairs, g_jemm.mapped, g_jemm.unmapped, g_jemm.large,
+              g_jemm.small, g_jemm.left, g_jemm.errors);
+    }
+}
+
+void jemm_exit() {
+    if (!g_jemm.open) return;
+    g_jemm.open = false;
+    if (reg_bp != g_jemm.bp || reg_sp != g_jemm.sp) return;        // (not the call that was looked at)
+    FillFlags();
+    const u32 cond = FLAG_CF | FLAG_PF | FLAG_AF | FLAG_ZF | FLAG_SF | FLAG_OF;
+    bool same = reg_eax == g_jemm.eax && reg_ecx == g_jemm.ecx && reg_esi == g_jemm.esi && reg_edi == g_jemm.edi &&
+                (reg_flags & cond) == g_jemm.flags;
+    PhysPt badAt = 0;
+    for (const auto &w : g_jemm.wrote) {
+        Bit8u b = 0;
+        if (mem_readb_checked(w.first, &b) || b != w.second) { same = false; badAt = w.first; break; }
+    }
+    g_jemm.checked++;
+    if (!same && ++g_jemm.differ <= 8) {
+        wclog(0, "Privateer: JEMM check differs: JEMM eax %08x ecx %08x esi %08x edi %08x flags %03x, the twin %08x %08x %08x %08x %03x; "
+              "memory %s%08X", reg_eax, reg_ecx, reg_esi, reg_edi, (unsigned)(reg_flags & cond), g_jemm.eax, g_jemm.ecx,
+              g_jemm.esi, g_jemm.edi, (unsigned)g_jemm.flags, badAt ? "first differing at " : "the same", (unsigned)badAt);
+    }
+    if (g_jemm.checked % 5000 == 0) {
+        wclog(1, "Privateer: JEMM check: %u maps compared (%u pairs: %u mapped, %u unmapped, %u in the large frame, %u in the "
+              "64 KB frame, %u by the 'how' flag 2), %u differ, %u left to JEMM (%u at its error paths)", g_jemm.checked,
+              g_jemm.pairs, g_jemm.mapped, g_jemm.unmapped, g_jemm.large, g_jemm.small, g_jemm.how2, g_jemm.differ, g_jemm.left,
+              g_jemm.errors);
+    }
+}
+
+bool jemm_hook(Bit32u ip) {
+    if ((ip != kJemmTop && ip != kJemmExit) || SegValue(cs) != kJemmSel || !cpu.pmode || (reg_flags & FLAG_VM) ||
+        jemm_mode() == JEMM_OWN) return false;
+    if (ip == kJemmTop) jemm_enter();
+    else jemm_exit();
+    return true;
+}
+
 }  // namespace
 
 // A base's screens wait for the player in a loop around DOS's "flush the keyboard's buffer" (INT 21h AH=0Ch): 62,000
@@ -968,11 +1224,21 @@ void priv_native_watch(void (*watch)(Bit16u ip)) {
     if (idle_wanted()) {
         g_only[kFrameWait] = !wc_net_watch[kFrameWait];
         watch(kFrameWait);
+    }    if (jemm_mode() != JEMM_OWN) {
+        g_jemm.code = 0;
+        g_jemm.open = false;
+        g_only[kJemmTop] = !wc_net_watch[kJemmTop];
+        watch(kJemmTop);
+        if (jemm_mode() == JEMM_CHECK) {
+            g_only[kJemmExit] = !wc_net_watch[kJemmExit];
+            watch(kJemmExit);
+        }
     }
 }
 
 bool priv_native_hook(Bit32u ip) {
     if (ip > 0xFFFF || !priv_found()) return false;
+    if ((ip == kJemmTop || ip == kJemmExit) && jemm_hook(ip)) return true;
     if (g_open && g_return[ip]) compare_returned();
     const Bit16u para = (Bit16u)(SegValue(cs) - priv_load_seg());
     if (ip == kFrameWait && para == kSeg075 && idle_wanted()) {
