@@ -89,6 +89,31 @@ check("the states say so", /voice connected with WINGMAN/.test(await voiceState(
 check("the lights are out", !(await lit(host)) && !(await lit(wing)), null);
 check("the choice is remembered", (await wing.evaluate(() => localStorage.getItem("wc:voice"))) === "ptt", null);
 
+// Push to talk is ` held; Shift+` goes on to the game (the high-resolution flips are on it then), untouched, and a `
+// typed into one of the page's boxes is typed.
+{
+  const micOn = () => wing.evaluate(async () => (await window.__wcVoiceReport()).microphone.tracks.some((t) => t.enabled));
+  await wing.evaluate(() => { window.__keys = []; document.addEventListener("keydown", (e) => window.__keys.push(`${e.shiftKey ? "Shift+" : ""}${e.code}${e.defaultPrevented ? " prevented" : ""}`)); });
+  await wing.evaluate(() => document.activeElement && document.activeElement.blur());
+  await wing.keyboard.down("Backquote");
+  const talking = await micOn();
+  await wing.keyboard.up("Backquote");
+  const after = await micOn();
+  check("` held talks, and stops when let go", talking && !after, { talking, after });
+  await wing.keyboard.down("Shift");
+  await wing.keyboard.down("Backquote");
+  const shifted = await micOn();
+  await wing.keyboard.up("Backquote");
+  await wing.keyboard.up("Shift");
+  const keys = await wing.evaluate(() => window.__keys);
+  check("Shift+` does not talk and goes on to the game, untouched", !shifted && keys.includes("Shift+Backquote") && !keys.includes("Backquote"), { shifted, keys });
+  await wing.click("#chatInput");
+  await wing.keyboard.type("a`b");
+  const typed = await wing.$eval("#chatInput", (el) => el.value);
+  check("a ` typed into the chat box is typed", typed === "a`b" && !(await micOn()), typed);
+  await wing.$eval("#chatInput", (el) => { el.value = ""; el.blur(); });
+}
+
 // Exercise the previously silent PTT -> Always path, and check decoded audio
 // rather than accepting the existence of a remote track as proof of sound.
 await choose(wing, "on");

@@ -15,7 +15,8 @@
 // servers.  The browser's own audio processing does the rest: echo
 // cancellation (it knows what the browser itself plays, the game's sound
 // included), noise suppression, automatic gain, and Opus.  Push to talk is
-// the backquote key, or a controller button (web/gamepad.js).
+// the backquote key, or a controller button (web/gamepad.js); Shift+` is not, and goes on to the game (the page's own
+// high-resolution flips are on that key: with push to talk, Shift+` flips them).
 const VOICE_KEY = "wc:voice";
 const INPUT_KEY = "wc:voiceInput";
 const CHOICES = ["off", "listen", "ptt", "on"];
@@ -441,11 +442,28 @@ export function initVoice(host) {
     try { await navigator.clipboard.writeText(text); diagnostics.textContent = "Copied voice report.\n" + text; }
     catch (e) { diagnostics.textContent = "Select and copy this report:\n" + text; }
   });
-  // Push to talk: the backquote key, which neither game uses, held down.  The
-  // key stops here and does not reach the game.
+  // Push to talk: the backquote key held down, the one key that none of the games gives a meaning of its own
+  // (their manuals and key tables, read 2026-11-26).  The key stops here and does not reach the game.  The page's
+  // layer has uses for it, Privateer's, Armada's, the TIE demo's and X-Wing's high resolution flipped and
+  // RetroVega's ships' detail, and those take Shift+` too: so Shift+` is let through, always (the user, 2026-11-26:
+  // "normally backtick works to change rez but if you're push-to-talk then its shift-backtick"), and so is a key
+  // repeat that began as one, and what is typed into the page's boxes.  Once talking, every press of the key is the
+  // talk's, a Shift pressed meanwhile or not.
   const ptt = (down) => { if (choice !== "ptt" || pttDown === down) return; pttDown = down; applyMute(); render(); };
-  window.addEventListener("keydown", (e) => { if (e.code === PTT_CODE && choice === "ptt") { ptt(true); e.preventDefault(); e.stopPropagation(); } }, true);
-  window.addEventListener("keyup", (e) => { if (e.code === PTT_CODE && choice === "ptt") { ptt(false); e.preventDefault(); e.stopPropagation(); } }, true);
+  const typing = (e) => {
+    const t = e.target;
+    return !!t && (t.isContentEditable || t.tagName === "TEXTAREA" ||
+      (t.tagName === "INPUT" && !/^(checkbox|radio|button|submit|reset|range|color|file)$/.test(t.type)));
+  };
+  window.addEventListener("keydown", (e) => {
+    if (e.code !== PTT_CODE || choice !== "ptt") return;
+    if (!pttDown && (e.shiftKey || e.repeat || typing(e))) return;
+    ptt(true); e.preventDefault(); e.stopPropagation();
+  }, true);
+  window.addEventListener("keyup", (e) => {
+    if (e.code !== PTT_CODE || !pttDown) return;
+    ptt(false); e.preventDefault(); e.stopPropagation();
+  }, true);
   window.addEventListener("blur", () => ptt(false));
 
   render();
