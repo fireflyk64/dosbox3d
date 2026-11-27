@@ -329,11 +329,14 @@ function setSource(s, want) {
   $("helpMission").textContent = (hints && hints.help) || (gameInfo() && gameInfo().help)
     || (s ? "The multiplayer hooks do not know this program: it runs single-player." : "Load the game files (step 1): the help is the game's own.");
   describeSaves();
-  // (the Players box: as many seats as the game's rooms take)
+  // (the Players box: as many seats as the game's rooms take; a game of open rooms -- Privateer -- makes its rooms as
+  // big as they go unless the pilot set the box, a phone one of 1 all the same)
   $("seats").min = String(minSeats());
   $("seats").max = String(maxSeats());
+  if (!lobby.game && !seatsSet) $("seats").value = String(seatsDefault());
   if (Number($("seats").value) < minSeats()) $("seats").value = String(minSeats());
   if (Number($("seats").value) > maxSeats()) $("seats").value = String(maxSeats());
+  $("seatsBeta").hidden = betaSeats();
   // (Wing Commander II's people use a first name; the first game has none: the box is there for every game, optional,
   // the user's call, 2026-11-15)
   roomPlaceholder();
@@ -729,10 +732,24 @@ async function initSources() {
 // every start and refreshed whenever the running game changes the file.
 const gameInfo = () => (source && gameById(source.game.id)) || null;
 const isArmada = () => source?.game.id === "armada" || source?.game.id === "armadapg";
-// A room's seats at most: 3, or as many as the game's registry entry allows (`maxSeats`: Privateer's rooms of up to 8,
+// A room's seats at most: 3, or as many as the game's registry entry allows (`maxSeats`: Privateer's rooms of up to 32,
 // each pilot flying its own career: docs/privateer.md).
 const maxSeats = () => (gameInfo() && gameInfo().maxSeats) || 3;
 const PRIV_CREWS = ["own", "crew"];
+// Open rooms (the registry's `openRooms`: Privateer's; docs/privateer.md section 37, the user, 2026-11-27: "people to be
+// able to join a room code after it launches and leave ... later you can leave and come back--and it's all free play and
+// the room limit is very high.  This should be the default room limit (32) ... players can reduce it to 1 (single
+// player) or 2 or 3 or 4 if they need to ensure no one crowds in, but generally best is to just check that private
+// button ... Hopefully the ones that go time out eventually to leave room for others"): made as big as they go (the
+// Players box at its most, unless the pilot set it), anybody flies whenever they like, a seat whose pilot has been
+// silent OPEN_CLAIM_MS is taken by a newcomer to a full room, and a page leaving one gives its seat back at once.
+// A Privateer room of one ship, crewed (the host's Ships choice) is no open room: the host flies, the others board.
+const openRooms = () => !!(gameInfo() && gameInfo().openRooms);
+const comeAndGo = () => openRooms() && lobby.privCrew !== "crew";
+const OPEN_CLAIM_MS = 120000;
+let seatsSet = false;       // (the pilot set the Players box: kept as they set it, whatever the game)
+const seatsDefault = () => (phoneLike() ? 1 : openRooms() ? maxSeats() : 2);
+const betaSeats = () => seatCount() < 3 || openRooms();      // (the box's "beta" tag hidden: 3 pilots and more are beta but in open rooms)
 const minSeats = () => (gameInfo() && gameInfo().minSeats) || 1;
 // (the terrain branch's playtest copy at /terrain/ keeps its own: its RetroVega's saved game is another version's,
 // and the site's storage is shared with /dosbox)
@@ -1123,7 +1140,7 @@ function renderMission() {
   $("privFFLabel").hidden = !isPriv() || one || lobby.privCrew === "crew";     // (one ship: nobody to hit)
   $("privCrewLabel").hidden = !isPriv() || one;
   $("privCrew").value = lobby.privCrew;
-  $("privCrew").disabled = !isHost() || running;
+  $("privCrew").disabled = !isHost() || lobby.madeRoom === false || running;     // (the room's maker's: not a newcomer's in its seat)
   $("privFF").disabled = !isHost();       // (the host's counts, as Collide's)
   // (Terminal Velocity: the craft each pilot flies as in the others' games, the host's choice)
   $("tvCraftLabel").hidden = $("tvCraftGuestLabel").hidden = !isTvRoom() || one;
@@ -1486,7 +1503,10 @@ function renderRoster() {
   const ul = $("roster");
   ul.innerHTML = "";
   if (!g) return;
+  // (a big room -- an open one's 32 seats -- lists who is in it and how many seats are free, not every empty seat)
+  const big = g.players.length > 8;
   for (const p of g.players) {
+    if (big && !p.occupied && p.id !== g.selfId) continue;
     const li = document.createElement("li");
     const me = p.id === g.selfId;
     const link = me ? "up" : (lobby.links.get(p.id) || (p.occupied ? "down" : ""));
@@ -1497,6 +1517,12 @@ function renderRoster() {
     if (p.occupied && !me) tags.push(link === "up" ? "connected" : "connecting…");
     if (lobby.flying.has(p.id) || (me && running)) tags.push("flying");
     li.innerHTML = `<span class="dot ${p.occupied ? link : ""}"></span><span class="who">${esc(name)}</span><span class="tag">${tags.join(" · ")}</span>`;
+    ul.appendChild(li);
+  }
+  const free = g.players.filter((p) => !p.occupied).length;
+  if (big && free) {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="dot"></span><span class="who">${free} seat${free === 1 ? "" : "s"} free</span><span class="tag">${comeAndGo() ? "anybody with the code comes in, now or later" : ""}</span>`;
     ul.appendChild(li);
   }
 }
@@ -1520,7 +1546,8 @@ const GUEST_HELLO_MS = 5000;
 // in one of them (the user, 2026-11-05: "can the fly alone button not show up for rooms that the user clicked advertise
 // in the lobby...we can store a small local hashtable in memory that recalls all room ids that have advertised")
 const advertised = new Set();
-const guestWaits = () => !!lobby.game && !soloRoom() && !isHost()
+// (an open room: nobody waits for anybody -- its pilots come and go, the one who made it too)
+const guestWaits = () => !!lobby.game && !soloRoom() && !isHost() && !comeAndGo()
   && (lobby.names.has(0) ? !lobby.flying.has(0) : Date.now() - (lobby.joinedAt || 0) < GUEST_HELLO_MS);
 // A host alone in its room may fly alone instead (the user: "a Fly Single Player button when they are in a empty
 // lobby which doesn't post it to the channel and starts it as single player.  otherwise same as fly")
@@ -1823,8 +1850,7 @@ async function resumeRoom() {
   try {
     const game = await P2PGame.connect({
       server: serverUrl(), code,
-      create: old.selfId !== 0 ? undefined
-        : { maxPlayers: old.maxPlayers, waitUntilFull: false, allowLateJoin: true, allowReconnect: true, allowReplacement: false, reconnectPolicy: "token-only" },
+      create: old.selfId !== 0 ? undefined : roomOptions(old.maxPlayers),
       storage: "session", storageKey: key, forceRelay: $("relay").checked,
     });
     if (lobby.game !== old || running) { try { game.close(); } catch (e) { /* gone */ } return; }     // (left, or flying, meanwhile)
@@ -1884,6 +1910,50 @@ function fitsRoom(code) {
   return false;
 }
 
+// A room's options as this page makes it: seats taken back only by their own tab, or an open room's (above).
+function roomOptions(seats) {
+  return comeAndGo()
+    ? { maxPlayers: seats, waitUntilFull: false, allowLateJoin: true, allowReconnect: true, allowReplacement: true,
+        reconnectPolicy: "token-or-claim-after-timeout", claimAfterMs: OPEN_CLAIM_MS }
+    : { maxPlayers: seats, waitUntilFull: false, allowLateJoin: true, allowReconnect: true, allowReplacement: false, reconnectPolicy: "token-only" };
+}
+// Into a room; an open room's that is full: the seat of a pilot silent OPEN_CLAIM_MS (gone without leaving: a tab that
+// crashed, a computer asleep), tried four at a time in no order (the first answer out of range says how many seats
+// there are); a room that lets nobody claim is full.
+const OPEN_ROOM_CODE = /^(PRV|PRF)-/i;
+async function connectRoom(opts) {
+  try {
+    return await P2PGame.connect(opts);
+  } catch (e) {
+    // (a server whose rooms are smaller than the seats asked -- checked even when the room is there, a link's join --
+    // says its limit: the room made, or joined, at that size)
+    const limit = e && e.code === "invalid-create" && opts.create && /exceeds limit (\d+)/.exec(e.message || "");
+    if (limit && Number(limit[1]) >= 1 && Number(limit[1]) < opts.create.maxPlayers) {
+      log(`lobby: this server's rooms take ${limit[1]} at most`);
+      return connectRoom({ ...opts, create: { ...opts.create, maxPlayers: Number(limit[1]) } });
+    }
+    if (!e || e.code !== "room-full" || !(comeAndGo() || OPEN_ROOM_CODE.test(opts.code))) throw e;
+    let seats = 32;
+    const ids = [...Array(seats).keys()].sort(() => Math.random() - 0.5);
+    for (let i = 0; i < ids.length; i += 4) {
+      const batch = ids.slice(i, i + 4).filter((id) => id < seats);
+      const tries = await Promise.allSettled(batch.map((id) => P2PGame.connect({ ...opts, create: undefined, claimPlayerId: id })));
+      const won = tries.filter((t) => t.status === "fulfilled").map((t) => t.value);
+      for (const g of won.slice(1)) { try { g.close(); } catch (x) { /* gone */ } }     // (one seat is ours; the others back)
+      if (won.length) {
+        log(`lobby: room ${opts.code} was full: seat ${won[0].selfId + 1}, silent ${OPEN_CLAIM_MS / 1000} s, is ours now`);
+        return won[0];
+      }
+      for (const t of tries) {
+        const c = t.reason && t.reason.code, range = c === "invalid-target" && /out of range 0\.\.(\d+)/.exec(t.reason.message || "");
+        if (range) seats = Math.min(seats, Number(range[1]) + 1);
+        else if (c && c !== "slot-not-claimable") throw e;     // (a room that lets nobody claim, or gone: full as it said)
+      }
+    }
+    throw e;
+  }
+}
+
 // create: false only joins a room that exists (Join with a code typed, a code clicked in the lobby, a room found);
 // otherwise the room is made when it is not there (Host, a link).  `game`: the program the room is known to play (a
 // room found in the lobby): switched to, whatever the code says.
@@ -1908,7 +1978,7 @@ async function joinRoom({ create = true, game = null } = {}) {
   const solo = create && seatCount() === 1;
   status(solo ? `Making room ${code} for one…` : `Joining room ${code}…`);
   try {
-    const game = solo ? soloGame(code) : await P2PGame.connect({
+    const game = solo ? soloGame(code) : await connectRoom({
       server: serverUrl(),
       code,
       // A room code gets said out loud: nobody who hears it may take a
@@ -1922,15 +1992,20 @@ async function joinRoom({ create = true, game = null } = {}) {
       // more: a third pilot gets a ship of the mission's wing, or one the
       // host's game makes (a second wingman, a second gunner), when they
       // come.  The count is 2 by default and not remembered.
-      create: !create ? undefined
-        : { maxPlayers: seatCount(), waitUntilFull: false, allowLateJoin: true,
-            allowReconnect: true, allowReplacement: false, reconnectPolicy: "token-only" },
+      // An open room (Privateer's) is the other way round: its pilots come and go, and a seat whose page has been
+      // silent OPEN_CLAIM_MS (a live page says something every 25 s, roomBeat, in flight too) goes to a newcomer
+      // when every seat is taken (connectRoom).
+      create: !create ? undefined : roomOptions(seatCount()),
       storage: "session",
       storageKey: "wclobby-" + code,
       forceRelay: $("relay").checked,
     });
     lobby.game = game;
     lobby.joinedAt = Date.now();
+    // (a room that had pilots in it when we came is theirs: a Privateer room's Ships choice is its maker's, told in its
+    // hello -- ours, from this browser's last room, is no word of this one)
+    lobby.madeRoom = !game.players.some((p) => p.occupied && p.id !== game.selfId);
+    if (isPriv() && !lobby.madeRoom) lobby.privCrew = "own";
     setTimeout(updateActions, GUEST_HELLO_MS + 100);   // (a host still silent then: a native one, not waited for)
     lobby.names.clear(); lobby.links.clear(); lobby.flying.clear(); lobby.games.clear();
     lobby.unsubscribe = game.onEvent(onLobbyEvent);
@@ -2157,6 +2232,8 @@ function leaveRoom() {
   if (lobby.game) { try { lobby.game.close(); } catch (e) { /* gone */ } }
   lobby.game = null; lobby.unsubscribe = null; lobby.adopted = false; lobby.backlog = []; lobby.hostPrivate = false;
   if (lobby.seatsBefore) { $("seats").value = lobby.seatsBefore; lobby.seatsBefore = null; }
+  // (this browser's own Ships choice back: a room's maker's was taken while in its room)
+  try { const v = localStorage.getItem(PRIV_CREW_KEY); lobby.privCrew = PRIV_CREWS.includes(v) ? v : "own"; } catch (e) { lobby.privCrew = "own"; }
   lobby.names.clear(); lobby.links.clear(); lobby.flying.clear(); lobby.games.clear(); lobby.builds.clear();
   // (While the game runs, the button stays: the way out of it.)
   $("lobby").hidden = true; $("leave").hidden = !running; $("share").hidden = true; $("join").disabled = false;
@@ -2188,6 +2265,11 @@ function leaveButton() {
 // A running game is work in progress: closing or reloading the tab asks
 // first, as the browser does for a document not yet saved.
 window.addEventListener("beforeunload", (ev) => { if (running && !leavingForGood) { ev.preventDefault(); ev.returnValue = ""; } });
+// An open room's seat goes back at once with the page (closed, reloaded, gone elsewhere): its pilots come and go, and the
+// seat is the next newcomer's -- the others' games see the pilot leave now, not when its links time out
+window.addEventListener("pagehide", (ev) => {
+  if (!ev.persisted && lobby.game && !soloRoom() && comeAndGo()) { try { lobby.game.close(); } catch (e) { /* gone */ } }
+});
 
 // Host makes the room (or sits down in it, when the code typed is a room that is there); Join, and Enter in the code's
 // box, only join a room that exists; Join open game asks the lobby.
@@ -2214,8 +2296,8 @@ $("join").addEventListener("click", () => void hostRoom());
 $("setup").addEventListener("submit", (ev) => { ev.preventDefault(); void joinRoom({ create: false }); });
 $("findRoom").addEventListener("click", () => void joinOpenGame({ series: true }));
 // (Players: 1, 2 or 3, whatever is typed; three is in beta.)
-$("seats").addEventListener("input", () => { $("seatsBeta").hidden = seatCount() < 3; if (!lobby.game) updateActions(); });
-$("seats").addEventListener("change", () => { $("seats").value = seatCount(); $("seatsBeta").hidden = seatCount() < 3; });
+$("seats").addEventListener("input", () => { seatsSet = true; $("seatsBeta").hidden = betaSeats(); if (!lobby.game) updateActions(); });
+$("seats").addEventListener("change", () => { seatsSet = true; $("seats").value = seatCount(); $("seatsBeta").hidden = betaSeats(); });
 $("leave").addEventListener("click", leaveButton);
 // The link to this room, to the clipboard (shown in the status line where
 // the clipboard is out of reach).
@@ -2465,7 +2547,7 @@ $("armHires").addEventListener("change", () => {
 const PRIV_CREW_KEY = "wc:privCrew";
 try { const v = localStorage.getItem(PRIV_CREW_KEY); if (PRIV_CREWS.includes(v)) lobby.privCrew = v; } catch (e) { /* the first */ }
 $("privCrew").addEventListener("change", () => {
-  if (!isHost()) { $("privCrew").value = lobby.privCrew; return; }
+  if (!isHost() || lobby.madeRoom === false) { $("privCrew").value = lobby.privCrew; return; }
   lobby.privCrew = PRIV_CREWS.includes($("privCrew").value) ? $("privCrew").value : "own";
   try { localStorage.setItem(PRIV_CREW_KEY, lobby.privCrew); } catch (e) { /* not kept */ }
   if (lobby.game) {

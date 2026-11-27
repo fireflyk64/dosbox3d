@@ -27,7 +27,8 @@ The user's brief (2026-11-07):
 This document is the reference for what is built, what was found in the program, and the plan.  Status: the page
 takes GOG's installer and runs Privateer and Righteous Fire, the arrow keys ramped (section 4), in rooms of up to 8
 that say where everybody is (section 7), the pilots near each other seeing each other's ships (section 8); the nav
-points' owners and the rest are the plan of section 6.
+points' owners and the rest are the plan of section 6.  (Since 2026-11-27 rooms are open, of up to 32, pilots coming
+and going: section 37.)
 
 ## 1. The game as installed
 
@@ -1718,3 +1719,78 @@ as it sets it) and, where the TLB then writes that page directly (memory), the r
 what each byte's write would have done; a page with a handler (the VGA's: two thirds of the bytes are memory, a third
 the VGA's) still gets every byte through its handler.  `WCPRIVTWINS_VERIFY=1` reads every run back through DOSBox's
 own reads: 160 million bytes in a solo fight at Oxford, none differed; the crew test as before.
+
+## 37. Open rooms: pilots come and go, up to 32 (2026-11-27)
+
+The user's brief (2026-11-27):
+
+> Privateer is a hit but right now the player list is too fixed. Since the multiplayer is decoupled we need people to
+> be able to join a room code after it launches and leave, etc. This means we might have a large number of players
+> (eg maybe even up to 32 or whatever lobbylink supports) come and go and able to use the loose multiplayer to deal
+> with being in a similar system etc. For now we can assume that no more than 8 players will coordinate to be in the
+> single nav at once, if that's a necessary requirement. But ideally it's just come and go--you know the room code
+> then you can join in...later you can leave and come back--and it's all free play and the room limit is very high.
+> This should be the default room limit (32). Of course players can reduce it to 1 (single player) or 2 or 3 or 4 if
+> they need to ensure no one crowds in, but generally best is to just check that private button, so the default
+> should be this kind of loose multiplayer where people come and go at will. Hopefully the ones that go time out
+> eventually to leave room for others...but clearly they won't be saying "I'm at nav 3" if they've timed out--so it
+> shouldn't affect scalability as long as we don't have universal sync points.
+
+**What was fixed about the old room.**  The session was a star (section 7): the host (seat 0) the only link of every
+guest, relaying every message to every other guest, deciding the nav points' owners, and its departure closed the
+room for everybody ("(the host) is gone: the room is closed").  Seats were 8 at most (`kMaxSeats`, the page's
+`maxSeats`), a guest's Fly waited for the host's, and the page made rooms whose seats only their own tab could take
+back (`token-only`): a closed tab held its seat until the room died.
+
+**An open room** (`wcnet_priv_session.cpp`, `PrivNet::mesh`; every lobby room but a crew's -- a crew's and TCP are the
+star as before).  lobbylink already links every pair of a room's browsers (each client offers to every higher seat,
+the browser's TypeScript client and the native Rust one alike), so:
+
+- A pilot's seat is its room seat (`LobbyHub::self_id`, the stream's `room_seat`), up to 32 (`kMaxSeats`: the masks
+  of seats are 32 bits).
+- Every pilot links with every other: a link opened to each seat whose channel is up (`link_mesh`, every 250 ms,
+  `peer_up` first so nothing waits), and one taken from the listener for each that speaks first; each side says its
+  hello once on its link (`send_hello`: callsign, face, friendly fire, `mesh`, and `player` = the seat it is said to,
+  which an older page's guest takes as its own).  A hello is answered with our presence and the owners' table.
+- Nobody relays.  Presence and chat go to everybody (a few lines a minute each); a pilot's ship (15 a second), the
+  ships it runs (10 a second) and its gunfire's copies go only to the pilots in its system within 60 km by their
+  presence or their latest report (`wants_our_space`): the traffic is the pilots near each other's, not the room's.
+- What the host decided, the lowest seat present decides (`decider_seat`, `deciding`): the nav points' owners
+  (section 9).  A newcomer of a lower seat takes over once it has heard the table (who had each point this round),
+  which every pilot sends it with the hello's answer, or after 4 s with nobody's.  The friendly fire rule is the
+  lowest seat's heard (`ffSeat`).  The decisions are the only thing any one machine does for the room, and nobody
+  waits for them: a wing's spawn with no word yet is decided by the same rule on the spot (section 9).
+- A pilot leaving (its link closed: its page closed, crashed, or gone) is said in the log, its ship given back at the
+  next frame (`Puppet::release`: its seat may be another's next), its encounter ships go stale as before; the room
+  goes on, whoever left -- its maker too.  A pilot whose reports name another ship than ours of it (bought at a base,
+  or another pilot in the seat) is made again (`Puppet::made`).
+- A hub's answer (a hello from seat 0 with `player` and no `mesh`: a crew's room, or a host on an older page) makes us
+  its guest as before (`become_hubs_guest`).
+
+**The page** (`web/wc.js`, the registry's `openRooms: true, maxSeats: 32` for Privateer and Righteous Fire):
+
+- The Players box starts at 32 for Privateer (no "beta" tag; a phone still starts at 1; a number the pilot typed is
+  kept whatever the game), down to 1 (alone, as before) or anything between.  Private keeps the room out of the lobby.
+- Nobody waits for anybody to fly (`guestWaits` is off in an open room); the host's Fly still starts the pages in the
+  room that have not started (as before).
+- An open room is made with `allowReplacement`, `token-or-claim-after-timeout`, `claimAfterMs` 120,000: a page says a
+  line every 25 s (`roomBeat`, in flight too), so a seat silent two minutes is a pilot gone without leaving (a tab
+  that crashed, a computer asleep), and a newcomer to a full room takes such a seat (`connectRoom`: claims four at a
+  time).  A page closing (or reloading, or going elsewhere) in an open room leaves it (`pagehide`: the seat back at
+  once, the others' links closed at once).
+- A page coming into a room with pilots in it did not make it: its Ships choice is the room's ("own" until the
+  maker's hello says "crew"), the box greyed even in seat 1 (a newcomer in the maker's seat).  Leaving gives the
+  browser's own choice back.
+- The roster of a big room lists who is in it and "N seats free", not every empty seat.
+
+**Limits kept.**  At one nav point the game's near heap is the limit (section 15): the memory governor makes puppets
+only while there is room and gives back the farthest first, and the co-op extras stop at +3 (6 pilots and more): the
+user's "no more than 8 at a nav" is what was measured.  Every browser of a room holds a link to every other (31 in a
+full room; STUN first, TURN only after a failure).
+
+**Tests.**  `scripts/privtests/openroom.sh` (native, a build with lobbylink: configure's default, `build-lobby`): HOST
+and GUEST1 fly, GUEST2 comes while they fly, HOST is killed (a crashed tab), HOST comes back as BACK2; checked: the
+late comer sees both, GUEST1 hears HOST leave and decides, BACK2 and GUEST1 see each other ("OPEN ROOM OK").
+`scripts/web-priv-open.sh` (three browser pages): ALPHA hosts with the page's 32, BRAVO comes while ALPHA flies, ALPHA's
+page closed, CHARLIE comes in ALPHA's seat; pictures of both screens at each stage ("OPEN OK").  `web-priv.sh ROOM=1`
+(the gate's): a native pilot's open room of 32 and the page in it.

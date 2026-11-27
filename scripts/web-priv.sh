@@ -7,8 +7,9 @@
 #   GAME_FILE=  GOG's installer (default: the one beside this repository's root, or the main tree's)
 #   PORT= LOBBY_PORT=  (default 8853, 8854)   RF=1  Righteous Fire
 #   PAD=1       a stand-in gamepad steers in flight; PAD=builtin: picked "Built in" before the launch (web-priv.mjs)
-#   ROOM=1      a native host (build-lobby's emulator, scripts/privrun.sh's route) makes a room of 8 in the local lobby
-#               and the page joins it as a guest: presence both ways (the host's log: $OUT/host/run.err)
+#   ROOM=1      a native pilot (build-lobby's emulator: configure's default, with lobbylink; scripts/privrun.sh's route)
+#               makes an open room of 32 (SEATS=) in the local lobby and the page joins it: presence both ways (the
+#               native pilot's log: $OUT/host/run.err)
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/web-priv}; mkdir -p $OUT; rm -f $OUT/*.png
@@ -19,7 +20,7 @@ PW="${PLAYWRIGHT_DIR:-/home/sandbox/dev/beauty}"
 LOBBYSERVER=${LOBBYSERVER:-$ROOT/build-web/p2p-lobby-server}
 [ -f "$GAME_FILE" ] || { echo "no installer (GAME_FILE)"; exit 2; }
 [ -x "$LOBBYSERVER" ] || (cd "$ROOT/lobbylink" && CGO_ENABLED=0 go build -trimpath -o "$LOBBYSERVER" ./cmd/p2p-lobby-server) || exit 1
-printf '[rooms]\nmax_players_hard = 8\n' > $OUT/lobby.toml
+printf '[rooms]\nmax_players_hard = 32\n' > $OUT/lobby.toml
 "$LOBBYSERVER" --config $OUT/lobby.toml --listen-http 127.0.0.1:$LOBBY_PORT --allowed-origin "http://localhost:$PORT,http://127.0.0.1:$PORT" \
     --public-url http://127.0.0.1:$LOBBY_PORT --allow-no-origin > $OUT/lobby.log 2>&1 &
 LPID=$!
@@ -33,7 +34,7 @@ trap 'kill $LPID $HPID 2>/dev/null' EXIT
 sleep 1
 if [ -n "${ROOM:-}" ]; then
   ROOM=PRV-$((1000 + RANDOM % 9000)); export ROOM
-  OUT=$OUT/host DOSBOX=${DOSBOX:-$ROOT/build-lobby/src/dosbox} ENV="WCROOM=$ROOM WCLOBBY=http://127.0.0.1:$LOBBY_PORT WCLOBBY_ORIGIN= WCPLAYERS=8 WCCALLSIGN=HOST" \
+  OUT=$OUT/host DOSBOX=${DOSBOX:-$ROOT/build-lobby/src/dosbox} ENV="WCROOM=$ROOM WCLOBBY=http://127.0.0.1:$LOBBY_PORT WCLOBBY_ORIGIN= WCPLAYERS=${SEATS:-32} WCCALLSIGN=HOST" \
     "$ROOT/scripts/privrun.sh" $((DUR + 60)) > /dev/null &
   NPID=$!
   sleep 4
@@ -43,7 +44,7 @@ PLAYWRIGHT_DIR="$PW" SHOT_DIR=$OUT timeout -s KILL $((DUR + 700)) node "$ROOT/sc
 if [ -n "${NPID:-}" ]; then
   kill $NPID 2>/dev/null; sleep 1
   echo "===== the native host"
-  grep -a "Privateer: PRIVTEST\|Privateer: [A-Z]* joined\|In Troy with you" $OUT/host/run.err | cut -c1-150 | head -8
+  grep -a "Privateer: PRIVTEST\|Privateer: [A-Z]* is in the room\|In Troy with you" $OUT/host/run.err | cut -c1-150 | head -8
   grep -a -q "Privateer: PRIVTEST on autopilot" $OUT/host/run.err && echo "ok   the host told of the page's autopilot" || echo "FAIL the host never heard of the page's autopilot"
   grep -a -q "Privateer: PRIVTEST's [A-Za-z]* is in your space" $OUT/host/run.err && echo "ok   the page's ship in the host's space" || echo "FAIL the page's ship never in the host's space"
   grep -a -q "HELLO HOST" $OUT/host/run.err && echo "ok   the page's line (its 0 key) heard by the host" || echo "FAIL the host never heard the page's line"

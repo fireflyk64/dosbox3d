@@ -127,7 +127,7 @@ if (process.env.ROOM) {
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 60000 });
   console.log(`${stamp()} in the room: ` + await page.$eval("#status", (el) => el.textContent.trim().slice(0, 140)));
   const max = await page.$eval("#seats", (el) => el.max);
-  check("the Players box takes 8 for Privateer", max === "8", max);
+  check("the Players box takes 32 for Privateer (open rooms)", max === "32", max);
   // the Face box seen in a room (it sat in the room's row of choices, hidden for a game the room does not fly: the user,
   // 2026-11-09, "I also don't see an option to select comm portrait")
   const face = await page.evaluate(() => { const el = document.getElementById("privFace"); return el && el.offsetParent !== null ? el.options.length : 0; });
@@ -332,11 +332,12 @@ if (PAD) {
   check("the choice kept by the browser", await page.evaluate(() => localStorage.getItem("wc:privPointer")) === "ring", "");
 }
 if (process.env.SEATS) {
-  check(`the room's session: the host of ${process.env.SEATS} seats`, await waitLog(new RegExp(`Privateer: HOST at room \\S+, ${process.env.SEATS} seats`), 20000),
-    (logs.find((l) => /Privateer: HOST at/.test(l)) || "").slice(0, 140));
+  check(`the room's session: an open room of ${process.env.SEATS} seats`, await waitLog(new RegExp(`Privateer: OPEN ROOM at room \\S+, ${process.env.SEATS} seats`), 20000),
+    (logs.find((l) => /Privateer: (OPEN ROOM|HOST) at/.test(l)) || "").slice(0, 140));
 }
 if (process.env.ROOM) {
-  check("in the host's room", await waitLog(/Privateer: In \S+'s room as pilot 2/, 20000), (logs.find((l) => /room as pilot/.test(l)) || "").slice(0, 140));
+  check("in the open room as pilot 2", await waitLog(/Privateer: In room \S+ as pilot 2 of/, 20000), (logs.find((l) => /as pilot/.test(l)) || "").slice(0, 140));
+  check("linked with the native pilot", await waitLog(/Privateer: (linked with pilot 1|a pilot at)/, 20000), (logs.find((l) => /linked with|a pilot at/.test(l)) || "").slice(0, 140));
   check("the host's presence: in Troy with us", await waitLog(/Privateer: (HOST launched in Troy|HOST in Troy, [\d,]+ m from you|In Troy with you: HOST)/, 40000),
     (logs.filter((l) => /Privateer: (HOST|In Troy)/.test(l)).pop() || "").slice(0, 140));
   check("the host's ship in our space (a puppet)", await waitLog(/Privateer: HOST's \w+ is in your space/, 30000),
