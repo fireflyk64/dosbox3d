@@ -182,6 +182,7 @@ static void load_wc1_code() {
     root(afterStartup, SEG001, 0x0512);                    // possible_main+378: program started
     root(afterHangarMission, SEG001, 0x0536);              // possible_main+39C: runHangarMission returned
     root(autopilotKey, SEG001, 0x1695);                    // handle_key+12E: autopilot key far call
+    root(steerKeysHeld, SEG001, 0x0DA8);                   // ai_or_main_loop+9B: cmp [steerKeyHeld],0, once a frame before the turn's reset and the queue's keys
 }
 
 // WC2.EXE: see docs/wc2-port.md for how each was found (scripts/wcmap.py

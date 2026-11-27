@@ -46,6 +46,7 @@ static void load_sm2_code() {
     root(afterStartup, 0x03BB, 0x04B7);                            // seg001:04B7 (seg001:0512)
     root(afterHangarMission, 0x03BB, 0x04D2);                      // seg001:04D2 (seg001:0536)
     root(autopilotKey, 0x03BB, 0x15E8);                            // seg001:15E8 (seg001:1695)
+    root(steerKeysHeld, 0x03BB, 0x0D62);                           // seg001:0D62 (seg001:0DA8)
 }
 // END sm2
 // BEGIN so1

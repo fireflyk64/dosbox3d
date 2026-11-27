@@ -1807,9 +1807,67 @@ static void rv_publish_role() {
     }
 }
 
+// WC1's arrows, a turn axis at a time (code::steerKeysHeld, once a frame).
+// The game zeroes the turn the keys built up (steerInput: pitch, yaw, roll)
+// only in a frame with no key down at all, so an arrow let go while Space,
+// Tab or any other key was held kept the ship turning at its last step until
+// that key came up too.  Here an axis none of whose keys is down is zeroed
+// first, as RetroVega's and the other ports' ramps do; the game's own rules
+// stand while the stick or the mouse steers (it zeroes nothing then either)
+// and when no key is down (it zeroes all three itself).  The keys are the
+// game's: its keyboard interrupt keeps a byte per scan code, the E0 prefix
+// ignored (WC.EXE seg022:0356), and its ramp (seg001:0945) turns by 8/2 and
+// the keypad's 7 9 1 3 (both axes), 4/6, Ins/Del and , . (roll).
+// WCNET_TURNLATCH=1 keeps the game's own behaviour.
+static int g_turnLatch = -1;
+
+static bool turn_latch() {
+    if (g_turnLatch < 0) {
+        const char *env = getenv("WCNET_TURNLATCH");
+        g_turnLatch = (env && env[0] == '1') ? 1 : 0;
+    }
+    return g_turnLatch != 0;
+}
+
+static void steer_keys_held() {
+    if (turn_latch() || !ds::known(ds::steerKeyHeld) || DS == 0) {
+        return;
+    }
+    Bit16u tablePara, tableOff;
+    if (g_build == BUILD_WC1) {
+        tablePara = 0x08EE, tableOff = 0x0122;   // (seg070:06C7 scans it: mov ax,8EEh / di = 1A1h down to 123h)
+    } else if (g_build == BUILD_SM2) {
+        tablePara = 0x08AC, tableOff = 0x011E;   // (SM2.EXE seg001:0911: the shifts at 148h and 154h)
+    } else {
+        return;
+    }
+    if (rd16(ds::steerKeyHeld) == 0 || rd16(ds::steerStickEvent) != 0 || rd16(ds::steerByPointer) != 0) {
+        return;
+    }
+    const PhysPt table = PhysMake((Bit16u)(g_loadSeg + tablePara), tableOff);
+    auto down = [table](Bit8u scan) { return mem_readb(table + scan) != 0; };
+    const bool diagonal = down(0x47) || down(0x49) || down(0x4F) || down(0x51);
+    const bool pitch = diagonal || down(0x48) || down(0x50);
+    const bool yaw = diagonal || down(0x4B) || down(0x4D);
+    const bool roll = down(0x52) || down(0x53) || down(0x33) || down(0x34);
+    static const char *const kAxis[3] = { "pitch", "yaw", "roll" };
+    const bool held[3] = { pitch, yaw, roll };
+    for (int i = 0; i < 3; i++) {
+        const Bit16u at = (Bit16u)(ds::steerInput + 2 * i);
+        if (!held[i] && rd16(at) != 0) {
+            wclog(2, "turn keys: %s step %d let go with another key down: stopped", kAxis[i], (Bit16s)rd16(at));
+            wr16(at, 0);
+        }
+    }
+}
+
 static void check_hooks_slow() {
     if (at_location(code::cockpitPointer) && pointer_off()) {
         reg_eip += 4;
+        return;
+    }
+    if (at_location(code::steerKeysHeld)) {
+        steer_keys_held();
         return;
     }
     if (at_function(code::rvHello)) {
@@ -2080,6 +2138,10 @@ static void check_hooks_slow() {
 static void check_hooks_solo() {
     if (at_location(code::cockpitPointer) && pointer_off()) {
         reg_eip += 4;
+        return;
+    }
+    if (at_location(code::steerKeysHeld)) {
+        steer_keys_held();
         return;
     }
     if (at_location(code::missionStarting) || at_location(code::missionStartingDirect)) {

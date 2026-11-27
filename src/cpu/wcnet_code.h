@@ -62,6 +62,8 @@ typedef Loc RootLoc;
     X(cloak) X(uncloak) \
     /* the cockpit's mouse pointer */ \
     X(cockpitPointer) \
+    /* the keyboard's turn (WC1) */ \
+    X(steerKeysHeld) \
     /* root image */ \
     X(mainLoopTop) X(statusCheckAfterKeys) X(statusCheckAfterFrame) X(statusSetByExitKey) \
     X(skipOrchestra) X(afterStartup) X(afterHangarMission) \
