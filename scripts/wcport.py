@@ -65,6 +65,11 @@ MANUAL = {
     ("sm2", "steerStickEvent"): (0x8CE6, "two votes only; SM2.EXE seg001:0D1A mov [8CE6],ax is WC.EXE seg001:0D60 mov [89C4],ax (the stick's event)"),
     ("sm2", "joyRaw"): (0x7A18, "one vote only, and right after joyRange as in WC.EXE"),
     ("sm2", "emsFrameSeg"): (0x7991, "two votes only; SM2.EXE seg014:0084 mov dx,[7991] where WC.EXE seg015:0088 has mov dx,[766F], beside the last handle 7997 (WC.EXE 7675)"),
+    ("sm2", "shieldShapes"): (0xAC84, "two votes only, and WC.EXE's A99E moved as its neighbours (A812 -> AAF8, A84C -> AB32): + 2E6"),
+    ("so1", "emsFrameSeg"): (0xA80F, "two votes only, and six below the last handle A815 as in WC2.EXE (A913 / A919): WC2's - 104"),
+    ("so1", "shieldShapes"): (0xB2BE, "two votes only, and moved as its neighbours (B458 -> B354): WC2's - 104"),
+    ("so2", "emsFrameSeg"): (0xAAA5, "two votes only, and six below the last handle AAAB as in WC2.EXE: WC2's + 192"),
+    ("so2", "shieldShapes"): (0xB554, "two votes only, and moved as its neighbours (B458 -> B5EA): WC2's + 192"),
     ("so1", "joyRaw"): (0xA758, "one vote only, and right after joyRange as in WC2.EXE"),
     ("so2", "joyRaw"): (0xA9EE, "one vote only, and right after joyRange as in WC2.EXE"),
 }

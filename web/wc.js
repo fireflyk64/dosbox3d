@@ -3228,8 +3228,9 @@ const isXw = () => !!(gameInfo() && gameInfo().id === "xwing");
 const isTie = () => isTf() || isTfd() || isXw();
 const isPriv = () => !!(gameInfo() && (gameInfo().id === "priv" || gameInfo().id === "privrf"));
 const isWc1 = () => !!(gameInfo() && (gameInfo().id === "wc1" || gameInfo().id === "wc1sm2"));
-// (Wing Commander 1, The Secret Missions 2 and Wing Commander II itself at 640 x 400: src/cpu/wcnet_wch.cpp; not SO1 or SO2 yet)
-const wcHiresGame = () => isWc1() || !!(gameInfo() && gameInfo().id === "wc2");
+// (Wing Commander 1, The Secret Missions 2, Wing Commander II and its Special Operations 1, 2 and 3 at 640 x 400:
+//  src/cpu/wcnet_wch.cpp)
+const wcHiresGame = () => isWc1() || !!(gameInfo() && (gameInfo().id === "wc2" || gameInfo().partOf === "wc2"));
 const isTv = () => !!(gameInfo() && gameInfo().id === "tv");
 const isRap = () => !!(gameInfo() && gameInfo().id === "rap");
 // (the room's game, the loaded one's or the lobby's)

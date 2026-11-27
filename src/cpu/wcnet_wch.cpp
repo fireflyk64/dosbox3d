@@ -140,7 +140,8 @@ void read_env() {
 }
 
 bool usable() {
-    return ((is_wc1() && (g_build == BUILD_WC1 || g_build == BUILD_SM2)) || (is_wc2() && g_build == BUILD_WC2)) && DS &&
+    return ((is_wc1() && (g_build == BUILD_WC1 || g_build == BUILD_SM2)) ||
+            (is_wc2() && (g_build == BUILD_WC2 || g_build == BUILD_SO1 || g_build == BUILD_SO2))) && DS &&
            ds::known(ds::tmDriverSeg) && ds::known(ds::superTmDriverSeg) && ds::known(ds::flightBuffer);
 }
 
@@ -1127,11 +1128,16 @@ void letters_compose(const Bit8u *low, bool show) {
     }
 }
 
+bool shapes_from(Bit16u where, Bit16u off, Bit16u seg);
+
 // ---- the VDUs' ship pictures at the top level: wireframes -----------------------------------------------------------
 //
-// The VDUs' ships (the weapons display's own ship and its missiles, the target display's hull and shields) are SHAPEs
-// on the VDUs' records on the screen (leftVdu, rightVdu): line art of one game pixel.  At the top level they are drawn
-// as Privateer's target display's are (wcnet_wire.cpp: lines one fine pixel wide between the pixels' middles, rings
+// The VDUs' pictures (the weapons display's own ship and its missiles, the target display's ship and its shields) are
+// SHAPEs on the VDUs' records on the screen (leftVdu, rightVdu): line art of one game pixel.  At the top level the
+// shields' arcs (shieldShapes) are drawn as Privateer's target display's are; the ships wait for the user's approval of
+// a sheet of every one (2026-11-27: "Shield lines are good but wait on sprites wireframe until [I] approve the contact
+// sheet of both horizontal and vertical") and stay the game's pixels, unless WCHIRESWIRE=all (the sheet's rig) -- the
+// way the picture is drawn (wcnet_wire.cpp: lines one fine pixel wide between the pixels' middles, rings
 // round, solid parts the game's blocks, drawn exactly symmetric where the art is).  The shapes drawn on one VDU one
 // after another are gathered into one picture of the VDU (a ship comes in parts, the missiles over it), made when
 // anything else is drawn next, and kept as a cell of the screen as the letters are: shown while every pixel of it
@@ -1144,6 +1150,12 @@ std::vector<Art> g_arts;
 Bit32u g_artsSerial = 0;
 struct ArtGather { bool pending; Bit16u rec; int sx, sy, w, h; std::vector<Bit16s> px; std::vector<Bit8u> under; };
 ArtGather g_gather = { false, 0, 0, 0, 0, 0, std::vector<Bit16s>(), std::vector<Bit8u>() };
+
+bool wire_all() {                   // (WCHIRESWIRE=all: every VDU picture as a wireframe, for the sheet's rig)
+    static int on = -1;
+    if (on < 0) { const char *e = getenv("WCHIRESWIRE"); on = e && !strcmp(e, "all"); }
+    return on == 1;
+}
 
 struct WireCached { Bit32u hash; int w, h; std::shared_ptr<const WireFrame> wf; };
 WireCached g_wires[kWireCache];
@@ -1239,8 +1251,9 @@ bool vdu_record(Bit16u rec) {
 
 // A SHAPE on a VDU's record: gathered into the VDU's picture (true), or the record not one the screen holds row under
 // row (false).
-bool art_shape(const Target &t, Bit16u rec, const Shape &s, int x, int y) {
+bool art_shape(const Target &t, Bit16u rec, const Shape &s, int x, int y, bool line) {
     ArtGather &g = g_gather;
+    if (!line && !wire_all()) return true;          // (the game's own pixels: not gathered, the gathering goes on)
     if (g.pending && g.rec != rec) art_flush();
     if (!g.pending) {
         // the VDU's clip on the screen (the record's rows: the screen's, one under the other)
@@ -1321,6 +1334,130 @@ void arts_compose(const Bit8u *low, bool show) {
     }
 }
 
+// ---- the speed readouts' labels at the top level: the user's letters ----------------------------------------------
+//
+// The user, 2026-11-27: "ops set font" (KPS, SET).  Those labels are the cockpits' pictures, not text: four rows of
+// pixels in one ink colour, the same 3 x 4 letters the user's font was drawn for, in five patterns over the cockpits
+// read (WC1's Hornet, Scimitar, Rapier and Raptor, WC2's Ferret, SO2's).  The screen is searched for them when the
+// picture comes on, when a cockpit is drawn (a big SHAPE on the screen) and every two seconds; a label found (its
+// '#' all one colour, its '.' none of it, nor the pixels round it) is kept while its ink is there, and drawn as the
+// user's glyphs in its ink colour, side by side with their two-pixel gaps, centred on it (Privateer's art_word), the
+// ink's pixels the panel's colour about them.
+struct LabelPattern { const char *text; const char *rows[4]; };
+const LabelPattern kLabelPatterns[] = {
+    { "KPS", { "#.#.###.###", "#.#.#.#.#..", "##..###...#", "#.#.#...###" } },     // WC1's Hornet, SO2's
+    { "KPS", { "#.#.###.##.", "#.#.#.#.#..", "##..###..#.", "#.#.#...##." } },     // WC1's Scimitar, Rapier, Raptor
+    { "KPS", { "#.#.###.###", "##..#.#.#..", "#.#.##....#", "#.#.#...###" } },     // WC2's Ferret
+    { "SET", { "###.###.###", "#...##...#.", "..#.#....#.", "###.###..#." } },     // WC1's Hornet, WC2's Ferret, SO2's
+    { "SET", { "##.###.###", "#..##...#.", ".#.#....#.", "##.###..#." } },         // WC1's Scimitar, Rapier, Raptor
+};
+enum { kLabelPatternCount = sizeof(kLabelPatterns) / sizeof(kLabelPatterns[0]), kMaxLabels = 16, kLabelSearchMs = 2000 };
+struct Label { int x, y, pattern; Bit8u ink; Bit8u under[4 * 12]; };
+std::vector<Label> g_labels;
+bool g_labelsDirty = true;
+double g_labelsSearched = -1e9;
+
+bool label_at(const Bit8u *low, int x, int y, const LabelPattern &p, Bit8u &ink) {
+    const int w = (int)strlen(p.rows[0]);
+    if (x < 1 || y < 1 || x + w + 1 > LW || y + 5 > LH) return false;
+    ink = low[y * LW + x];                          // (every pattern's first pixel is ink)
+    for (int v = 0; v < 4; v++) {
+        for (int u = 0; u < w; u++) {
+            if ((p.rows[v][u] == '#') != (low[(y + v) * LW + x + u] == ink)) return false;
+        }
+    }
+    for (int v = -1; v <= 4; v++) {
+        for (int u = -1; u <= w; u++) {
+            if (u >= 0 && v >= 0 && u < w && v < 4) continue;
+            if (low[(y + v) * LW + x + u] == ink) return false;
+        }
+    }
+    return true;
+}
+
+void labels_search(const Bit8u *low) {
+    g_labels.clear();
+    for (int y = 1; y + 5 <= LH && (int)g_labels.size() < kMaxLabels; y++) {
+        for (int x = 1; x + 12 < LW && (int)g_labels.size() < kMaxLabels; x++) {
+            for (int i = 0; i < kLabelPatternCount; i++) {
+                Bit8u ink;
+                if (!label_at(low, x, y, kLabelPatterns[i], ink)) continue;
+                Label l;
+                l.x = x;
+                l.y = y;
+                l.pattern = i;
+                l.ink = ink;
+                // (each ink pixel's panel: the commonest other colour of the eight about it -- the Rapier's is engraved
+                //  in a grained panel)
+                const int w = (int)strlen(kLabelPatterns[i].rows[0]);
+                for (int v = 0; v < 4; v++) {
+                    for (int u = 0; u < w; u++) {
+                        int best = -1, bestN = 0;
+                        int cs[8], n = 0;
+                        for (int dv = -1; dv <= 1; dv++) {
+                            for (int du = -1; du <= 1; du++) {
+                                const Bit8u c = low[(y + v + dv) * LW + x + u + du];
+                                if ((du || dv) && c != ink) cs[n++] = c;
+                            }
+                        }
+                        for (int a = 0; a < n; a++) {
+                            int k = 0;
+                            for (int b = 0; b < n; b++) k += cs[b] == cs[a];
+                            if (k > bestN) { bestN = k; best = cs[a]; }
+                        }
+                        l.under[v * 12 + u] = (Bit8u)(best >= 0 ? best : low[(y + v) * LW + x + u]);
+                    }
+                }
+                g_labels.push_back(l);
+                break;
+            }
+        }
+    }
+}
+
+void labels_compose(const Bit8u *low, bool show) {
+    const double now = PIC_FullIndex();
+    if (show && (g_labelsDirty || now - g_labelsSearched > kLabelSearchMs)) {
+        g_labelsDirty = false;
+        g_labelsSearched = now;
+        labels_search(low);
+    }
+    if (!show) return;
+    for (size_t i = 0; i < g_labels.size(); i++) {
+        const Label &l = g_labels[i];
+        const LabelPattern &p = kLabelPatterns[l.pattern];
+        Bit8u ink;
+        if (!label_at(low, l.x, l.y, p, ink) || ink != l.ink) continue;
+        const int w = (int)strlen(p.rows[0]), n = (int)strlen(p.text);
+        const PrivGlyph *g[4];
+        int fineW = 2 * (n - 1);
+        bool have = n <= 4;
+        for (int k = 0; k < n && have; k++) {
+            g[k] = user_letter(p.text[k]);
+            have = g[k] != NULL;
+            if (have) fineW += g[k]->w;
+        }
+        if (!have) continue;
+        for (int v = 0; v < 4; v++) {
+            for (int u = 0; u < w; u++) {
+                if (p.rows[v][u] != '#') continue;
+                Bit8u *o = g_out + 2 * (l.y + v) * HW + 2 * (l.x + u);
+                o[0] = o[1] = o[HW] = o[HW + 1] = l.under[v * 12 + u];
+            }
+        }
+        int X = 2 * l.x + (2 * w - fineW) / 2;
+        const int Y0 = 2 * l.y;
+        for (int k = 0; k < n; k++) {
+            for (int r = 0; r < 8; r++) {
+                for (int u = 0; u < g[k]->w; u++) {
+                    if (g[k]->rows[r] & (1 << u)) g_out[(Y0 + r) * HW + X + u] = l.ink;
+                }
+            }
+            X += g[k]->w + 2;
+        }
+    }
+}
+
 void glyph_call() {
     Glyph g;
     if (!read_glyph(g)) return;
@@ -1328,17 +1465,19 @@ void glyph_call() {
     letter_add(g);
 }
 
-// The cockpit's markers' shapes (cockpitMarkers), as the driver has them at the hook: the game keeps a shapes pointer
+// A table of shapes the game keeps a far pointer to (the cockpit's markers, the shield arcs), as the driver has it at the hook: the game keeps a shapes pointer
 // in EMS as a handle (segment C000 and up), which the driver's resolver has turned into the page frame's segment
 // (emsFrameSeg), the offset kept, by then; the handle it mapped in is kept (emsLastShapes).  (Matching the pointer
 // alone missed the markers whenever they were in EMS, as on the page: the gunsight was the game's blocks there.)
-bool markers(Bit16u off, Bit16u seg) {
-    const Bit16u moff = dsw(ds::cockpitMarkers), mseg = dsw((Bit16u)(ds::cockpitMarkers + 2));
+bool shapes_from(Bit16u where, Bit16u off, Bit16u seg) {
+    const Bit16u moff = dsw(where), mseg = dsw((Bit16u)(where + 2));
     if (off != moff) return false;
     if (seg == mseg) return true;
     return (mseg & 0xC000) == 0xC000 && ds::known(ds::emsFrameSeg) && ds::known(ds::emsLastShapes) && seg == dsw(ds::emsFrameSeg) &&
            dsw(ds::emsLastShapes) == moff && dsw((Bit16u)(ds::emsLastShapes + 2)) == mseg;
 }
+
+bool markers(Bit16u off, Bit16u seg) { return shapes_from(ds::cockpitMarkers, off, seg); }
 
 // ---- the calls --------------------------------------------------------------------------------------------------------
 
@@ -1384,9 +1523,39 @@ void call(const Place &p) {
     if (!read_target((Bit16u)arg16(0), t)) return;
     if (p.op == OP_SHAPE && t.seg == kScreenSeg && vdu_record((Bit16u)arg16(0))) {
         const Shape *s = shape_of((Bit16u)arg16(3), (Bit16u)arg16(4), arg16(5));
-        if (s && art_shape(t, (Bit16u)arg16(0), *s, arg16(1), arg16(2))) return;
+        {   // (dev: WCHIRESPARTS=1 writes each new part drawn on a VDU, its shapes and index)
+            static int on = -1, n = 0;
+            static std::map<Bit64u, int> seen;
+            if (on < 0) { const char *e = getenv("WCHIRESPARTS"); on = e && e[0] == '1'; }
+            const Bit64u key = (Bit64u)(Bit16u)arg16(4) << 32 | (Bit32u)(Bit16u)arg16(3) << 16 | (Bit16u)arg16(5);
+            if (on && s && n < 60 && !seen.count(key)) {
+                seen[key] = 1;
+                const char *dir = getenv("WCNET_DUMP_DIR");
+                char path[512];
+                snprintf(path, sizeof(path), "%s/part-%02d.ppm", dir && dir[0] ? dir : ".", n);
+                FILE *f = fopen(path, "wb");
+                if (f) {
+                    fprintf(f, "P6\n%d %d\n255\n", s->w, s->h);
+                    for (int i = 0; i < s->w * s->h; i++) {
+                        const int c = s->px[i];
+                        const Bit8u rgb[3] = { (Bit8u)(c < 0 ? 40 : vga.dac.rgb[c].red << 2), (Bit8u)(c < 0 ? 0 : vga.dac.rgb[c].green << 2),
+                                               (Bit8u)(c < 0 ? 40 : vga.dac.rgb[c].blue << 2) };
+                        fwrite(rgb, 1, 3, f);
+                    }
+                    fclose(f);
+                }
+                wclog(1, "VDU part %d: on %04X, shapes %04X:%04X #%d at %d,%d, %dx%d anchor %d,%d", n, (Bit16u)arg16(0), (Bit16u)arg16(4),
+                      (Bit16u)arg16(3), arg16(5), arg16(1), arg16(2), s->w, s->h, s->left, s->top);
+                n++;
+            }
+        }
+        const bool shields = ds::known(ds::shieldShapes) && shapes_from(ds::shieldShapes, (Bit16u)arg16(3), (Bit16u)arg16(4));
+        if (s && art_shape(t, (Bit16u)arg16(0), *s, arg16(1), arg16(2), shields)) return;
     }
     if (g_gather.pending) art_flush();
+    // (a cockpit drawn -- its picture's corner at the screen's: not the radar's or the gauges' marks, every frame --
+    //  its labels looked for)
+    if (p.op == OP_SHAPE && t.seg == kScreenSeg && arg16(1) == 0 && arg16(2) == 0) g_labelsDirty = true;
     if (!flights_buffer(t)) {
         // Test aid (WCHIRESOPS=1): the calls on other records (the cockpit's screens), each kind once with its caller.
         static int ops = -1;
@@ -1502,6 +1671,7 @@ void compose() {
     }
     arts_compose(low, flight && g_level == 2);
     letters_compose(low, flight && g_level == 2);
+    labels_compose(low, flight && g_level == 2);
 }
 
 bool game_picture() {           // the game's own 320 x 200, shown from the start of the VGA's memory
@@ -1512,6 +1682,7 @@ void set_override(bool want) {
     if (want == g_override) return;
     g_override = want;
     if (want) {
+        g_labelsDirty = true;
         const double fps = vga.draw.delay.vtotal > 0 ? 1000.0 / vga.draw.delay.vtotal : 70.0;
         VGA_SetOverride(true);
         RENDER_SetSize(HW, HH, 8, (float)fps, 1.0, false, false);

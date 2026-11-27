@@ -2,7 +2,7 @@
 
 `src/cpu/wcnet_wch.cpp`: the flight drawn again at twice the game's resolution, each game pixel a block of 2 x 2,
 from the game's own drawing calls: Privateer's high-resolution picture (`wcnet_priv_hires.cpp`, docs/privateer.md)
-brought back to the game its library grew from.  WC.EXE, SM2.EXE and WC2.EXE.
+brought back to the game its library grew from.  WC.EXE, SM2.EXE, WC2.EXE, SO1.EXE and SO2.EXE (SO3.EXE is SO2's).
 
 ## The rules (the user, 2026-11-27)
 
@@ -50,17 +50,24 @@ header).  Characters the user's font lacks (`# $ % & * + / ; < = > ? @ [ \ ] ^ _
 The comm text in the view is another font (eight rows, capitals six high): the game's own.  "KPS", "SET" and the
 other labels are the cockpit's picture, not text.
 
-## The VDUs' ships (level 2)
+## The VDUs' pictures (level 2)
 
-The weapons display's own ship (and its missiles over it) and the target display's hull and shields are SHAPEs on
-the VDUs' records on the screen (`leftVdu`, `rightVdu`; found with `WCHIRESOPS=1`), line art of one game pixel, as
-Privateer's target display.  The shapes drawn on one VDU one after another are gathered into one picture and drawn
-by Privateer's wireframe maker (`wcnet_wire.cpp`, a copy of `wcnet_priv_hires.cpp`'s `wire_make` without Privateer's
-hand-made parts, so that Privateer's approved ships cannot move with a change here): lines one fine pixel wide
-between the pixels' middles, rings fitted, solid parts the game's blocks, exactly symmetric where the art is.  Kept
-as a cell of the screen like the letters (checked by its pixels).  A picture of more than 12 colours or filling more
-than 45% of its box (the comm display's face) stays the game's.  Letters and pictures are kept while ` passes level
-0: the game does not draw a static VDU again.
+The target display's shield arcs (SHAPEs from `shieldShapes`, WC1 ovr137:019C, WC2 ovr110:01CC: index 2n the left arc
+at strength n, 2n + 1 the right) are drawn by Privateer's wireframe maker (`wcnet_wire.cpp`, a copy of
+`wcnet_priv_hires.cpp`'s `wire_make` without Privateer's hand-made parts): one fine pixel wide, rings fitted.  Kept as
+a cell of the screen like the letters (checked by its pixels).  **The ships stay the game's pixels** until the user
+approves a sheet of every one (2026-11-27: "Shield lines are good but wait on sprites wireframe until [I] approve the
+contact sheet of both horizontal and vertical"); `WCHIRESWIRE=all` draws every VDU picture as a wireframe for that
+sheet's rig (a picture of more than 12 colours or filling more than 45% of its box, a comm face, stays the game's
+even then).  `WCHIRESPARTS=1` writes each new VDU part (its shapes and index) as a picture.
+
+## The speed readouts' labels (level 2)
+
+"KPS" and "SET" (the user: "ops set font") are the cockpits' pictures: four rows of one ink colour, the 3 x 4 letters
+the user's font was drawn for, in five patterns over the cockpits read (WC1's Hornet, Scimitar, Rapier, Raptor; WC2's
+Ferret; SO2's).  The screen is searched for them when the picture comes on, when a cockpit is drawn (a SHAPE at the
+screen's corner) and every two seconds; one found is drawn as the user's glyphs in its ink colour, Privateer's
+art_word way, its ink's pixels the panel's colour about them (the Rapier's and SO2's panels are grained).
 
 ## WC2
 
@@ -71,7 +78,7 @@ game's slots: WC.EXE seg098:0043, WC2.EXE ovr204:003F), the same code for both g
 segment A838, SUPERTM.DRV's DEC4, the flight's buffer BD34 (its present seg001:0401 is WC1's seg001:05DB), the
 space's colour 8A91, the markers BD66 (0 the gunsight, 4 the same a pixel right, 1 the lock cross; 5 the pointer),
 EMS's frame A913 and last handle A919 (seg089:0043), the VDUs B458 / B46C (seg005:0C1B).  Its cockpit font is WC1's:
-the user's letters fit it.  SO1 and SO2 not mapped yet (scripts/wcport.py).
+the user's letters fit it.  SO1 and SO2 carried over by scripts/wcport.py (WC2's offsets - 104 / + 192).
 
 ## Speed
 
