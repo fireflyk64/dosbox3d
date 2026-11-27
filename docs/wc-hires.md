@@ -64,8 +64,8 @@ drawings so it doesn't slow down framerate").  Kept as a cell of the screen like
 The user approved the sheets of every ship (2026-11-27, "All uprez are acceptable"): `scripts/wchsheet/sheet.py` draws
 them from the game's files with the same code (WC1's target display, 22 ships; its weapons display, 6; WC2's target
 display, 29).  WC2's weapons display (its ships with two VDUs: Rapier, Broadsword, Epee, Sabre, Crossbow, Morningstar;
-the PCSHIP files' table of the ship and its weapons) has its own sheet, `wc2-vertical`, and waits for the user's look
-(`kWc2WeaponsDisplayHeld`: WC2's left VDU the game's pixels).  After a change, compare the new sheets with the approved ones pixel
+the PCSHIP files' table of the ship and its weapons) has its own sheet, `wc2-vertical`, approved too ("Sprite sheet
+good").  After a change, compare the new sheets with the approved ones pixel
 for pixel (the Hornet's nose is the one change since).  `WCHIRESPARTS=1` writes each new VDU part and the palette.
 
 Static and comm effects stay the game's 320 x 200 pixels at every level (the user: "static and comms effects should

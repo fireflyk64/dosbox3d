@@ -1266,13 +1266,8 @@ void art_flush() {
 
 // The VDU a record draws on: one of the VDUs' records, or a copy of one with a narrower clip (the target display draws
 // the hull a section at a time so, each section in its state's colours: WC1 ovr137:025D, records on the stack); 0 none.
-// (WC2's left VDU, its weapons display's own ship, waits for the user's look at its sheet, scripts/wchsheet/'s
-//  wc2-vertical, as the others did: the game's pixels until then)
-const bool kWc2WeaponsDisplayHeld = true;
-
 Bit16u vdu_of(Bit16u rec, const Target &t, Target &vdu) {
-    const bool held = kWc2WeaponsDisplayHeld && is_wc2();
-    const Bit16u vdus[2] = { ds::known(ds::leftVdu) && !held ? ds::leftVdu : (Bit16u)0, ds::known(ds::rightVdu) ? ds::rightVdu : (Bit16u)0 };
+    const Bit16u vdus[2] = { ds::known(ds::leftVdu) ? ds::leftVdu : (Bit16u)0, ds::known(ds::rightVdu) ? ds::rightVdu : (Bit16u)0 };
     for (int i = 0; i < 2; i++) {
         if (vdus[i] && rec == vdus[i]) { vdu = t; return vdus[i]; }
     }
