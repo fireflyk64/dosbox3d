@@ -1794,3 +1794,32 @@ late comer sees both, GUEST1 hears HOST leave and decides, BACK2 and GUEST1 see 
 `scripts/web-priv-open.sh` (three browser pages): ALPHA hosts with the page's 32, BRAVO comes while ALPHA flies, ALPHA's
 page closed, CHARLIE comes in ALPHA's seat; pictures of both screens at each stage ("OPEN OK").  `web-priv.sh ROOM=1`
 (the gate's): a native pilot's open room of 32 and the page in it.
+
+## 38. The others' guns as they are: their own guns, at their own rate (2026-11-27)
+
+The user (2026-11-27): "when a player flies around a tarsus say with a laser and a tachyon or twin lasers, the other
+players see 2 mass drivers firing at rapid speed. I suspect the bolt type is not being sent with the fire command".
+
+**Measured** (`!privguns=all`, a new aid: every ship's guns in the scene with their bytes): a new pilot's own Tarsus
+(PLAYTYPE) has one LASER at mount 2; the others' copy of it -- made as the stock TARSTYPE (section 8) -- two MASS at
+mounts 2 and 3, and a copied shot fires the copy's own guns (section 18).  And the rate: the shot was told from the
+entry of the game's gun routine (seg120:0004), which runs every frame the fire bit is held, a gun ready or not; a
+pilot holding Space sent one every 120 ms, each a volley on the copy -- a pilot whose guns were all off (a new
+pilot's are until G) fired nothing while its copy fired 8 volleys a second.
+
+**A gun** (0x3C bytes in the far heap, the weapons record's list at +0xE): +0 its bolt's speed (int32, world units:
+a laser's 1,400 m/s), +4 870 in every gun, +8 its name, +0x11 its bolt's appearance ("Lasr"), +0x16 its bolt's type
+("LASRTYPE"), +0x1F the gun's type (GUNS.IFF's id: 3 mass, 5 laser), +0x20 group, +0x21 mount, +0x22 station, +0x25
+refire in ms, +0x29 damage, +0x2B refire delay, +0x2F the time since its shot, +0x33 a shot's energy, +0x35 on.
+Nothing in it points anywhere: a gun fires a bolt of the type its name says.
+
+**Now:** a pilot's game sends its guns (`PrivGuns`: each gun's first 0x36 bytes, the time since its shot zeroed) when
+they change and every 5 s while a pilot is near (`wants_our_space`); the others give their copy of its ship those
+guns at the frame (`priv_ship_set_guns`): the pilot's forward guns (station 0) onto the copy's forward guns in order,
+everything but the copy's mount (its own type's hardpoints) and the time since its shot; a copy's stock gun beyond the
+pilot's count goes to station 3, which no seat fires from; the guns switched on in group 0 (all of them when the
+pilot's say none), and the copy fires group 0.  A turret's guns are left as they are.  And a shot is told only when a
+gun of the ship fires now (switched on, of the station the ship is fired from, its refire done) -- for every ship, so
+the pirates' copies fire at their own rate too.  Measured: the copy fires the pilot's LASER (its red streak, one
+mount) at the laser's rate, 15 copies in the time the old build fired 36; the pilot's own scene 11 bolts in flight,
+the copy's 10.  Open: a pilot with more forward guns than its ship's stock type shows only as many.

@@ -97,7 +97,8 @@ enum { kArriveSettleMs = 1500 };        // a nav point's wing waits this long af
 enum { kShipNearBytes = 600, kPodNearBytes = 200, kCreateFloor = 8000, kReleaseFloor = 6000, kReleaseEveryMs = 1000,
        kUrgentFloor = 4500, kUrgentEveryMs = 250, kCreateEveryMs = 2000, kCreateAfterReleaseMs = 10000, kLowWindows = 5,
        kWingFloor = 9000 };            // (a wing of the game's own is some 3-4 ships: 3-4 KB as they fight)
-enum { kSayThinkFrames = 60 };          // 3 s of the page's 20 a second
+enum { kSayThinkFrames = 60 };
+enum { kGunsEveryMs = 5000 };           // (our guns told again this often while a pilot is near: section 38)          // 3 s of the page's 20 a second
 // Copied gunfire (PrivShot): the user, 2026-11-20, "I am worried we will overload the free slots with gun slots";
 // "the bolts should only be duplicated when both players are in the same arena of sorts ... maybe we could only
 // replicate bolts when they are headed roughly towards a target controlled by another player.  That way if an ai ship
@@ -138,7 +139,9 @@ struct Pilot {
     unsigned missions;          // the nav spheres it has a mission at (a bit each)
     std::string cast;           // the cast its ship is made with here, its face on our comm screen (its hello)
     int faceId;                 // the head wanted: 0x21 and over the cast's other head (a woman), else its first (a man)
-    Pilot() : known(false), flying(false), x(0), y(0), z(0), at(-1e9), nav(-1), missions(0), cast("MER_DP"), faceId(-1) {}
+    std::vector<std::string> guns;  // its guns as its game has them (PrivGuns), and a count of their changes
+    unsigned gunsSerial;
+    Pilot() : gunsSerial(0), known(false), flying(false), x(0), y(0), z(0), at(-1e9), nav(-1), missions(0), cast("MER_DP"), faceId(-1) {}
 };
 
 // A nav point and who runs it (the host decides; everybody keeps the host's word).
@@ -202,9 +205,11 @@ struct Puppet {
     bool damage;                // its reports had them (an older build's did not)
     int targetSeat;             // the pilot its targeting system is on, as its reports say (-1 none)
     std::string made;           // the appearance the ship here was made as (another ship flown now: made again)
+    unsigned gunsApplied;       // its pilot's guns given to the ship here: which change, and to which ship
+    Bit16u gunsObj;
     bool release;               // its pilot left the room: the ship here given back at the next frame
     Puppet() : reported(false), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), obj(0), type(0), pending(false), parked(false), deadUntil(-1e9),
-               damage(false), targetSeat(-1), release(false) {
+               damage(false), targetSeat(-1), gunsApplied(0), gunsObj(0), release(false) {
         for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
         for (int i = 0; i < 4; i++) armor[i] = shield[i] = 0;
     }
@@ -258,6 +263,8 @@ struct PrivNet {
     double lastX, lastY, lastZ, lastAt;     // our place at the last frame (for our velocity)
     double vx, vy, vz;
     double ownShotAt;           // our own ship's last shot sent
+    std::string gunsSent;       // our guns as last told (PrivGuns), and when
+    double gunsAt;
     int friendlyFire;           // the room's rule (the host's): 0 between two pilots targeting each other, 1 always, 2 never
     bool crew;                  // a crew's room (the host's choice, WCPRIVCREW=1): the host flies, the guests man its turrets
     unsigned crewShipSent;      // (the pilot's) the launch whose ship the gunners were last told
@@ -266,7 +273,7 @@ struct PrivNet {
     std::vector<std::pair<Bit32u, std::string> > crewLines;   // (a crew member's) id, line: the pilot's comm's lines to show
     std::string commSaid;       // (the pilot's) the comm's line last told to the crew
     unsigned copiesFired, copiesSkipped;
-    PrivNet() : crew(false), crewShipSent(0), turretAt(-1e9), ownShotAt(-1e9), friendlyFire(0), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), mesh(false), ffSeat(kMaxSeats), linkedAt(-1e9), startedAt(-1e9), ownersHeardAt(-1e9), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
+    PrivNet() : gunsAt(-1e9), crew(false), crewShipSent(0), turretAt(-1e9), ownShotAt(-1e9), friendlyFire(0), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), mesh(false), ffSeat(kMaxSeats), linkedAt(-1e9), startedAt(-1e9), ownersHeardAt(-1e9), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
                 sentAt(-1e9), stateAt(-1e9), frame(0), flightShip(0), lastX(0), lastY(0), lastZ(0), lastAt(-1e9), vx(0), vy(0), vz(0) {}
     ~PrivNet() {
         for (size_t i = 0; i < peers.size(); i++) {
@@ -940,6 +947,27 @@ void take_state(const PrivState &st, int seat) {
 
 void take_pod_taken(const PrivPodTaken &t);
 
+// A pilot's guns (PrivGuns: section 38), kept for its copy here (given them at the frame)
+void take_guns(int seat, const PrivGuns &pg) {
+    if (seat < 0 || seat >= kMaxSeats || seat == g_net->self || g_net->crew) return;
+    std::vector<std::string> guns;
+    for (int i = 0; i < pg.gun_size() && guns.size() < 16; i++) {
+        if (pg.gun(i).size() == kGunBytes) guns.push_back(pg.gun(i));
+    }
+    Pilot &p = g_net->pilots[seat];
+    if (guns != p.guns) {
+        p.guns = guns;
+        p.gunsSerial++;
+        std::string names;
+        for (size_t i = 0; i < guns.size(); i++) {
+            names += (i ? ", " : "") + std::string(guns[i].c_str() + 8, strnlen(guns[i].c_str() + 8, 8));
+            if (guns[i][0x22]) names += " (turret)";
+            if (!guns[i][0x35]) names += " (off)";
+        }
+        wclog(1, "Privateer: pilot %d's guns: %s", seat + 1, names.empty() ? "none" : names.c_str());
+    }
+}
+
 // (an open room) a hub's answer from seat 0 -- a crew's room, or a host on an older page that relays: we are its guest
 // from now on, as before open rooms (our other links let go)
 void become_hubs_guest(Peer *hub) {
@@ -1190,6 +1218,21 @@ void handle(Peer *p, NetworkMessage &msg) {
                 if (to != p && to->hello && to->conn.is_open()) {
                     to->conn.send_best_effort(out);
                 }
+            }
+        }
+    } else if (msg.has_priv_guns()) {
+        if (!p->hello) {
+            return;
+        }
+        const int seat = seat_of(p, msg.priv_guns().has_player(), msg.priv_guns().player());
+        take_guns(seat, msg.priv_guns());
+        if (g_net->host) {
+            NetworkMessage out;
+            *out.mutable_priv_guns() = msg.priv_guns();
+            out.mutable_priv_guns()->set_player((Bit32u)p->player);
+            for (size_t i = 0; i < g_net->peers.size(); i++) {
+                Peer *to = g_net->peers[i];
+                if (to != p && to->hello && to->conn.is_open()) to->conn.send(out);
             }
         }
     } else if (msg.has_priv_crew_ship()) {
@@ -2355,7 +2398,9 @@ void frame_chats_and_shots() {
                 g_net->copiesSkipped++;
                 continue;
             }
-            if (priv_ship_fire_guns(obj, sc.groups)) g_net->copiesFired++;
+            // (a pilot's ship given its pilot's guns: those switched on are in group 0, section 38)
+            const bool fitted = id == 0 && g_net->puppets[seat].gunsObj == obj && g_net->puppets[seat].gunsApplied;
+            if (priv_ship_fire_guns(obj, fitted ? 0x08 : sc.groups)) g_net->copiesFired++;
         }
     }
     g_net->shots.clear();
@@ -3024,6 +3069,28 @@ void priv_session_frame() {
     } else if (wanted && now - g_net->stateAt >= 1000.0 / kStatesPerSecond) {
         send_state(now);
     }
+    if (wanted && !g_net->crew) {
+        // our guns, for the others' copy of our ship (section 38): when they change (bought, switched with G) and
+        // every few seconds (a pilot come near since)
+        std::vector<std::string> guns;
+        priv_ship_gun_list(ship, guns);
+        // (the time since each gun's shot changes every frame: no change, and nothing the others use)
+        for (size_t i = 0; i < guns.size(); i++) for (int k = 0x2F; k < 0x33; k++) guns[i][k] = 0;
+        std::string all;
+        for (size_t i = 0; i < guns.size(); i++) all += guns[i];
+        if (all != g_net->gunsSent || now - g_net->gunsAt >= kGunsEveryMs) {
+            g_net->gunsSent = all;
+            g_net->gunsAt = now;
+            NetworkMessage msg;
+            PrivGuns *pg = msg.mutable_priv_guns();
+            pg->set_player((Bit32u)g_net->self);
+            for (size_t i = 0; i < guns.size(); i++) pg->add_gun(guns[i]);
+            for (size_t i = 0; i < g_net->peers.size(); i++) {
+                Peer *to = g_net->peers[i];
+                if (to->hello && to->conn.is_open() && wants_our_space(to->player)) to->conn.send(msg);
+            }
+        }
+    }
     // the encounter ships of a nav point we own, and our cargo pods, to the others near
     if (wanted && now - g_net->sceneAt >= kSceneEveryMs) {
         // every ship of our game's own near us: a nav point's encounter where we own it, and wherever we are what
@@ -3072,6 +3139,14 @@ void priv_session_frame() {
             p.pending = priv_spawn_ship(type_of(p.appearance), p.appearance.empty() ? "CLUNKER" : p.appearance.c_str(),
                                         g_net->pilots[s].cast.c_str(), at, p.m, puppet_made, s);
         } else if (near && p.obj) {
+            const Pilot &q = g_net->pilots[s];
+            if (!q.guns.empty() && (p.gunsApplied != q.gunsSerial || p.gunsObj != p.obj)) {
+                // its pilot's guns on our copy of its ship (section 38: else the stock type's fire)
+                const int k = priv_ship_set_guns(p.obj, q.guns);
+                p.gunsApplied = q.gunsSerial;
+                p.gunsObj = p.obj;
+                wclog(1, "Privateer: pilot %d's ship here given its pilot's guns (%d of its forward guns)", s + 1, k);
+            }
             priv_ship_set(p.obj, at, p.m);
             if (p.damage) {
                 // (its shields and armour as its own game has them: what our target display shows of it)

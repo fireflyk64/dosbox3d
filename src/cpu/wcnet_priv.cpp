@@ -1850,7 +1850,56 @@ static int ship_guns(Bit16u ship, PhysPt out[], int cap) {
     }
     return n;
 }
-bool g_gunsDump;
+// A gun's description (measured 2026-11-27, !privguns=all: the new pilot's Tarsus has one LASER at mount 2, the
+// others' copy of it -- the stock TARSTYPE -- two MASS at mounts 2 and 3, the user's "2 mass drivers"): +0 its bolt's
+// speed (int32, the world's units: a laser's 1,400 m/s), +4 870 in every gun, +8 its name (8), +0x11 its bolt's
+// appearance ("Lasr"), +0x16 its bolt's type ("LASRTYPE", 9), +0x1F the gun's type (GUNS.IFF's: 3 mass, 5 laser),
+// +0x20 its group, +0x21 its mount, +0x22 its station, +0x25 its refire in ms (int32), +0x29 its damage (int16), +0x2B
+// its refire delay (int32), +0x2F the time since its shot (int32, its state), +0x33 a shot's energy (int16), +0x35 on.
+// Nothing in it points anywhere: a gun fires a bolt of the type its name says.
+int priv_ship_gun_list(Bit16u ship, std::vector<std::string> &out) {
+    out.clear();
+    PhysPt guns[16];
+    const int n = ship ? ship_guns(ship, guns, 16) : 0;
+    for (int i = 0; i < n; i++) {
+        std::string g(kGunBytes, '\0');
+        for (int k = 0; k < kGunBytes; k++) g[k] = (char)mem_readb(guns[i] + k);
+        out.push_back(g);
+    }
+    return n;
+}
+int priv_ship_set_guns(Bit16u ship, const std::vector<std::string> &want) {
+    // the pilot's forward guns (station 0: what the pilot's seat fires) onto the copy's forward guns, in order; the
+    // copy's mounts kept (its type's own hardpoints: the pilot's numbers may be past its table), a turret's gun left
+    std::vector<const std::string *> front;
+    bool anyOn = false;
+    for (size_t i = 0; i < want.size(); i++) {
+        if (want[i].size() != kGunBytes || want[i][0x22] != 0) continue;
+        front.push_back(&want[i]);
+        anyOn = anyOn || want[i][0x35];
+    }
+    PhysPt guns[16];
+    const int n = ship ? ship_guns(ship, guns, 16) : 0;
+    int set = 0;
+    size_t next = 0;
+    for (int i = 0; i < n; i++) {
+        if (mem_readb(guns[i] + 0x22) != 0) continue;       // (a turret's)
+        if (next < front.size()) {
+            const std::string &g = *front[next++];
+            for (int k = 0; k < 0x20; k++) mem_writeb(guns[i] + k, (Bit8u)g[k]);            // speed, name, bolt type, gun type
+            for (int k = 0x23; k < 0x2F; k++) mem_writeb(guns[i] + k, (Bit8u)g[k]);         // refire, damage, delay
+            for (int k = 0x33; k < 0x35; k++) mem_writeb(guns[i] + k, (Bit8u)g[k]);         // energy
+            mem_writeb(guns[i] + 0x20, (Bit8u)(!anyOn || g[0x35] ? 0 : 3));                   // (fired: group 0)
+            set++;
+        } else {
+            mem_writeb(guns[i] + 0x22, 3);      // (no seat fires from station 3: a stock gun the pilot has not)
+            mem_writeb(guns[i] + 0x20, 3);
+        }
+    }
+    return set;
+}
+
+bool g_gunsDump, g_gunsAll;
 // !privguns: our ship's guns (group, station, switched on, the time since its shot, its delay, its energy), the seat the
 // weapons are fired from, the view, and the turrets
 static void guns_dump_frame() {
@@ -1879,6 +1928,25 @@ static void guns_dump_frame() {
     }
     Bit16u bolts[64];
     wclog(1, "Privateer: guns %.1f:   %d bolts in the scene", t, priv_scene_bolt_shooters(bolts, 64));
+    if (g_gunsAll) {
+        // (!privguns=all: every ship's in the scene, each gun's name, mount, group and its first 0x40 bytes)
+        g_gunsAll = false;
+        Bit16u ships[48];
+        const int ns = priv_scene_ships(ships, 48);
+        for (int s = 0; s < ns; s++) {
+            PhysPt sg[16];
+            const int m = ship_guns(ships[s], sg, 16);
+            wclog(1, "Privateer: guns %.1f: ds:%04X %s (%s)%s: %d guns", t, ships[s], priv_ship_type_name(ships[s]).c_str(),
+                  priv_ship_appearance_name(ships[s]).c_str(), ships[s] == ship ? " ours" : "", m);
+            for (int i = 0; i < m; i++) {
+                char name[9] = "";
+                for (int k = 0; k < 8; k++) { const Bit8u c = mem_readb(sg[i] + 8 + k); name[k] = (c >= 32 && c < 127) ? c : 0; name[k + 1] = 0; if (!c) break; }
+                char hex[3 * 0x40 + 1];
+                for (int j = 0; j < 0x40; j++) snprintf(hex + 3 * j, 4, "%02X ", mem_readb(sg[i] + j));
+                wclog(1, "Privateer: guns %.1f:   gun %d %s mount %d group %d at %05X: %s", t, i, name, mem_readb(sg[i] + 0x21), mem_readb(sg[i] + 0x20), sg[i], hex);
+            }
+        }
+    }
     if (getenv("PRIVENERGYSCAN")) {     // (a rig's: far pointers in the ship object and what they point at)
         for (int k = 0x40; ship && k < 0x90; k++) {
             const Bit16u off = priv_r16((Bit16u)(ship + k)), seg = priv_r16((Bit16u)(ship + k + 2));
@@ -2099,7 +2167,20 @@ bool priv_check_hooks(Bit32u ip) {
             // (an AI ship's target is its brain's, the field the game itself keeps: read only.  It was plan_target, a walk
             // of the far heap's blocks after the control record for every gun fired -- up to a million reads a shot, and
             // a target found only sometimes)
-            priv_session_fired(ship, bits & kFireGroupBits, ship == priv_r16(kPlayerShip) ? priv_player_target() : ai_target_of(ship));
+            // The routine is called every frame the fire bit is held, a gun ready or not: told every time, a copy fired a
+            // volley at every message (the user, 2026-11-27: the others saw "2 mass drivers firing at rapid speed";
+            // measured, a pilot whose guns were all off fired nothing while its copy fired 8 volleys a second).  So a
+            // shot is told only when a gun of the ship fires now: switched on, of the station the ship is fired from,
+            // its refire done (seg120:00F5: the time since its shot at +0x2F reaches its delay at +0x2B).
+            PhysPt guns[16];
+            const int ng = ship_guns(ship, guns, 16);
+            const PhysPt w = ship_weapons(ship);
+            const Bit8u seat = w ? mem_readb(w + 0x3F) : 0;
+            bool ready = false;
+            for (int i = 0; i < ng && !ready; i++) {
+                ready = mem_readb(guns[i] + 0x35) && mem_readb(guns[i] + 0x22) == seat && (Bit32s)mem_readd(guns[i] + 0x2F) >= (Bit32s)mem_readd(guns[i] + 0x2B);
+            }
+            if (ready) priv_session_fired(ship, bits & kFireGroupBits, ship == priv_r16(kPlayerShip) ? priv_player_target() : ai_target_of(ship));
         }
         return true;
     }
@@ -2490,6 +2571,7 @@ bool priv_script_item(const std::string &item, double t) {
     }
     if (item.compare(0, 9, "!privguns") == 0 && g_found) {
         g_gunsDump = true;      // (at the next frame: the weapons are far data)
+        g_gunsAll = item == "!privguns=all";
         return true;
     }
     if (item.compare(0, 12, "!privprovoke") == 0 && g_found) {

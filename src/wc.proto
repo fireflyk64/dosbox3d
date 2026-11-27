@@ -720,6 +720,13 @@ message PrivCrewLine {
     optional uint32 id = 1;
     optional string text = 2;
 }
+// A pilot's guns as its game has them (docs/privateer.md section 38): each gun's first 0x36 bytes (its bolt's speed,
+// name, bolt type, gun type, group, mount, station, refire, damage, delay, energy, switched on), sent when they change
+// and every few seconds to the pilots near; their copy of its ship is given those guns (else it fires its stock type's)
+message PrivGuns {
+    optional uint32 player = 1;
+    repeated bytes gun = 2;
+}
 message PrivShot {
     optional uint32 player = 1;
     optional uint32 id = 2;             // the ship that fired, in the sender's game (0: the sender's own ship)
@@ -784,6 +791,7 @@ message NetworkMessage {
     optional PrivCrewKey priv_crew_key = 50;
     optional PrivCrewComm priv_crew_comm = 51;
     optional PrivCrewLine priv_crew_line = 52;
+    optional PrivGuns priv_guns = 53;
     // Terminal Velocity's (from 60: docs/terminalvelocity.md)
     optional TvHello tv_hello = 60;
     optional TvState tv_state = 61;

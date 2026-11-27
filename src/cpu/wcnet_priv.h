@@ -119,6 +119,12 @@ int priv_ship_pilot_anger(Bit16u ship);                     // its pilot's anger
 int priv_scene_bolt_shooters(Bit16u out[], int cap);
 // Its guns (those groups: the control record's +0x1E bits 3-6) fired by the game's weapons update at the next frame (a copy's shot).
 bool priv_ship_fire_guns(Bit16u obj, int groups);
+// A ship's guns as descriptions (each gun's first kGunBytes bytes: wcnet_priv.cpp), read at the frame; and a copy of a
+// pilot's ship given a pilot's guns: as many of its own as there are rewritten to them, the rest never fired (their
+// station one no seat fires from); the ones switched on in group 0, the others in group 3.  Both at the frame.
+enum { kGunBytes = 0x36 };
+int priv_ship_gun_list(Bit16u ship, std::vector<std::string> &out);
+int priv_ship_set_guns(Bit16u ship, const std::vector<std::string> &guns);
 // (A test aid's) angry at the player, as a hit from the player makes it (at the next frame).
 void priv_ship_anger(Bit16u ship);
 void priv_hold_ai_none();
