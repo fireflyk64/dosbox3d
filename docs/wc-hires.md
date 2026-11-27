@@ -63,7 +63,9 @@ drawings so it doesn't slow down framerate").  Kept as a cell of the screen like
 
 The user approved the sheets of every ship (2026-11-27, "All uprez are acceptable"): `scripts/wchsheet/sheet.py` draws
 them from the game's files with the same code (WC1's target display, 22 ships; its weapons display, 6; WC2's target
-display, 29; WC2 has no own-ship picture found).  After a change, compare the new sheets with the approved ones pixel
+display, 29).  WC2's weapons display (its ships with two VDUs: Rapier, Broadsword, Epee, Sabre, Crossbow, Morningstar;
+the PCSHIP files' table of the ship and its weapons) has its own sheet, `wc2-vertical`, and waits for the user's look
+(`kWc2WeaponsDisplayHeld`: WC2's left VDU the game's pixels).  After a change, compare the new sheets with the approved ones pixel
 for pixel (the Hornet's nose is the one change since).  `WCHIRESPARTS=1` writes each new VDU part and the palette.
 
 Static and comm effects stay the game's 320 x 200 pixels at every level (the user: "static and comms effects should
@@ -72,6 +74,16 @@ VDU's page is out, the words at dseg:BF32, 8 bytes a VDU) and the comm display's
 pictures) are never redrawn, and the letters and wireframes step aside as soon as the pixels under them change.  To
 see it without harm: `!poke=BF32:00` ... `!poke=BF41:00` in a key script (both VDUs' pages broken, the hull
 untouched).
+
+## Stars and backgrounds
+
+At the top level every star (a SHAPE of 5 x 5 or less in the view: the points, glints and crosses of the space
+objects' table) is one fine pixel at the middle of its own pixel, in its colour there (the user: "logically every star
+should be 1 pixel no matter the resolution ... all be 1 pixel in the highest mode and for the other two modes they can
+be as they were"); levels 1 and 0 draw them as the game does.  The nebulae and planets are the game's own 320 x 200
+pixels at every level ("should be their ordinary 320x200 selves"): WC1's are plain SHAPEs already; WC2's (its draw
+loop's type 12, `objectType` of `drawnObject`) are turned and scaled as ships are, and are sampled once per game pixel
+and drawn 2 x 2.  WC1's turned types 3 and 4 are the carrier's launch bay, left as they are.
 
 ## The speed readouts' labels (level 2)
 

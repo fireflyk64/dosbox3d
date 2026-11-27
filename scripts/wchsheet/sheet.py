@@ -3,6 +3,7 @@
 # the wireframe (level 2), drawn by the game's own code (src/cpu/wcnet_wire.cpp, built into wiretool here):
 #   WC1's target display (every SHIPTYPE / SHIP file's three-shape table: the hull 0 and the systems 2 at one anchor),
 #   WC1's weapons display (every PCSHIP file's tenth table, the ship 0), WC2's target display (its SHIP files).
+#   WC2's weapons display (the PCSHIP files of the ships with two VDUs: a table of 20 shapes or more, the ship 0).
 # The palettes are the flight's, written by a native run with WCHIRESPARTS=1 (palette.bin in WCNET_DUMP_DIR, 256 x RGB
 # 0..63): the game's data, not kept in the repository.
 #   scripts/wchsheet/sheet.py OUT_DIR WC1_PALETTE WC2_PALETTE [WC1_DIR WC2_DIR]
@@ -118,3 +119,23 @@ for f in sorted(glob.glob(G2 + 'SHIP.V*')):
             nm = blk[:blk.find(b'\x00')].decode('latin-1').strip(); break
     h2.append(('%s (%s)' % (nm, f.split('/')[-1]), compose([sh[0], sh[2]])))
 sheet(h2, p2, 'Wing Commander II: the target display (horizontal)', os.path.join(OUT, 'wc2-horizontal.png'), cols=4)
+
+# WC2, the weapons display (vertical): the PCSHIP files of the ships with two VDUs, their table of the ship (0) and its
+# weapons; the name from the SHIP file of the same number
+v2 = []
+for f in sorted(glob.glob(G2 + 'PCSHIP.V*')):
+    n = f[-2:]; c = container(open(f, 'rb').read())
+    sh = None
+    for fl, blk in c:
+        try: t = shapes(blk)
+        except Exception: continue
+        if len(t) >= 20 and t[0] and t[0][0] >= 30 and t[0][1] >= 30: sh = t; break
+    if not sh: continue
+    nm = '?'
+    try:
+        for fl, blk in container(open(G2 + 'SHIP.V' + n, 'rb').read()):
+            if len(blk) == 243 and 0 < blk.find(b'\x00') <= 20:
+                nm = blk[:blk.find(b'\x00')].decode('latin-1').strip(); break
+    except Exception: pass
+    v2.append(('%s (%s)' % (nm, f.split('/')[-1]), compose([sh[0]])))
+sheet(v2, p2, 'Wing Commander II: the weapons display (vertical)', os.path.join(OUT, 'wc2-vertical.png'), cols=3)
