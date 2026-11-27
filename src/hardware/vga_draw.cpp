@@ -27,6 +27,7 @@
 #include "../cpu/wcnet_tie640.h"
 #include "pic.h"
 #include "../cpu/wcnet_priv_hires.h"
+#include "../cpu/wcnet_wch.h"
 #include "../cpu/wcnet_xw640.h"
 #include "../cpu/wcnet_armada_hires.h"
 
@@ -841,6 +842,7 @@ static void VGA_VerticalTimer(Bitu /*val*/) {
 	//Check if we can actually render, else skip the rest (frameskip)
 	if (vga.draw.vga_override) {
 		wc_priv_hires_vsync();	// (Privateer's 640 x 480 picture, when the override is its own)
+		wc_wch_vsync();		// (Wing Commander 1's 640 x 400, when it is its own)
 		wc_arm_hires_vsync();	// (Armada's 640 x 400, when it is its own)
 		xw640_hires_vsync();	// (X-Wing Collector's CD's 640x400, when it is its own)
 		wc_hires_vsync();	// (the TIE Fighter demo's 640x400 picture, when the override is its own)

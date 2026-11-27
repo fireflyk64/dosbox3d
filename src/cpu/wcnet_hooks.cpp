@@ -35,6 +35,7 @@
 #include "wcnet_tv.h"
 #include "wcnet_rap.h"
 #include "wcnet_priv_hires.h"
+#include "wcnet_wch.h"
 #include "wcnet_tiedemo.h"
 #include "wcnet_xw.h"
 #include "wcnet_xw640.h"
@@ -1304,6 +1305,7 @@ static void build_watch_list() {
     xw_watch_list(watch);       // (X-Wing Collector's CD's, wcnet_xw.cpp)
     tdm_watch_list(watch);      // (the TIE Fighter demo's, wcnet_tiedemo.cpp)
     arm_watch_list(watch);      // (Armada's arrows, wcnet_armada.cpp)
+    wch_watch(watch);           // (Wing Commander 1 at 640 x 400 once the page's box allows it, wcnet_wch.cpp; else nothing)
     g_watchReady = true;
 }
 
@@ -2324,6 +2326,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_turn_latch(int original) {
     }
     return wc::turn_latch() ? 1 : 0;
 }
+// Wing Commander 1 at 640 x 400 (the page's box): 1 on, 0 off; a negative value only asks.
+extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_wc_hires(int on) {
+    if (on >= 0) {
+        wc::wch_set(on);
+    }
+    return wc::wch_level();
+}
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_pointer(int shown) {
     if (shown >= 0) {
         wc::priv_pointer_set(shown != 0);
@@ -2640,6 +2649,9 @@ bool wc_net_key_filter(int kbdKey, bool pressed) {
         if (pressed) priv_hires_flip();     // (Privateer: ` flips the high-resolution picture; the game has no use for it)
         return true;
     }
+    if (kbdKey == KBD_grave && is_wc1() && wch_key(pressed)) {
+        return true;    // (Wing Commander 1: ` flips the 640 x 400 picture once the page's box allows it, wcnet_wch.cpp; else the game's key)
+    }
     if (kbdKey == KBD_grave && arm_found()) {
         if (pressed) arm_hires_flip();      // (Armada: the same, wcnet_armada_hires.cpp)
         return true;
@@ -2905,6 +2917,7 @@ void wc_net_check_cpu_hooks() {
         tdm_tick();
         xw_tick();
         arm_tick();
+        wch_tick();
 #ifdef __EMSCRIPTEN__
         escape_tap();
         web_input_tick();
@@ -2958,6 +2971,9 @@ void wc_net_check_cpu_hooks() {
     if (tdm_watching()) {
         tdm_check_hooks(ip);    // (the TIE Fighter demo: its own places, wcnet_tiedemo.cpp; its Neon showroom's too)
         return;
+    }
+    if (wch_hook(ip)) {
+        return;                 // (Wing Commander 1 at 640 x 400: its drivers' places, wcnet_wch.cpp; nothing else of the game's there)
     }
     if (solo()) {
         check_hooks_solo();
