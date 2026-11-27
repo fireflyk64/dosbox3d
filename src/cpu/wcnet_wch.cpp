@@ -35,6 +35,8 @@
 #include <vector>
 #include "dosbox.h"
 #include "wcnet_wch.h"
+#include "wcnet_wch_font.h"
+#include "wcnet_priv_font.h"
 #include "wcnet_game.h"
 #include "wcnet_memory.h"
 #include "wcnet_log.h"
@@ -68,7 +70,7 @@ enum {
 };
 
 enum Drv { TM, ST };
-enum Op { OP_SHAPE, OP_TURN, OP_LINE, OP_RECT, OP_FILL, OP_CLEAR, OP_COPY, OP_PRESENT };
+enum Op { OP_SHAPE, OP_TURN, OP_LINE, OP_RECT, OP_FILL, OP_CLEAR, OP_COPY, OP_PRESENT, OP_GLYPH };
 
 // A place in a driver's code (the VGA entry's offsets, WC.EXE's GAMEDAT): `framed`, past the routine's own
 // `push bp / mov bp,sp` and its shape pointer's resolving (EMS: [bp+0C] then holds the real pointer), its arguments
@@ -83,6 +85,7 @@ const Place kPlaces[] = {
     { TM, 0x192F, OP_CLEAR,   false, { 0x55, 0x8B, 0xEC } },     // CLEAR (rec, colour)
     { TM, 0x198F, OP_COPY,    false, { 0x55, 0x8B, 0xEC } },     // COPY (src rec, dst rec): the outside views' way to the screen
     { ST, 0x7454, OP_PRESENT, false, { 0x55, 0x8B, 0xEC } },     // SPANCOPY (src rec, dst rec, span list near): the cockpit views'
+    { TM, 0x4925, OP_GLYPH,   false, { 0x2E, 0x83, 0x3E } },     // GLYPH (registers): every letter of every text
 };
 enum { kPlaceCount = sizeof(kPlaces) / sizeof(kPlaces[0]) };
 
@@ -128,7 +131,7 @@ void read_env() {
 }
 
 bool usable() {
-    return is_wc1() && g_build == BUILD_WC1 && DS && ds::known(ds::tmDriverSeg) && ds::known(ds::superTmDriverSeg) &&
+    return is_wc1() && (g_build == BUILD_WC1 || g_build == BUILD_SM2) && DS && ds::known(ds::tmDriverSeg) && ds::known(ds::superTmDriverSeg) &&
            ds::known(ds::flightBuffer);
 }
 
@@ -859,6 +862,265 @@ void present_spans(const Target &src, Bit16u list) {
     present_end();
 }
 
+// ---- the letters -------------------------------------------------------------------------------------------------------
+
+// GLYPH (TM.DRV 4925, the game's only way to draw a letter: seg065:0071 calls it for each): AL the character, BX the
+// text context (+0 the record, +2 x, +6 the font far, +A ink colour, +B background colour, FF none), CX the font's
+// height, DX the letter's width, SI twice the top row.  The font: +0 its height, +2 the value its letters' ink is
+// stored as, +3 their background's, +4 a width per character, +104 / +204 the low / high bytes of each letter's offset
+// from the font; a letter is width x height bytes, one per pixel.  The driver returns at once while it is busy
+// ([cs:0]).
+struct Glyph { int ch, x, y, w, h, fg, bg, ink, ground; Bit16u ctx, rec, fseg, foff; Target t; };
+
+bool read_glyph(Glyph &g) {
+    if (rd16p(SegPhys(cs))) return false;
+    g.ch = reg_al;
+    g.ctx = reg_bx;
+    g.h = reg_cx;
+    g.w = reg_dx;
+    g.y = (Bit16s)reg_si >> 1;
+    g.rec = dsw(g.ctx);
+    g.x = (Bit16s)dsw((Bit16u)(g.ctx + 2));
+    g.foff = dsw((Bit16u)(g.ctx + 6));
+    g.fseg = dsw((Bit16u)(g.ctx + 8));
+    g.fg = rd8p(PhysMake(DS, (Bit16u)(g.ctx + 0xA)));
+    g.bg = rd8p(PhysMake(DS, (Bit16u)(g.ctx + 0xB)));
+    const PhysPt font = PhysMake(g.fseg, g.foff);
+    g.ink = rd8p(font + 2);
+    g.ground = rd8p(font + 3);
+    return g.w > 0 && g.w <= 32 && g.h > 0 && g.h <= 32 && read_target(g.rec, g.t);
+}
+
+inline PhysPt glyph_data(const Glyph &g) {
+    const PhysPt font = PhysMake(g.fseg, g.foff);
+    const Bit16u off = (Bit16u)(rd8p(font + 0x104 + g.ch) | rd8p(font + 0x204 + g.ch) << 8);
+    return PhysMake(g.fseg, (Bit16u)(g.foff + off));
+}
+
+// Test aid (WCHIRESFONTS=1): each font the game writes with, once, as text art in WCNET_DUMP_DIR/wch-font-<n>.txt;
+// each text context and record it is used with, logged once.
+void font_dump(const Glyph &g) {
+    static int on = -1;
+    if (on < 0) { const char *e = getenv("WCHIRESFONTS"); on = e && e[0] == '1'; }
+    if (!on) return;
+    static std::map<Bit32u, int> fonts;
+    static std::map<Bit64u, int> uses;
+    const Bit32u fkey = (Bit32u)g.fseg << 16 | g.foff;
+    if (!fonts.count(fkey) && fonts.size() < 32) {
+        const int n = (int)fonts.size();
+        fonts[fkey] = n;
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        char path[512];
+        snprintf(path, sizeof(path), "%s/wch-font-%d.txt", dir && dir[0] ? dir : ".", n);
+        FILE *f = fopen(path, "w");
+        if (f) {
+            const PhysPt font = PhysMake(g.fseg, g.foff);
+            const int h = rd16p(font);
+            fprintf(f, "font %04X:%04X height %d ink %02X ground %02X\n", g.fseg, g.foff, h, g.ink, g.ground);
+            for (int c = 0; c < 256 && h > 0 && h <= 32; c++) {
+                const int w = rd8p(font + 4 + c);
+                if (!w || w > 32) continue;
+                Glyph k = g;
+                k.ch = c;
+                const PhysPt d = glyph_data(k);
+                fprintf(f, "char %d '%c' width %d\n", c, c >= 32 && c < 127 ? c : '?', w);
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        const int v = rd8p(d + y * w + x);
+                        if (v == g.ink) fputc('#', f);
+                        else if (v == g.ground) fputc('.', f);
+                        else fprintf(f, "<%02X>", v);
+                    }
+                    fputc('\n', f);
+                }
+            }
+            fclose(f);
+        }
+        wclog(1, "Wing Commander 640 x 400 fonts: font %d at %04X:%04X: %s", n, g.fseg, g.foff, path);
+    }
+    const Bit64u ukey = (Bit64u)fkey << 32 | (Bit32u)g.ctx << 16 | g.rec;
+    if (!uses.count(ukey) && uses.size() < 256) {
+        uses[ukey] = 1;
+        wclog(1, "Wing Commander 640 x 400 fonts: font %d, context %04X, record %04X (segment %04X, %d,%d..%d,%d), "
+                 "ink %02X ground %02X, first '%c' at %d,%d (%d x %d)",
+              fonts.count(fkey) ? fonts[fkey] : -1, g.ctx, g.rec, g.t.seg, g.t.x0, g.t.y0, g.t.x1, g.t.y1, g.fg, g.bg,
+              g.ch >= 32 && g.ch < 127 ? g.ch : '?', g.x, g.y, g.w, g.h);
+    }
+}
+
+// The cockpit's letters at the top level, in the user's font (wcnet_priv_font.h: their Privateer letters, made for the
+// 3 x 4 font WC1's cockpit font is): each letter the game writes on the screen in that font (its VDUs, the speed
+// readouts: kWchGlyphs, exactly) is kept as a cell of the screen, with what was under it and what the game made of
+// it.  At the VGA's frame a cell whose letter's ink is all still there shows the cell without that ink and the
+// user's letter on it (the capitals' top a row below the cell's, less the font's shift up; its left a column in), in
+// the letter's colour; its ink gone since (the screen cleared, the text redrawn, the cockpit drawn again) and the cell
+// is the game's again and forgotten.  A letter written where another was takes its place (one with no ground of its
+// own over others, a heading's underline of _, leaves them); until the game has drawn it, the one it replaced stays
+// shown (the VGA's frame may fall between the call and its drawing).  The view's comm text is another font (eight
+// rows, capitals six high), not the user's: the game's own, 2 x 2.
+struct Look { const PrivGlyph *g; int fg, bg; Bit8u ink[16 * 8], under[16 * 8]; };
+struct Letter { int x, y, w, h; Look now, prev; bool hasPrev, seen; double at; };
+enum { kMaxLetters = 1024, kLetterYoungMs = 100 };
+std::vector<Letter> g_letters;
+Bit32u g_lettersSerial = 0;
+
+const WchGlyph *wch_glyph(int ch) {
+    for (int i = 0; i < kWchGlyphCount; i++) {
+        if (kWchGlyphs[i].ch == ch) return &kWchGlyphs[i];
+    }
+    return NULL;
+}
+
+const PrivGlyph *user_letter(int ch) {
+    for (int i = 0; i < kPrivGlyphCount; i++) {
+        if (kPrivGlyphs[i].ch == ch) return &kPrivGlyphs[i];
+    }
+    return NULL;
+}
+
+void letter_add(const Glyph &g) {
+    if (g.t.seg != kScreenSeg || g.w > 16 || g.h > 8) return;  // (the cockpit's own screens; the view's comm text is another font)
+    // the cell on the screen (the record's rows: the screen's, one under the other)
+    const int off = dsw((Bit16u)(g.t.rowTable + 2 * g.y)) + g.x;
+    const int sx = off % LW, sy = off / LW;
+    if (g.x < g.t.x0 || g.y < g.t.y0 || sx + g.w > LW || sy + g.h > LH) return;
+    for (int y = 1; y < g.h; y++) {
+        if (dsw((Bit16u)(g.t.rowTable + 2 * (g.y + y))) + g.x != off + y * LW) return;
+    }
+    // (the game's colours: ink and ground copied as they are when they are the font's own, else ink -> fg, ground -> bg,
+    //  FF drawn as nothing)
+    const bool raw = g.fg == g.ink && g.bg == g.ground;
+    const int fg = raw ? g.ink : g.fg, bg = raw ? g.ground : (g.bg == 0xFF ? -1 : g.bg);
+    // one of the cockpit font's letters, exactly, that the user's font has
+    const WchGlyph *k = g.h == 6 ? wch_glyph(g.ch) : NULL;
+    const PrivGlyph *u = user_letter(g.ch);
+    bool ours = k && u && k->w == g.w && fg != 0xFF;
+    Look look;
+    look.g = u;
+    look.fg = fg;
+    look.bg = bg;
+    const PhysPt d = glyph_data(g);
+    for (int y = 0; y < g.h && ours; y++) {
+        int bits = 0;
+        for (int x = 0; x < g.w; x++) {
+            const int v = rd8p(d + y * g.w + x);
+            if (v == g.ink) bits |= 1 << x;
+            else if (v != g.ground) ours = false;
+        }
+        ours = ours && bits == k->rows[y];
+        for (int x = 0; x < g.w && ours; x++) look.ink[y * g.w + x] = (bits >> x) & 1;
+    }
+    // the letters it is drawn over: gone when its cell takes any of their ink (a cell of its own ground covers it, a
+    // letter with none only where it has ink -- the headings' underline, a row of _ under them, leaves them), and the
+    // one in the same cell; the rows below a line's letters (the Raptor's speed readout: KPS's six rows begin on the
+    // last of SET's) leave them too
+    Letter n;
+    n.hasPrev = false;
+    bool changed = false;
+    const PhysPt d0 = glyph_data(g);
+    for (size_t i = 0; i < g_letters.size();) {
+        const Letter &o = g_letters[i];
+        const bool same = o.x == sx && o.y == sy && o.w == g.w && o.h == g.h;
+        bool covers = same;
+        for (int y = 0; y < o.h && !covers; y++) {
+            const int Y = o.y + y - sy;
+            if (Y < 0 || Y >= g.h) continue;
+            for (int x = 0; x < o.w && !covers; x++) {
+                const int X = o.x + x - sx;
+                if (X < 0 || X >= g.w || !o.now.ink[y * o.w + x]) continue;
+                covers = bg >= 0 || rd8p(d0 + Y * g.w + X) == g.ink;
+            }
+        }
+        if (covers) {
+            if (same && o.seen && ours) {
+                n.prev = o.now;
+                n.hasPrev = true;
+            }
+            g_letters[i] = g_letters.back();
+            g_letters.pop_back();
+            changed = true;
+        } else {
+            i++;
+        }
+    }
+    if (changed) g_lettersSerial++;
+    if (!ours) return;
+    const Bit8u *low = vga.fastmem;
+    for (int y = 0; y < g.h; y++) {
+        for (int x = 0; x < g.w; x++) look.under[y * g.w + x] = low[(sy + y) * LW + sx + x];
+    }
+    n.x = sx;
+    n.y = sy;
+    n.w = g.w;
+    n.h = g.h;
+    n.now = look;
+    n.seen = false;
+    n.at = PIC_FullIndex();
+    if (g_letters.size() >= kMaxLetters) g_letters.erase(g_letters.begin());
+    g_letters.push_back(n);
+    g_lettersSerial++;
+}
+
+// The game's letter still there: every pixel of its ink in its colour.  (Its ground may have been drawn on since: the
+// headings' underline.  A screen cleared, a letter drawn over it or the cockpit redrawn take its ink.)
+bool letter_there(const Letter &l, const Look &k, const Bit8u *low) {
+    for (int y = 0; y < l.h; y++) {
+        for (int x = 0; x < l.w; x++) {
+            if (k.ink[y * l.w + x] && low[(l.y + y) * LW + l.x + x] != k.fg) return false;
+        }
+    }
+    return true;
+}
+
+void letter_draw(const Letter &l, const Look &k) {
+    for (int y = 0; y < l.h; y++) {                 // (the game's ink gone: what is under it)
+        for (int x = 0; x < l.w; x++) {
+            const int i = y * l.w + x;
+            if (!k.ink[i]) continue;
+            const Bit8u c = (Bit8u)(k.bg >= 0 ? k.bg : k.under[i]);
+            Bit8u *o = g_out + 2 * (l.y + y) * HW + 2 * (l.x + x);
+            o[0] = o[1] = o[HW] = o[HW + 1] = c;
+        }
+    }
+    const int X0 = 2 * (l.x + 1), Y0 = 2 * (l.y + 1) - kPrivGlyphShiftUp;
+    for (int r = 0; r < 10; r++) {
+        const int Y = Y0 + r;
+        if (Y < 2 * l.y || Y >= 2 * (l.y + l.h)) continue;
+        for (int u = 0; u < k.g->w; u++) {
+            const int X = X0 + u;
+            if (X >= 2 * (l.x + l.w) || !(k.g->rows[r] & (1 << u))) continue;
+            g_out[Y * HW + X] = (Bit8u)k.fg;
+        }
+    }
+}
+
+// At the VGA's frame, after the picture: each cell checked, shown in the user's letters or forgotten.
+void letters_compose(const Bit8u *low, bool show) {
+    const double now = PIC_FullIndex();
+    for (size_t i = 0; i < g_letters.size();) {
+        Letter &l = g_letters[i];
+        if (letter_there(l, l.now, low)) {
+            l.seen = true;
+            l.hasPrev = false;
+            if (show) letter_draw(l, l.now);
+        } else if (!l.seen && now - l.at < kLetterYoungMs) {
+            if (show && l.hasPrev && letter_there(l, l.prev, low)) letter_draw(l, l.prev);
+        } else {
+            g_letters[i] = g_letters.back();
+            g_letters.pop_back();
+            continue;
+        }
+        i++;
+    }
+}
+
+void glyph_call() {
+    Glyph g;
+    if (!read_glyph(g)) return;
+    font_dump(g);
+    letter_add(g);
+}
+
 // The cockpit's markers' shapes (cockpitMarkers), as the driver has them at the hook: the game keeps a shapes pointer
 // in EMS as a handle (segment C000 and up), which the driver's resolver has turned into the page frame's segment
 // (emsFrameSeg), the offset kept, by then; the handle it mapped in is kept (emsLastShapes).  (Matching the pointer
@@ -875,6 +1137,10 @@ bool markers(Bit16u off, Bit16u seg) {
 
 void call(const Place &p) {
     g_framed = p.framed;
+    if (p.op == OP_GLYPH) {
+        glyph_call();
+        return;
+    }
     Target t;
     if (p.op == OP_PRESENT || p.op == OP_COPY) {
         Target src, dst;
@@ -907,7 +1173,25 @@ void call(const Place &p) {
                  arg16(5), arg16(6), arg16(7), arg16(8), (int)g_fresh);
         g_frameOps.push_back(b);
     }
-    if (!read_target((Bit16u)arg16(0), t) || !flights_buffer(t)) return;
+    if (!read_target((Bit16u)arg16(0), t)) return;
+    if (!flights_buffer(t)) {
+        // Test aid (WCHIRESOPS=1): the calls on other records (the cockpit's screens), each kind once with its caller.
+        static int ops = -1;
+        if (ops < 0) { const char *e = getenv("WCHIRESOPS"); ops = e && e[0] == '1'; }
+        if (ops) {
+            static std::map<Bit64u, int> seen;
+            const PhysPt sp = SegPhys(ss) + (Bit16u)(p.framed ? reg_bp + 2 : reg_sp);
+            const Bit16u rip = rd16p(sp), rcs = rd16p(sp + 2);
+            const Bit64u key = (Bit64u)p.op << 48 | (Bit64u)(Bit16u)arg16(0) << 32 | (Bit32u)rcs << 16 | rip;
+            if (!seen.count(key) && seen.size() < 400) {
+                seen[key] = 1;
+                wclog(1, "Wing Commander 640 x 400 ops: op %d on %04X (segment %04X %d,%d..%d,%d) from %04X:%04X: %d %d %d %d %d %d %d %d",
+                      (int)p.op, (Bit16u)arg16(0), t.seg, t.x0, t.y0, t.x1, t.y1, rcs, rip, arg16(1), arg16(2), arg16(3), arg16(4),
+                      arg16(5), arg16(6), arg16(7), arg16(8));
+            }
+        }
+        return;
+    }
     make_fresh();
     switch (p.op) {
     case OP_CLEAR:
@@ -975,9 +1259,14 @@ void compose() {
     static Bit32u madeSerial = 0;
     static int madeFlight = -1;
     const Bit32u serial = flight ? g_frameSerial : 0;
-    if (madeFlight == (int)flight && madeSerial == serial && !memcmp(madeFrom, low, LW * LH)) return;
+    static Bit32u madeLetters = 0;
+    static int madeLevel = -1;
+    if (madeFlight == (int)flight && madeSerial == serial && madeLetters == g_lettersSerial && madeLevel == g_level &&
+        !memcmp(madeFrom, low, LW * LH)) return;
     madeFlight = flight;
     madeSerial = serial;
+    madeLetters = g_lettersSerial;
+    madeLevel = g_level;
     memcpy(madeFrom, low, LW * LH);
     for (int y = 0; y < LH; y++) {
         const Bit8u *now = low + y * LW, *in = g_window + y * LW, *then = g_shownLow + y * LW;
@@ -995,6 +1284,7 @@ void compose() {
             }
         }
     }
+    letters_compose(low, flight && g_level == 2);
 }
 
 bool game_picture() {           // the game's own 320 x 200, shown from the start of the VGA's memory
@@ -1012,6 +1302,7 @@ void set_override(bool want) {
     } else {
         g_haveFrame = false;
         g_fresh = true;
+        g_letters.clear();
         VGA_SetOverride(false);
         wclog(1, "Wing Commander: the picture is the game's own");
     }

@@ -1137,7 +1137,7 @@ function renderMission() {
   $("privMouseLabel").hidden = !isPriv() && !isArmada();
   $("privMouseLabel").title = isArmada() ? ARM_MOUSE_TITLE : PRIV_MOUSE_TITLE;
   $("armHiresLabel").hidden = !isArmada();
-  $("wcHiresLabel").hidden = !isWc1Itself();
+  $("wcHiresLabel").hidden = !isWc1();
   $("privFFLabel").hidden = !isPriv() || one || lobby.privCrew === "crew";     // (one ship: nobody to hit)
   $("privCrewLabel").hidden = !isPriv() || one;
   $("privCrew").value = lobby.privCrew;
@@ -2585,7 +2585,7 @@ const wcHiresLevel = () => ($("wcHires").checked ? 2 : 0);
 $("wcHires").addEventListener("change", () => {
   try { localStorage.setItem(WC_HIRES_KEY, $("wcHires").checked ? "1" : "0"); } catch (e) { /* not kept */ }
   const M = running && window.DOSBox;
-  if (M && M._wc_web_wc_hires && isWc1Itself()) M._wc_web_wc_hires(wcHiresLevel());
+  if (M && M._wc_web_wc_hires && isWc1()) M._wc_web_wc_hires(wcHiresLevel());
 });
 // Privateer's room, the host's choice (src/cpu/wcnet_priv_session.cpp, crew_from_env; docs/privateer.md section 30; the
 // user, 2026-11-24: "launch privateer in a different mode where player two (for Orion) or three (for galaxy) flies in
@@ -2899,7 +2899,7 @@ async function start(fromGesture) {
     if (isPriv()) env.WCPRIVMOUSEINVERT = $("privMouseInvert").checked ? "1" : "0";
     if (isPriv() && privHiresLevel()) env.WCPRIVHIRES = privHiresLevel() === 2 ? "1" : "space";
     if (isArmada() && armHiresLevel()) env.WCARMHIRES = "1";
-    if (isWc1Itself() && wcHiresLevel()) env.WCHIRES = "1";
+    if (isWc1() && wcHiresLevel()) env.WCHIRES = "1";
     if (isPriv() && PRIV_CLASSIC) env.WCPRIVCLASSIC = "1";
     if (isPriv() && together) env.WCPRIVFF = $("privFF").value;
     if (isPriv() && together && lobby.privCrew === "crew") env.WCPRIVCREW = "1";
@@ -3208,7 +3208,6 @@ const isXw = () => !!(gameInfo() && gameInfo().id === "xwing");
 const isTie = () => isTf() || isTfd() || isXw();
 const isPriv = () => !!(gameInfo() && (gameInfo().id === "priv" || gameInfo().id === "privrf"));
 const isWc1 = () => !!(gameInfo() && (gameInfo().id === "wc1" || gameInfo().id === "wc1sm2"));
-const isWc1Itself = () => !!(gameInfo() && gameInfo().id === "wc1");
 const isTv = () => !!(gameInfo() && gameInfo().id === "tv");
 const isRap = () => !!(gameInfo() && gameInfo().id === "rap");
 // (the room's game, the loaded one's or the lobby's)
