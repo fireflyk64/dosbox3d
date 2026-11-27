@@ -41,6 +41,11 @@ const canvas = () => page.evaluate(() => { const c = document.querySelector("can
 const shot = (name) => page.locator("canvas").first().screenshot({ path: path.join(OUT, name) });
 
 check("in flight: the picture on (level 2)", (await level()) === 2, await level());
+// (the gunsight as Privateer's line art: its shapes are in EMS on the page, which once left it the game's blocks)
+const marks0 = await page.evaluate(() => window.DOSBox._wc_web_wc_hires(-2));
+await sleep(1500);
+const marks1 = await page.evaluate(() => window.DOSBox._wc_web_wc_hires(-2));
+check("the gunsight drawn as line art", marks1 > marks0, [marks0, marks1]);
 check("the canvas is 640 x 400", JSON.stringify(await canvas()) === "[640,400]", await canvas());
 await shot("wc1-hires-all.png");
 await page.keyboard.press("Backquote");

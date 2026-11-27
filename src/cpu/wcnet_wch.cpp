@@ -113,6 +113,7 @@ int g_level = 0;                    // what shows: 2 all, 1 the space alone, 0 t
 bool g_override = false;
 Bit16u g_watchedTm = 0, g_watchedSt = 0;   // the drivers' segments the places are watched in (0: none watched)
 bool g_onlyOurs[0x10000];           // an IP watched for these places alone
+Bit32u g_markerDraws = 0;           // the gunsight and lock cross drawn as line art (the page's test asks)
 
 void read_env() {
     if (g_allowed >= 0) return;
@@ -650,6 +651,7 @@ void capture_show(const Target &t, const Shape &s, int left, int top, Bit32u key
 
 void shape_lines(const Target &t, const Shape &s, int x, int y) {
     static const int kDx[4] = { 1, 0, 1, -1 }, kDy[4] = { 0, 1, 1, 1 };
+    g_markerDraws++;
     const int left = x - s.left, top = y - s.top;
     const Bit32u key = shape_hash(s);
     if (blit_cached(t, s, key, left, top)) return;
@@ -855,6 +857,18 @@ void present_spans(const Target &src, Bit16u list) {
     present_end();
 }
 
+// The cockpit's markers' shapes (cockpitMarkers), as the driver has them at the hook: the game keeps a shapes pointer
+// in EMS as a handle (segment C000 and up), which the driver's resolver has turned into the page frame's segment
+// (emsFrameSeg), the offset kept, by then; the handle it mapped in is kept (emsLastShapes).  (Matching the pointer
+// alone missed the markers whenever they were in EMS, as on the page: the gunsight was the game's blocks there.)
+bool markers(Bit16u off, Bit16u seg) {
+    const Bit16u moff = dsw(ds::cockpitMarkers), mseg = dsw((Bit16u)(ds::cockpitMarkers + 2));
+    if (off != moff) return false;
+    if (seg == mseg) return true;
+    return (mseg & 0xC000) == 0xC000 && ds::known(ds::emsFrameSeg) && ds::known(ds::emsLastShapes) && seg == dsw(ds::emsFrameSeg) &&
+           dsw(ds::emsLastShapes) == moff && dsw((Bit16u)(ds::emsLastShapes + 2)) == mseg;
+}
+
 // ---- the calls --------------------------------------------------------------------------------------------------------
 
 void call(const Place &p) {
@@ -917,8 +931,7 @@ void call(const Place &p) {
         if (!s) break;
         // (the cockpit's markers, dseg cockpitMarkers: 0 the gunsight at the view's middle, 1 the lock cross -- the
         // reticle, as Privateer's: one-pixel line art, its circles fitted, drawn half and mirrored)
-        const bool marker = (Bit16u)arg16(3) == dsw(ds::cockpitMarkers) && (Bit16u)arg16(4) == dsw((Bit16u)(ds::cockpitMarkers + 2)) &&
-                            (arg16(5) == 0 || arg16(5) == 1);
+        const bool marker = markers((Bit16u)arg16(3), (Bit16u)arg16(4)) && (arg16(5) == 0 || arg16(5) == 1);
         if (marker) shape_lines(t, *s, arg16(1), arg16(2));
         else shape_blocks(t, *s, arg16(1), arg16(2));
         break;
@@ -1005,6 +1018,7 @@ void set_override(bool want) {
 }  // namespace
 
 bool wch_on() { return g_override; }
+int wch_marker_draws() { return (int)(g_markerDraws & 0x7FFFFFFF); }
 
 int wch_level() {
     read_env();

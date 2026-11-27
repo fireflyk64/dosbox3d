@@ -64,6 +64,7 @@ MANUAL = {
     ("sm2", "steerKeyHeld"): (0x8CE0, "two votes only; SM2.EXE seg001:0D3F mov [8CE0],dx is WC.EXE seg001:0D85 mov [89BE],dx (a key held)"),
     ("sm2", "steerStickEvent"): (0x8CE6, "two votes only; SM2.EXE seg001:0D1A mov [8CE6],ax is WC.EXE seg001:0D60 mov [89C4],ax (the stick's event)"),
     ("sm2", "joyRaw"): (0x7A18, "one vote only, and right after joyRange as in WC.EXE"),
+    ("sm2", "emsFrameSeg"): (0x7991, "two votes only; SM2.EXE seg014:0084 mov dx,[7991] where WC.EXE seg015:0088 has mov dx,[766F], beside the last handle 7997 (WC.EXE 7675)"),
     ("so1", "joyRaw"): (0xA758, "one vote only, and right after joyRange as in WC2.EXE"),
     ("so2", "joyRaw"): (0xA9EE, "one vote only, and right after joyRange as in WC2.EXE"),
 }

@@ -15,6 +15,7 @@ void wch_set(int level);                    // the page's boxes, live: 2 all, 1 
 int wch_level();                            // what shows: 2 all, 1 the space alone, 0 the game's own
 bool wch_key(bool pressed);                 // the backquote key: true when it is ours (allowed; a press flips)
 bool wch_on();                              // the override is ours
+int wch_marker_draws();                     // the gunsight and lock cross drawn as line art so far (the page's test)
 
 }  // namespace wc
 
