@@ -126,12 +126,15 @@ check("BRAVO decides the nav points now", await waitLog(bravo, /Privateer: we de
 await sleep(4000);
 check("BRAVO's game goes on", !bravo.logs.some((l) => /session closed|the room is closed/.test(l)), found(bravo, /session closed|room is closed/));
 
-// CHARLIE: in afterwards, in the seat ALPHA gave back; its page told of the room in the lobby's chat as it comes in,
-// by BRAVO, the lowest seat now (the user: "the lowest player/ host if connected keeps answering open privateer games if
-// it's public so people loading the page late after game start still see PRV-1212 open messages")
-const charlie = await open("CHARLIE", code);
+// CHARLIE: a visitor of the page (no link: it enters the public lobby -- here this test's own), after ALPHA left; told
+// of the room in the lobby's chat as it comes in, by BRAVO, the lowest seat now -- whose page a link brought and which
+// was not in the lobby: it went in to answer (the user: "the lowest player/ host if connected keeps answering open
+// privateer games if it's public so people loading the page late after game start still see PRV-1212 open
+// messages").  CHARLIE clicks the room's code there and is in, in the seat ALPHA gave back.
+check("BRAVO, the room's lowest seat now, goes into the lobby to answer", await waitLog(bravo, /in the lobby to tell newcomers of our room/, 30000), found(bravo, /in the lobby to tell/));
+const charlie = await open("CHARLIE", "");
 const told = async () => {
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 60; i++) {
     const lines = await charlie.page.$eval("#hallLog", (el) => Array.from(el.children).map((c) => c.textContent));
     const line = lines.find((l) => l.includes(code));
     if (line) return line;
@@ -141,6 +144,13 @@ const told = async () => {
 };
 const toldLine = await told();
 check("CHARLIE, loading the page late, is told of the room in the lobby by BRAVO", /BRAVO/.test(toldLine) && /seats? free/.test(toldLine), toldLine.slice(0, 120));
+const clicked = await charlie.page.evaluate((c) => {
+  const a = Array.from(document.querySelectorAll("#hallLog a, #hallLog [data-code], #hallLog .code")).find((e) => e.textContent.trim().toUpperCase() === c.toUpperCase());
+  if (!a) return false;
+  a.click();
+  return true;
+}, code);
+check("CHARLIE clicks the room's code in the lobby's chat", clicked);
 await charlie.page.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 60000 });
 const crew = await charlie.page.evaluate(() => { const el = document.getElementById("privCrew"); return `${el.value}${el.disabled ? " (greyed)" : ""}`; });
 check("CHARLIE, in seat 1 of a room it did not make, cannot change its Ships choice", crew === "own (greyed)", crew);

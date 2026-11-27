@@ -1912,3 +1912,36 @@ links come back by lobbylink's own rebuild.  `scripts/web-priv-sleep.sh` (two br
 for 60 s (every process of it); BRAVO passes ALPHA over and decides, ALPHA's ship goes from its space; ALPHA's page
 wakes, joins again in the same seat while its game flies, the links come back, each sees the other's ship, ALPHA
 decides again; pictures of both screens before, during and after ("SLEEP OK").
+
+## 41. An open room told to the lobby's late comers by its lowest seat present (2026-11-27)
+
+The user (2026-11-27): "the lowest player/ host if connected keeps answering open privateer games if it's public so
+people loading the page late after game start still see PRV-1212 open messages in the associated main lobby chat".
+
+**Before.**  A room is offered in the public lobby's chat (`hall.js`, WC-LOBBY) by its maker's line ("PRV-1212 ..., 31
+seats free": Fly says it when the room is public with a seat free); a pilot coming into the lobby later is shown each
+pilot's last line only while it is younger than 15 minutes (`REPLAY_AGE_MS`), and only from pilots still there.  So
+15 minutes into a flight, or once the maker had left (an open room goes on without it), a page loaded late saw no
+sign of the room in the chat (only "Join open game" found it).
+
+**Now.**  A newcomer's link to a page in the lobby gets that page's standing offer (`opts.standingOffer`, sent as a
+line said just now) before its last line: an open room's (`comeAndGo`), public, with a seat free, from the lowest seat
+present in the room (the server's roster: occupied and connected) -- the maker until it leaves or its computer sleeps,
+then the next.  One page of the room says it (a newcomer takes one replayed line a minute from a seat: the others'
+pages would each add one), and only to the newcomer: nobody already in the lobby hears it again.  A page a link to the
+room brought is not in the lobby (`hall.auto`: that pilot has somebody to fly with); when it is the one to answer it
+goes in (the page's 2 s clock), unless its pilot left the lobby.
+
+**Private stays private.**  A page knew a room was private only from seat 1's hello (lobby seat 0, `hostPrivate`); in
+an open room the maker may be gone and a newcomer in its seat says its own box.  The maker's choice is now carried in
+every page's hello with the time it was set (`roomPrivate`, `privAt`; the latest kept), so every page of the room keeps
+it whoever leaves, and neither "Join open game" (`openRoom`) nor the standing offer gives a private room away.
+
+**Test.**  `scripts/web-priv-open.sh`: after ALPHA's page is closed, BRAVO (its page brought by the room's link) goes
+into the lobby; CHARLIE, a visitor loaded then, is shown BRAVO's line with the room's code and its free seats in the
+lobby's chat, clicks the code and is in the room.
+
+**The relay's ports** (asked the same day: "How do we up the server 100 port limit").  lobbylink's TURN server is
+coturn with `min-port=49160`, `max-port=49260` (`deploy/turnserver.conf.template`; its setup scripts open that range):
+101 relay ports, one per relayed side of a link.  Raised on the server by editing `/etc/turnserver.conf` (49152-65535,
+coturn's own default), opening that UDP range in ufw and the provider's firewall, and `systemctl restart coturn`.

@@ -1861,6 +1861,9 @@ function clockTick(ev) {
   const now = ev && typeof ev.data === "number" ? ev.data : Date.now(), gap = now - clockAt;
   clockAt = now;
   if (now - beatAt >= ROOM_BEAT_MS) { beatAt = now; roomBeat(); }
+  // (a public open room's lowest seat present answers the lobby's newcomers -- standingOffer -- so it is in the lobby,
+  // even when a link to the room brought its page, unless its pilot left the lobby)
+  try { if (!hall.inside() && standingOffer() && hall.auto({ off: query.get("lobby") === "off" })) { log("lobby: in the lobby to tell newcomers of our room (its lowest seat now)"); hall.enterWhenReady(); } } catch (e) { /* (the lobby not made yet) */ }
   if (gap > WOKE_GAP_MS) {
     log(`the page was away ${Math.round(gap / 1000)} s (asleep, or frozen)`);
     if (rejoinsFlying()) { chatLine(`Back after ${Math.round(gap / 1000)} s away: joining room ${esc(lobby.game.code)} again, flying on…`, "sys"); void resumeRoom(); }
