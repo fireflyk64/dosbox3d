@@ -35,9 +35,11 @@ public:
     static LobbyHub *join(const NetConfig &cfg);
     ~LobbyHub();
 
-    int self_id() const { return selfId_; }
+    // (asked each time: a page that joins the room again after a sleep -- web/wc.js resumeRoom, src/wclobby_web.js
+    // follow -- may be given another seat)
+    int self_id() const;
     int max_players() const { return maxPlayers_; }
-    bool is_host() const { return selfId_ == 0; }
+    bool is_host() const { return self_id() == 0; }
     const std::string &code() const { return code_; }
     // False once the connection to the lobby server is gone: established
     // peer links keep working, but nobody new can join.
@@ -57,7 +59,6 @@ private:
     LobbyHub(wclobby *h, const std::string &code);
     wclobby *h_;
     std::string code_;
-    int selfId_;
     int maxPlayers_;
 };
 

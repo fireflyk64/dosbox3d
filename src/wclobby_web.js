@@ -141,6 +141,34 @@ addToLibrary({
       if (p.beInbox.length >= 64) p.beInbox.shift();
       p.beInbox.push(data);
     },
+    // The page's room connection, if it is another of the same room now (the page joined the room again: web/wc.js
+    // resumeRoom): taken; every link of the old one is gone (a new generation each: the game's streams close, and its
+    // session makes them again as the new connection's links come up).  A connection ended that the page has not
+    // replaced in 15 s ends the room for us.
+    follow(hub) {
+      if (hub.closed) { clearInterval(hub.watch); return; }
+      var live = typeof Module['lobbyGame'] === 'function' ? Module['lobbyGame']() : Module['lobbyGame'];
+      if (live && live !== hub.game && live.code === hub.code && !live.closedFlag) {
+        if (hub.unsub) hub.unsub();
+        hub.game = live;
+        hub.selfId = live.selfId;
+        hub.signaling = true;
+        hub.endedAt = 0;
+        for (var i = 0; i < hub.peers.length; i++) {
+          WCLOBBY.linkGone(hub, i, 'the room joined again');
+          hub.peers[i].link = WCLOBBY.LINK_DOWN;
+          hub.peers[i].occupied = false;
+        }
+        live.players.forEach((p) => { if (p.occupied && hub.peers[p.id]) hub.peers[p.id].occupied = true; });
+        hub.unsub = live.onEvent((ev) => WCLOBBY.handleEvent(hub, ev));
+        WCLOBBY.log(0, 'room ' + hub.code + ' joined again as player ' + live.selfId + ': every link made anew');
+        WCLOBBY.notify(hub);
+      } else if (hub.endedAt && Date.now() - hub.endedAt > 15000) {
+        WCLOBBY.log(0, 'the page did not join room ' + hub.code + ' again: it is over for us');
+        hub.endedAt = 0;
+        WCLOBBY.closeAll(hub);
+      }
+    },
     closeAll(hub) {
       hub.closed = true;
       for (var i = 0; i < hub.peers.length; i++) WCLOBBY.linkGone(hub, i, 'lobby closed');
@@ -197,7 +225,14 @@ addToLibrary({
           WCLOBBY.log(0, 'lobby error ' + ev.code + ': ' + ev.message);
           break;
         case 'signaling-closed':
-          if (ev.code === 'replaced' || ev.code === 'session-superseded' || ev.code === 'room-expired') {
+          if (hub.adopted && typeof Module['lobbyRejoins'] === 'function' && Module['lobbyRejoins']() && ev.code !== 'connection-lost') {
+            // (a page that manages rooms joins the room again itself -- web/wc.js resumeRoom, after a sleep or a lost
+            // connection; its own new connection supersedes this one -- and `follow` takes the new one; if none comes,
+            // the room is over for us)
+            WCLOBBY.log(1, 'lobby connection ended (' + ev.code + '); waiting for the page to join the room again');
+            hub.signaling = false;
+            hub.endedAt = Date.now();
+          } else if (ev.code === 'replaced' || ev.code === 'session-superseded' || ev.code === 'room-expired') {
             WCLOBBY.log(0, 'lobby session over (' + ev.code + ': ' + ev.message + ')');
             WCLOBBY.closeAll(hub);
           } else {
@@ -276,7 +311,8 @@ addToLibrary({
         // A link the page already brought up is live for us as well.
         if (p.connected && p.id !== game.selfId && hub.peers[p.id] && how === 'adopted') hub.peers[p.id].link = WCLOBBY.LINK_UP;
       });
-      game.onEvent((ev) => WCLOBBY.handleEvent(hub, ev));
+      hub.unsub = game.onEvent((ev) => WCLOBBY.handleEvent(hub, ev));
+      if (how === 'adopted') hub.watch = setInterval(() => WCLOBBY.follow(hub), 500);
       var h = WCLOBBY.nextHandle++;
       WCLOBBY.hubs[h] = hub;
       WCLOBBY.log(1, how + ' room ' + code + ' as player ' + game.selfId + ' of ' + game.maxPlayers);

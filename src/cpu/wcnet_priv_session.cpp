@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <chrono>
 #include "wcnet_priv.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
@@ -60,8 +61,16 @@ enum {
     kPresenceEveryMs = 15000,       // the user's 15 seconds
     kNoticeMs = 10000,              // a notice stays this long
     kSameSystemEveryMs = 60000,     // the line of who shares our system: when they change, else this often while somebody does
+    // (an open room, the user 2026-11-27: "The 15s where I am has to also change if a player moves a bunch eg for
+    // pressing a"; a laptop put to sleep and woken "must be robust")
+    kMovedMetres = 5000,            // our presence goes out at once when we are this far from where the last one said
+    kMovedEveryMs = 1000,           // (but not more often than this)
+    kQuietMs = 8000,                // the decider (it says who runs the nav points every kOwnersEveryMs) silent this long: passed over
+    kSilentMs = 25000,              // a pilot heard nothing from this long (a presence comes every 15 s) runs no nav point
+    kAwayMs = 5000,                 // the wall clock's jump between two of our ticks that says we were away (asleep, frozen)
 };
-enum Why { WHY_PERIOD = 0, WHY_AUTOPILOT = 1, WHY_JUMP = 2, WHY_LAUNCH = 3, WHY_LAND = 4, WHY_HELLO = 5, WHY_NAV = 6 };
+// (WHY_MOVED is ours alone: it goes out as WHY_PERIOD -- nothing to tell the others' comm lines)
+enum Why { WHY_PERIOD = 0, WHY_AUTOPILOT = 1, WHY_JUMP = 2, WHY_LAUNCH = 3, WHY_LAND = 4, WHY_HELLO = 5, WHY_NAV = 6, WHY_MOVED = 7 };
 // Step 5: a nav point's owner (the user's rule): of the pilots present at it, one with a mission objective there, the
 // host first (the lowest seat), each in turn once everybody has left and come back, until all have had it.  Step 6:
 // the owner's encounter ships are the others' puppets (PrivScene, kSceneEveryMs), hits on a ship cross to its owner.
@@ -124,7 +133,11 @@ struct Peer {
     std::string callsign;
     bool hello;
     bool helloSent;             // (an open room) ours said on this link
-    Peer() : player(-1), hello(false), helloSent(false) {}
+    double heardAt;             // (an open room) its last message of any kind, its hello's, its last table of the owners
+    double helloAt;
+    double ownersAt;
+    bool quiet;                 // (an open room) the decider by seat, but silent kQuietMs: passed over until it speaks again
+    Peer() : player(-1), hello(false), helloSent(false), heardAt(-1e9), helloAt(-1e9), ownersAt(-1e9), quiet(false) {}
 };
 
 // Where each pilot of the room is, by seat (its last PrivPresence).
@@ -223,6 +236,12 @@ struct PrivNet {
     double linkedAt;            // (an open room) the links last looked at
     double startedAt;           // (an open room) when we came in, and when the owners were last heard from another: a
     double ownersHeardAt;       // newcomer of the lowest seat decides once it has heard the decider before it, or after a wait
+    double listenSince;         // (an open room) since when we listen for the decider's table before deciding ourselves:
+                                // our start, our first link after being alone, our return from being away (asleep)
+    int deciderSeat;            // (an open room) the decider as we have it, and since when (its kQuietMs counted from then)
+    double deciderSince;
+    double sentX, sentY, sentZ; // where our last presence said we were (flying)
+    bool sentFlying;
     int self;                   // our seat (a guest: -1 until the host's hello)
     int seats;
     std::string callsign;
@@ -274,7 +293,7 @@ struct PrivNet {
     std::vector<std::pair<Bit32u, std::string> > crewLines;   // (a crew member's) id, line: the pilot's comm's lines to show
     std::string commSaid;       // (the pilot's) the comm's line last told to the crew
     unsigned copiesFired, copiesSkipped;
-    PrivNet() : gunsAt(-1e9), crew(false), crewShipSent(0), turretAt(-1e9), ownShotAt(-1e9), friendlyFire(0), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), mesh(false), ffSeat(kMaxSeats), linkedAt(-1e9), startedAt(-1e9), ownersHeardAt(-1e9), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
+    PrivNet() : gunsAt(-1e9), crew(false), crewShipSent(0), turretAt(-1e9), ownShotAt(-1e9), friendlyFire(0), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), mesh(false), ffSeat(kMaxSeats), linkedAt(-1e9), startedAt(-1e9), ownersHeardAt(-1e9), listenSince(-1e9), deciderSeat(-1), deciderSince(-1e9), sentX(0), sentY(0), sentZ(0), sentFlying(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
                 sentAt(-1e9), stateAt(-1e9), frame(0), flightShip(0), lastX(0), lastY(0), lastZ(0), lastAt(-1e9), vx(0), vy(0), vz(0) {}
     ~PrivNet() {
         for (size_t i = 0; i < peers.size(); i++) {
@@ -465,6 +484,7 @@ bool start() {
             n->self = g_lobby->self_id();
             n->ffSeat = n->self;            // (ours, until a lower seat's is heard)
             n->startedAt = PIC_FullIndex();
+            n->listenSince = n->startedAt;
             n->pilots[n->self].callsign = n->callsign;
             priv_crew_role(0, n->self);
         } else
@@ -502,21 +522,43 @@ int seat_of(const Peer *p, bool has, Bit32u player) { return direct() ? p->playe
 // Who decides the nav points' owners (section 9): a star's hub; in an open room the lowest seat present, ourselves
 // included -- the room goes on deciding whoever leaves.  A newcomer of a lower seat than the decider's takes over once
 // it has heard the decider's word (its table of who had each point this round), or after kOwnersEveryMs and a second
-// without any (nobody deciding: a room of one, or the decider gone with us).
+// without any (nobody deciding: a room of one, or the decider gone with us).  So does a pilot back from being away (its
+// computer asleep, docs section 40): what it holds is older than the table the others went on with.  A decider whose
+// table has not come for kQuietMs (asleep: its link not yet given up, which takes some 30 s) is passed over until it
+// speaks again, and the next seat decides from the table it already holds.
 int decider_seat() {
     if (!g_net->mesh) return 0;
     int low = g_net->self;
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         const Peer *p = g_net->peers[i];
-        if (p->hello && p->conn.is_open() && p->player >= 0 && p->player < low) low = p->player;
+        if (p->hello && !p->quiet && p->conn.is_open() && p->player >= 0 && p->player < low) low = p->player;
     }
     return low;
 }
+bool listening() {
+    return g_net->mesh && g_net->ownersHeardAt < g_net->listenSince && PIC_FullIndex() - g_net->listenSince <= kOwnersEveryMs + 1000;
+}
 bool deciding() {
     if (!g_net->mesh) return g_net->host;
-    if (decider_seat() != g_net->self) return false;
-    const double now = PIC_FullIndex();
-    return g_net->ownersHeardAt >= g_net->startedAt || now - g_net->startedAt > kOwnersEveryMs + 1000;
+    return decider_seat() == g_net->self && !listening();
+}
+
+// (an open room) the link of the pilot of a seat that has said hello, or NULL
+Peer *peer_of(int seat) {
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        Peer *p = g_net->peers[i];
+        if (p->player == seat && p->hello && p->conn.is_open()) return p;
+    }
+    return NULL;
+}
+
+// A pilot that can run a nav point: ourselves, or one heard from lately (a presence comes every 15 s whatever it does)
+// and not a decider passed over.  A star's: everybody it knows.  A pilot asleep is thus nobody's owner after kSilentMs,
+// before its link is given up: the nav points it ran go to the pilots there.
+bool responsive(int seat) {
+    if (!g_net->mesh || seat == g_net->self) return true;
+    const Peer *p = peer_of(seat);
+    return p && !p->quiet && PIC_FullIndex() - p->heardAt < kSilentMs;
 }
 
 // (an open room) the pilots our ship and the ships we run are sent to: in our system and near, by their presence or
@@ -579,7 +621,7 @@ PrivPresence own_presence(int why) {
         pr.set_y(pos[1]);
         pr.set_z(pos[2]);
     }
-    pr.set_why((Bit32u)why);
+    pr.set_why((Bit32u)(why == WHY_MOVED ? WHY_PERIOD : why));
     pr.set_nav(flying ? g_net->nav : -1);
     const unsigned navs = priv_mission_navs();
     for (int n = 0; n < 32; n++) {
@@ -617,7 +659,8 @@ unsigned present_at(const std::string &system, int nav) {
     for (int s = 0; s < kMaxSeats; s++) {
         if (s == g_net->self) {
             if (priv_in_flight() && g_system == system && g_net->nav == nav) mask |= 1u << s;
-        } else if (g_net->pilots[s].known && g_net->pilots[s].flying && g_net->pilots[s].system == system && g_net->pilots[s].nav == nav) {
+        } else if (g_net->pilots[s].known && g_net->pilots[s].flying && g_net->pilots[s].system == system && g_net->pilots[s].nav == nav &&
+                   responsive(s)) {
             mask |= 1u << s;
         } else if (sphere && g_net->puppets[s].reported && now - g_net->puppets[s].at < 2000 && g_net->puppets[s].system == system) {
             const Puppet &p = g_net->puppets[s];
@@ -662,7 +705,7 @@ unsigned mission_holders_flying(const std::string &system, int nav) {
     unsigned holders = 0;
     for (int s = 0; s < kMaxSeats && nav >= 0 && nav < 32; s++) {
         const bool me = s == g_net->self;
-        const bool flying = me ? priv_in_flight() : g_net->pilots[s].known && g_net->pilots[s].flying;
+        const bool flying = me ? priv_in_flight() : g_net->pilots[s].known && g_net->pilots[s].flying && responsive(s);
         const std::string &sys = me ? g_system : g_net->pilots[s].system;
         const unsigned m = me ? priv_mission_navs() : g_net->pilots[s].missions;
         if (flying && sys == system && (m & (1u << nav))) holders |= 1u << s;
@@ -751,6 +794,8 @@ void send_owners(Peer *only = NULL) {
         o->set_owner((Bit32u)(g_net->owners[i].owner < 0 ? 0xFF : g_net->owners[i].owner));
         o->set_done(g_net->owners[i].done);
     }
+    // (ours is the room's table: we decide, or did until a moment ago -- a newcomer of a lower seat just took over)
+    if (g_net->mesh && (deciding() || PIC_FullIndex() - g_net->ownersAt < kOwnersEveryMs + 1000)) po->set_decider(true);
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open() && (!only || g_net->peers[i] == only)) {
             g_net->peers[i]->conn.send(msg);
@@ -790,8 +835,12 @@ void send_presence(int why) {
         }
     }
     g_net->sentAt = PIC_FullIndex();
+    g_net->sentFlying = msg.priv_presence().flying();
+    g_net->sentX = (double)msg.priv_presence().x();
+    g_net->sentY = (double)msg.priv_presence().y();
+    g_net->sentZ = (double)msg.priv_presence().z();
     if (why != WHY_PERIOD) {
-        static const char *const kWhy[] = { "the period", "the autopilot", "a jump", "a launch", "a landing", "a hello", "a nav point" };
+        static const char *const kWhy[] = { "the period", "the autopilot", "a jump", "a launch", "a landing", "a hello", "a nav point", "a move" };
         wclog(2, "Privateer: our presence sent (%s): %s, %s", kWhy[why], msg.priv_presence().flying() ? "flying" : "not flying",
               g_system.c_str());
     }
@@ -991,7 +1040,15 @@ void take_mesh_hello(Peer *p, const PrivHello &h) {
     if (p->hello) {
         return;
     }
+    // (alone until now -- come in, back from being away, or our links all made again: the room's table, if the room
+    // has one, is with the others; listened for before we decide)
+    bool alone = true;
+    for (size_t i = 0; i < g_net->peers.size() && alone; i++) {
+        alone = !(g_net->peers[i] != p && g_net->peers[i]->hello && g_net->peers[i]->conn.is_open());
+    }
+    if (alone) g_net->listenSince = PIC_FullIndex();
     p->hello = true;
+    p->helloAt = PIC_FullIndex();
     p->callsign = h.callsign();
     const int seat = p->player;
     Pilot &q = g_net->pilots[seat];
@@ -1010,12 +1067,13 @@ void take_mesh_hello(Peer *p, const PrivHello &h) {
     *out.mutable_priv_presence() = own_presence(WHY_HELLO);
     p->conn.send(out);
     // and the nav points' owners as we know them: a newcomer of a lower seat decides from then on, with the round's
-    // table as it was
-    if (!g_net->owners.empty()) send_owners(p);
+    // table as it was (said even empty by the decider: the newcomer need not wait for it)
+    if (!g_net->owners.empty() || deciding() || PIC_FullIndex() - g_net->ownersAt < kOwnersEveryMs + 1000) send_owners(p);
     tell(p->callsign + " is in the room as pilot " + std::to_string(seat + 1) + (h.mesh() ? "" : " (an older page: it hears only pilot 1)"));
 }
 
 void handle(Peer *p, NetworkMessage &msg) {
+    p->heardAt = PIC_FullIndex();
     if (msg.has_priv_hello() && g_net->mesh) {
         const PrivHello &h = msg.priv_hello();
         if (h.mesh() || !h.has_player() || p->player != 0) {
@@ -1144,9 +1202,20 @@ void handle(Peer *p, NetworkMessage &msg) {
             }
         }
     } else if (msg.has_priv_owners()) {
-        // (a star's guest: the hub's word; an open room: the decider's -- anybody's while we are not deciding ourselves:
-        // as the lowest seat changes hands, two may speak for a moment)
-        if (p->hello && !g_net->host && !deciding()) {
+        // (a star's guest: the hub's word.  An open room: the decider's, or a lower seat's (one passed over, speaking
+        // again: it decides again); while we listen (come in, back from being away) the table of the one deciding --
+        // the others' copies may be older than it)
+        if (p->hello && g_net->mesh) {
+            p->ownersAt = PIC_FullIndex();
+            if (p->quiet) {
+                p->quiet = false;
+                wclog(1, "Privateer: pilot %d says who runs the nav points again", p->player + 1);
+            }
+            if (!deciding() && (listening() ? msg.priv_owners().decider() : p->player <= decider_seat())) {
+                take_owners(msg.priv_owners());
+                g_net->ownersHeardAt = PIC_FullIndex();
+            }
+        } else if (p->hello && !g_net->host && !deciding()) {
             take_owners(msg.priv_owners());
             g_net->ownersHeardAt = PIC_FullIndex();
         }
@@ -1427,6 +1496,39 @@ void priv_session_tick() {
         return;
     }
     polledAt = now;
+    if (g_net->mesh) {
+        // (an open room) back from being away: the wall clock jumped between two of our polls -- the computer asleep, the
+        // page frozen -- while the game's own clock stood still.  The others went on without us (the next seat decided):
+        // their table is listened for before we decide again, and where we are goes out at once.
+        static double wallWas = 0;
+        const double wall = (double)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        if (wallWas > 0 && wall - wallWas > kAwayMs) {
+            g_net->listenSince = now;
+            priv_session_event(WHY_HELLO);
+            wclog(1, "Privateer: back after %.0f s away: the room's table of the nav points listened for before we decide", (wall - wallWas) / 1000.0);
+        }
+        wallWas = wall;
+#ifdef C_LOBBYLINK
+        // the page joined the room again (web/wc.js resumeRoom: after a sleep, a lost connection) and our seat was
+        // another's by then (a full room's newcomer took it): every link made anew, from our new seat
+        const int seat = g_lobby ? g_lobby->self_id() : g_net->self;
+        if (seat != g_net->self && seat >= 0 && seat < kMaxSeats) {
+            wclog(1, "Privateer: the room joined again as pilot %d (we were pilot %d): every link made anew", seat + 1, g_net->self + 1);
+            for (size_t i = 0; i < g_net->peers.size(); i++) g_net->peers[i]->conn.close();
+            g_net->self = seat;
+            g_net->pilots[seat] = Pilot();
+            g_net->pilots[seat].callsign = g_net->callsign;
+            g_net->ffSeat = seat;
+            g_net->listenSince = now;
+            g_net->deciderSeat = -1;
+            priv_crew_role(0, seat);
+            char line[96];
+            snprintf(line, sizeof(line), "Back in %s as pilot %d of %d", g_lobby->code().c_str(), seat + 1, g_net->seats);
+            notice(line);
+            priv_session_event(WHY_HELLO);
+        }
+#endif
+    }
     if ((g_net->host || g_net->mesh) && g_net->listener) {
         for (int n = 0; n < 4; n++) {
             Stream *s = g_net->listener->accept(false);
@@ -1475,11 +1577,27 @@ void priv_session_tick() {
         priv_session_event(WHY_NAV);
     }
     if (g_net->mesh) {
+        // the decider as we have it: one whose table has not come for kQuietMs since it became so (or since its last) is
+        // passed over until it speaks again (asleep, its link not yet given up); the next seat's turn then begins
+        const int d = decider_seat();
+        if (d != g_net->deciderSeat) {
+            g_net->deciderSeat = d;
+            g_net->deciderSince = now;
+        }
+        Peer *dp = d != g_net->self ? peer_of(d) : NULL;
+        if (dp && now - std::max(dp->ownersAt, std::max(dp->helloAt, g_net->deciderSince)) > kQuietMs) {
+            dp->quiet = true;
+            wclog(1, "Privateer: pilot %d has not said who runs the nav points for %d s: passed over until it does", d + 1, (int)(kQuietMs / 1000));
+        }
+    }
+    if (g_net->mesh) {
         static int saidDecider = -2;
         const int d = deciding() ? g_net->self : decider_seat() == g_net->self ? -2 : decider_seat();     // (-2: ours soon)
-        if (d != saidDecider && d != -2) {
+        if (d != saidDecider && (d != -2 || saidDecider == g_net->self)) {
             saidDecider = d;
-            if (d == g_net->self && deciding()) wclog(1, "Privateer: we decide the nav points' owners now (the lowest seat here)");
+            if (d == -2) wclog(1, "Privateer: we are the lowest seat here: the room's table of the nav points listened for before we decide");
+            else if (d == g_net->self) wclog(1, "Privateer: we decide the nav points' owners now (the lowest seat here%s)",
+                                         g_net->ownersHeardAt >= g_net->listenSince ? ", the room's table heard" : "");
             else wclog(1, "Privateer: pilot %d decides the nav points' owners", d + 1);
         }
     }
@@ -1518,6 +1636,13 @@ void priv_session_tick() {
         }
     } else if (now - g_net->sentAt >= kPresenceEveryMs) {
         send_presence(WHY_PERIOD);
+    } else if (g_net->mesh && flying && g_net->sentFlying && now - g_net->sentAt >= kMovedEveryMs) {
+        // far from where our last presence said (the autopilot's drop, an afterburner's run): said again now, so that the
+        // pilots where we are now hear it at once (the ships near us are shown to the pilots near us)
+        Bit32s pos[3];
+        priv_player_pos(pos);
+        const double dx = pos[0] - g_net->sentX, dy = pos[1] - g_net->sentY, dz = pos[2] - g_net->sentZ;
+        if (sqrt(dx * dx + dy * dy + dz * dz) / kUnitsPerMetre > kMovedMetres) send_presence(WHY_MOVED);
     }
     // who shares our system: said when that changes (a pilot in or out), else once a minute while somebody does
     static std::string lastWho;
@@ -2615,6 +2740,12 @@ bool priv_session_allow_wing(int sphereId) {
     // chosen now: the host's word when there is one, else by the same rule every machine follows, with what we know of
     // who is here (their presences, and their latest places: pilots arriving together)
     int owner = owner_of(g_system, sphereId);
+    if (owner >= 0 && !responsive(owner)) {
+        // (an open room: the table's owner is asleep or gone -- nothing heard for kSilentMs, or a decider passed over --
+        // and the table not yet changed: the wing is not refused for a game that will not make it)
+        wclog(1, "Privateer: %s nav %d: its owner by the table, pilot %d, is silent: chosen again by the rule", g_system.c_str(), sphereId, owner + 1);
+        owner = -1;
+    }
     if (owner < 0) {
         NavOwner *o = owner_entry(g_system, sphereId, true);
         unsigned done = o ? o->done : 0;
@@ -3106,10 +3237,23 @@ void priv_session_frame() {
     // the other pilots
     frame_npcs(now, pos);
     for (int s = 0; s < kMaxSeats; s++) {
-        if (s == g_net->self || g_net->crew) {
+        if (g_net->crew) {
             continue;       // (a crew's room: nobody's ship is shown beside ours -- they are aboard it)
         }
         Puppet &p = g_net->puppets[s];
+        if (s == g_net->self) {
+            // (an open room joined again in another seat, docs section 40: the ship of the pilot who had it before us,
+            // if we showed it, given back quietly)
+            if (p.obj) {
+                wclog(1, "Privateer: the ship of our new seat's pilot before us given back");
+                if (priv_ship_alive(p.obj, p.type)) {
+                    if (g_net->dying.size() < 32) g_net->dying.push_back(std::make_pair(p.obj, p.type));
+                    release_obj(p.obj);
+                }
+                p = Puppet();
+            }
+            continue;
+        }
         if (p.obj && !priv_ship_alive(p.obj, p.type)) {
             wclog(1, "Privateer: pilot %d's ship is gone from our game (destroyed?)", s + 1);
             priv_hold_ai(priv_ship_controller(p.obj), false);

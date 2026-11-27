@@ -184,7 +184,7 @@ private:
 // LobbyHub
 
 LobbyHub::LobbyHub(wclobby *h, const std::string &code)
-    : h_(h), code_(code), selfId_(wclobby_self_id(h)), maxPlayers_(wclobby_max_players(h)) {}
+    : h_(h), code_(code), maxPlayers_(wclobby_max_players(h)) {}
 
 LobbyHub::~LobbyHub() {
     wclog(1, "leaving room %s", code_.c_str());
@@ -239,6 +239,10 @@ bool LobbyHub::peer_up(int player) const {
 
 Listener *LobbyHub::make_listener() {
     return new LobbyListener(h_, code_);
+}
+
+int LobbyHub::self_id() const {
+    return (int)wclobby_self_id(h_);
 }
 
 bool LobbyHub::signaling_alive() const {

@@ -28,7 +28,7 @@ This document is the reference for what is built, what was found in the program,
 takes GOG's installer and runs Privateer and Righteous Fire, the arrow keys ramped (section 4), in rooms of up to 8
 that say where everybody is (section 7), the pilots near each other seeing each other's ships (section 8); the nav
 points' owners and the rest are the plan of section 6.  (Since 2026-11-27 rooms are open, of up to 32, pilots coming
-and going: section 37.)
+and going: section 37; a computer put to sleep flies on in its room when woken: section 40.)
 
 ## 1. The game as installed
 
@@ -1839,3 +1839,76 @@ burn drains.  A copy's AI is held (section 8): nothing ever sets the bit on it, 
 copy's record gets it every frame (`priv_ship_set_afterburner`), out when the reports stop for a second; the copies'
 own writes of that byte (a shot's fire bits) keep bit 0.  Measured, GUEST facing HOST's Centurion 640-850 m away while
 HOST burns: its four engines glow blue on GUEST's screen, dark before the change and dark again once Tab is let go.
+
+## 40. A computer asleep in an open room: the decider's handoff, the way back, and a move told at once (2026-11-27)
+
+The user (2026-11-27), on section 37's open rooms:
+
+> For the 2 minute: when they regain connectivity are they going to rejoin without returning to the menu.  Thats the
+> ideal experience.  So they can sleep the laptop and then wake it and continue playing.  The 15s where I am has to
+> also change if a player moves a bunch eg for pressing a.  Often there will be a group and someone autos in and
+> spawns a bunch.  What happens during the low player handoff during that two minute disconnect dance if it's lowest
+> player.  It's effectively single player until new just elected?  Then another 15 to establish who runs each nav?
+> That seems ok but it must be robust.  Ensure the flames work at high Rez too at 640 crosshairs
+
+**What it did before.**  A laptop put to sleep stops answering; its links fail at the others some 30 s later (ICE's
+consent checks), its page's lobby connection is lost.  While a game ran, the page never made that connection again
+(only a page in the room's menu did: section 37's `resumeRoom`), so the woken laptop flew alone until its pilot went
+back to the menu.  If it was the lowest seat, the others went on taking it for the decider until its link failed:
+no table for those 30 s, and a nav point it ran stayed its, so a pilot arriving there had its wing refused for a game
+that would not make it.  The 2 minutes were never part of it: they are only how long a full room's seat is kept for
+a pilot gone silent (`OPEN_CLAIM_MS`) before a newcomer may take it.
+
+**A move told at once.**  A presence went out on A (with the place before the autopilot flies), a jump, a launch, a
+landing, a nav point's sphere entered or left, and every 15 s.  Now also whenever we are more than 5 km
+(`kMovedMetres`) from where our last presence said, at most once a second (`WHY_MOVED`, sent as a period's presence:
+nothing for the others' comm lines): the autopilot's drop, an afterburner's run.  The pilots where a pilot arrives
+hear of it within a second and send it their ships at once (`wants_our_space`); the nav point's owner is decided on
+the spot as before (section 9: who is there by presences and the latest reports).
+
+**The decider's handoff.**  The decider says its table every 3 s (`kOwnersEveryMs`).  One silent 8 s (`kQuietMs`)
+since it became the decider or since its last table is passed over (`Peer::quiet`) until it speaks again: the next
+seat decides from the copy of the table it holds (every pilot holds the decider's), so nobody plays alone in the
+meantime -- each game runs its own ships and shows the others' as before; only the sleeper's ships go (20 s without
+word, then its link's failure).  A table is taken only from the decider as we have it or a lower seat (no longer
+anybody's: a seat passed over at one machine must not undo the next one's).  A pilot heard nothing from for 25 s
+(`kSilentMs`; a presence comes every 15 s whatever it does) runs no nav point (`responsive`): its nav points go to the
+pilots there at the next decision, a mission's nav point is no longer kept for it, and a wing call ignores a table
+whose owner is silent (decided by the rule on the spot instead).  Measured (`scripts/privtests/sleep.sh`, the lowest
+of three stopped 60 s): both others pass it over 8 s on, pilot 2 decides, pilot 3 takes pilot 2's word, the two see
+each other throughout; the sleeper's encounter ships go from their screens 20 s on, its link fails a little later.
+
+**The way back.**  The game knows it was away when the wall clock jumps more than 5 s between two of its polls
+(`kAwayMs`; the emulated clock stood still): it says where it is at once and, before deciding again, listens for the
+room's table (`listening`, up to 4 s) -- the others went on without it.  So does a pilot whose first link comes after
+being alone (come in, or all its links made again).  The table it listens for is the one sent by the decider or by a
+pilot that decided until a moment ago (`PrivOwners.decider`; the others' copies may be older): every pilot answers a
+hello with the table, the decider even with an empty one.
+
+The page (`web/wc.js`) of an open room joins the room again while its game flies (`rejoinsFlying`): when its
+connection is lost or ended (but not superseded: another tab with our seat), and when it comes back from a sleep -- a
+worker's clock ticks every 2 s, and a tick 10 s late (`WOKE_GAP_MS`) means the page was asleep or frozen, its links
+most likely gone.  `resumeRoom` closes the old connection without the leave (`close()` says one, which would free the
+seat), joins with the seat's token -- the same seat; if a newcomer to a full room took it (2 minutes of silence), the
+lowest free one; a full room is tried again every 20 s while the game flies on alone -- and the game's transport
+(`src/wclobby_web.js` `follow`, every 500 ms) takes the page's new connection: every link of the old one gone (a new
+generation each: the game's streams close), its seat the new one's.  The others hear `player-rejoined` and make their
+links to it again; the game makes its own as they come up (`link_mesh`), says its hello, listens, and decides again
+if it is the lowest seat.  A game that finds itself in another seat (`LobbyHub::self_id` is now asked each time)
+closes its links, takes the seat (the ship it showed for that seat's pilot before it given back) and goes on.  Never
+the menu: the game runs on throughout.  The transport waits 15 s for the page's new connection after its old one
+ended (`lobbyRejoins`), and only an open room's; other games are as before.
+
+**The flames at 640 x 400.**  Section 39's afterburner, looked at with the hi-res picture on (WCPRIVHIRES=1, and
+"space" -- the sprites alone): GUEST facing HOST's Centurion 640-650 m off, HOST on afterburner: its four engines glow
+blue at every level, the reticle drawn fine at level 2, as at 320 x 200 (the copy's control record is the game's; the
+hi-res picture draws what the game draws).
+
+**Tests.**  `scripts/privtests/sleep.sh` (native, a build with lobbylink): three pilots, the lowest stopped 60 s
+(SIGSTOP: a computer asleep), a pilot put 30 km off nav 0 (`!privgonav=0:30000`: in no sphere); checked: the move
+told at once and heard, both others pass the sleeper over, the next decides, the two see each other, the sleeper
+knows it was away and decides again once it has the room's table ("SLEEP OK").  A native machine has no page: its
+links come back by lobbylink's own rebuild.  `scripts/web-priv-sleep.sh` (two browsers): ALPHA's Chrome stopped whole
+for 60 s (every process of it); BRAVO passes ALPHA over and decides, ALPHA's ship goes from its space; ALPHA's page
+wakes, joins again in the same seat while its game flies, the links come back, each sees the other's ship, ALPHA
+decides again; pictures of both screens before, during and after ("SLEEP OK").

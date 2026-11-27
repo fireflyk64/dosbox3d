@@ -1809,8 +1809,12 @@ function onLobbyEvent(ev) {
       if (ev.state === "connected") sayHello(ev.playerId, false);
       renderRoster(); break;
     case "signaling-closed":
-      // (the connection gone, not the room ended: made again unless the game runs with it: resumeRoom)
+      // (the connection gone, not the room ended: made again unless the game runs with it: resumeRoom; an open room's
+      // game is followed onto the new connection (src/wclobby_web.js follow) and its links made again -- ours kicked
+      // as we join again ourselves is said nothing of)
+      if (resuming && (ev.code === "session-superseded" || ev.code === "connection-lost")) break;
       if (ev.code === "connection-lost" && !running) { chatLine("Lost the lobby server's connection: making it again…", "sys"); void resumeRoom(); }
+      else if (rejoinsFlying() && ev.code !== "session-superseded") { chatLine(`Lost the lobby server's connection (${esc(ev.code)}): joining the room again, flying on…`, "sys"); void resumeRoom(); }
       else chatLine(`Lost the lobby server (${esc(ev.code)}): nobody new can join, existing links stay up`, "sys");
       break;
     case "lobby-error":
@@ -1833,33 +1837,56 @@ function onLobbyEvent(ev) {
 //     with it (resumeRoom): the same seat by the tab's token, the room made anew by its host if the server has ended
 //     it, tried again every 20 s.  With a game running the links between the players stay up as before and nobody new
 //     can join: the emulator holds that connection.
-const ROOM_BEAT_MS = 25000;
+//   * An open room's game (Privateer's come and go, comeAndGo) is the exception, since 2026-11-27 (the user: "when they
+//     regain connectivity are they going to rejoin without returning to the menu.  Thats the ideal experience.  So
+//     they can sleep the laptop and then wake it and continue playing"): its page joins the room again while it flies,
+//     when the connection is lost and when the page comes back from a sleep (the clock below: its ticks stopped more
+//     than WOKE_GAP_MS), with the seat's token -- the same seat, or the lowest free one if a newcomer to a full room
+//     took it meanwhile (OPEN_CLAIM_MS of silence) -- and the game takes the new connection (src/wclobby_web.js
+//     follow): its links are made again and it flies on where it was (docs/privateer.md section 40).
+const ROOM_BEAT_MS = 25000, CLOCK_MS = 2000, WOKE_GAP_MS = 10000;
 function roomBeat() {
   const g = lobby.game;
   try { if (g && !g.solo && g.ws && g.ws.readyState === WebSocket.OPEN) g.ws.send('{"type":"ping"}'); } catch (e) { /* its close is told */ }
 }
+const rejoinsFlying = () => running && !!lobby.game && !lobby.game.solo && comeAndGo();
+// (the worker's own time of each tick: a main thread busy a while gets them late, all at once -- not a sleep)
+let clockAt = Date.now(), beatAt = Date.now();
+function clockTick(ev) {
+  const now = ev && typeof ev.data === "number" ? ev.data : Date.now(), gap = now - clockAt;
+  clockAt = now;
+  if (now - beatAt >= ROOM_BEAT_MS) { beatAt = now; roomBeat(); }
+  if (gap > WOKE_GAP_MS) {
+    log(`the page was away ${Math.round(gap / 1000)} s (asleep, or frozen)`);
+    if (rejoinsFlying()) { chatLine(`Back after ${Math.round(gap / 1000)} s away: joining room ${esc(lobby.game.code)} again, flying on…`, "sys"); void resumeRoom(); }
+  }
+}
 try {
-  const clock = new Worker(URL.createObjectURL(new Blob([`setInterval(() => postMessage(0), ${ROOM_BEAT_MS});`], { type: "text/javascript" })));
-  clock.onmessage = roomBeat;
-} catch (e) { setInterval(roomBeat, ROOM_BEAT_MS); }
+  const clock = new Worker(URL.createObjectURL(new Blob([`setInterval(() => postMessage(Date.now()), ${CLOCK_MS});`], { type: "text/javascript" })));
+  clock.onmessage = clockTick;
+} catch (e) { setInterval(clockTick, CLOCK_MS); }
 let resuming = false;
 async function resumeRoom() {
   const old = lobby.game;
-  if (!old || old.solo || resuming || running) return;
+  const flying = rejoinsFlying();
+  if (!old || old.solo || resuming || (running && !flying)) return;
   resuming = true;
   const code = old.code, key = "wclobby-" + code;
+  // (a connection that still looks open -- back from a sleep -- is closed first, without the leave that close() says:
+  // the seat is ours to take again with its token; the server would end our new connection's seat on a late leave)
+  try { if (old.ws && old.ws.readyState <= 1) old.ws.close(4000, "joining again"); } catch (e) { /* gone */ }
   try {
     const game = await P2PGame.connect({
       server: serverUrl(), code,
-      create: old.selfId !== 0 ? undefined : roomOptions(old.maxPlayers),
+      create: old.selfId !== 0 && !flying ? undefined : roomOptions(old.maxPlayers),
       storage: "session", storageKey: key, forceRelay: $("relay").checked,
     });
-    if (lobby.game !== old || running) { try { game.close(); } catch (e) { /* gone */ } return; }     // (left, or flying, meanwhile)
+    if (lobby.game !== old || (running && !rejoinsFlying())) { try { game.close(); } catch (e) { /* gone */ } return; }     // (left, or flying, meanwhile)
     if (lobby.unsubscribe) lobby.unsubscribe();
     try { old.close(); } catch (e) { /* gone */ }
     try { sessionStorage.setItem(key, game.resumeToken); } catch (e) { /* (the old one's close forgot the seat's token: the new one's) */ }
     lobby.game = game;
-    lobby.adopted = false; lobby.backlog = [];
+    lobby.adopted = running; lobby.backlog = [];     // (flying: the game takes the new connection's messages itself)
     lobby.links.clear();
     lobby.unsubscribe = game.onEvent(onLobbyEvent);
     chatLine(`The lobby server's connection is made again: room ${esc(code)} is open${game.selfId !== old.selfId ? `, and you are player ${game.selfId + 1} of it now` : ""}.`, "sys");
@@ -1868,7 +1895,11 @@ async function resumeRoom() {
     // (a room Host offered in the lobby is offered again: the server may have ended the one that was said)
     if (isHost() && hostOffered.has(normalizeCode(code)) && !privateOn() && game.players.some((p) => !p.occupied)) void hall.advertise({ auto: true });
   } catch (e) {
-    if (lobby.game === old && !running && e && (e.code === "room-not-found" || e.code === "room-full")) {
+    if (lobby.game === old && rejoinsFlying()) {
+      // (flying in an open room: tried again until it works -- a full room has a seat again when somebody leaves)
+      chatLine(`Room ${esc(code)} could not be joined again (${esc((e && e.code) || (e && e.message) || "no answer")}): flying on alone, trying again in 20 s.`, "sys");
+      setTimeout(() => { if (lobby.game === old) void resumeRoom(); }, 20000);
+    } else if (lobby.game === old && !running && e && (e.code === "room-not-found" || e.code === "room-full")) {
       chatLine(`Room ${esc(code)} is not open any more (${esc(e.code)}): leave it, and host or join another.`, "sys");
     } else if (lobby.game === old && !running) {
       chatLine(`The lobby server's connection could not be made again (${esc((e && e.code) || (e && e.message) || "no answer")}): trying again in 20 s.`, "sys");
@@ -2904,6 +2935,7 @@ async function start(fromGesture) {
       P2PGame,
       ...(gameAudio ? { SDL2: { audioContext: gameAudio } } : {}),     // (the sound's context, made in the pilot's touch: unlockAudio)
       lobbyGame: () => lobby.game,    // the transport adopts the connection the page is in when the game asks
+      lobbyRejoins: rejoinsFlying,    // (and follows the page onto its new one, an open room's: resumeRoom)
       takeLobbyBacklog: () => { lobby.adopted = true; return lobby.backlog.splice(0); },
       onLobbyClosed: () => { chatLine("The game left the room", "sys"); leaveRoom(); },
       print: log,

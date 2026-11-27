@@ -629,6 +629,9 @@ message PrivOwner {
 }
 message PrivOwners {
     repeated PrivOwner owners = 1;
+    // (an open room) sent by the pilot deciding, or by one that decided until a moment ago (a pilot coming back after a
+    // sleep listens for this table before it decides again: the copies the others hold may be older)
+    optional bool decider = 2;
 }
 // A ship of the game's own (an encounter's) as its owner's machine flies it: its identity (the owner's near pointer),
 // what to make it as (type, appearance, cast: the AI's file), place, attitude, velocity, whether it lives, its armour.
