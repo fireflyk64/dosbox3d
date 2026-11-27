@@ -50,6 +50,7 @@ void perf_idle_wait(double emulatedMs);  // emulated time spent idle, waiting fo
 void perf_position_age(double ms);       // at a frame top: how old the other machine's last positions are
 const PerfSample &perf_last();
 double perf_now_ms();         // the host's clock
+double perf_flight_frames();  // flight frames since the start (counted against the wall clock by the page's tests)
 
 }  // namespace wc
 

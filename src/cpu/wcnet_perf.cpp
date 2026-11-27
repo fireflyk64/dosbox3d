@@ -161,7 +161,12 @@ bool pace_frame(bool wait) {
 // ---------------------------------------------------------------------------
 // Measuring
 
+// Flight frames since the program started (the page's wall-clock meter counts them against its own clock).
+static double g_flightFrames = 0;
+double perf_flight_frames() { return g_flightFrames; }
+
 void perf_frame() {
+    g_flightFrames++;
     static double interval = -1;
     static bool log = false;
     if (interval < 0) {

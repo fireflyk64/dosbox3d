@@ -38,6 +38,7 @@
 #include "wcnet_game.h"
 #include "wcnet_memory.h"
 #include "wcnet_log.h"
+#include "wcnet_perf.h"
 #include "wc_net.h"
 #include "mem.h"
 #include "paging.h"
@@ -114,6 +115,7 @@ bool g_override = false;
 Bit16u g_watchedTm = 0, g_watchedSt = 0;   // the drivers' segments the places are watched in (0: none watched)
 bool g_onlyOurs[0x10000];           // an IP watched for these places alone
 Bit32u g_markerDraws = 0;           // the gunsight and lock cross drawn as line art (the page's test asks)
+double g_costMs = 0;                // wall ms in the drawing (call, compose): the page's meter
 
 void read_env() {
     if (g_allowed >= 0) return;
@@ -1019,6 +1021,7 @@ void set_override(bool want) {
 
 bool wch_on() { return g_override; }
 int wch_marker_draws() { return (int)(g_markerDraws & 0x7FFFFFFF); }
+double wch_cost_ms() { return g_costMs; }
 
 int wch_level() {
     read_env();
@@ -1092,7 +1095,9 @@ bool wch_hook(Bit32u ip) {
         for (int k = 0; k < 3; k++) {
             if (rd8p(at + k) != p.code[k]) return true;      // (not the driver as we know it)
         }
+        const double t0 = perf_now_ms();
         call(p);
+        g_costMs += perf_now_ms() - t0;
         return true;
     }
     return g_onlyOurs[ip];
@@ -1103,7 +1108,9 @@ bool wch_hook(Bit32u ip) {
 void wc_wch_vsync() {
     if (!wc::g_override) return;
     if (!RENDER_StartUpdate()) return;
+    const double t0 = wc::perf_now_ms();
     wc::compose();
     for (int y = 0; y < wc::HH; y++) RENDER_DrawLine(wc::g_out + y * wc::HW);
     RENDER_EndUpdate(false);
+    wc::g_costMs += wc::perf_now_ms() - t0;
 }

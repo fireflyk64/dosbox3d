@@ -8,6 +8,7 @@
 #   NATIVE_HOST=1 scripts/web-smoke.sh [seconds] [mission] [series]
 #   scripts/web-smoke.sh pad      # a controller's stick in a Hornet and a Rapier (scripts/web-pad.mjs)
 #   scripts/web-smoke.sh wc1hires # WC1 at 640 x 400: the box, the levels and ` on the page (scripts/web-wc1-hires.mjs)
+#   scripts/web-smoke.sh wc1hiresperf # WC1 at 640 x 400 in a room of two at half speed: frames per wall second against the game's own (scripts/web-wc1-hires-perf.mjs)
 #   scripts/web-smoke.sh wc1keys  # WC1's arrows let go with Space held, and the Controller list's Original keyboard (scripts/web-wc1-keys.mjs)
 #   scripts/web-smoke.sh voice    # voice between two pages (scripts/web-voice.mjs)
 #   scripts/web-smoke.sh hall     # the public lobby and room codes (scripts/web-hall.mjs; scripts/web-chatfilter-test.mjs first)
@@ -67,6 +68,10 @@ if [ "${1:-}" = pad ]; then
 fi
 if [ "${1:-}" = wc1hires ]; then
     PLAYWRIGHT_DIR="$PW" OUT="$OUT" node "$ROOT/scripts/web-wc1-hires.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" 2>&1 | tee "$OUT/wc1hires.log"
+    exit "${PIPESTATUS[0]}"
+fi
+if [ "${1:-}" = wc1hiresperf ]; then
+    PLAYWRIGHT_DIR="$PW" OUT="$OUT" node "$ROOT/scripts/web-wc1-hires-perf.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" 2>&1 | tee "$OUT/wc1hiresperf.log"
     exit "${PIPESTATUS[0]}"
 fi
 if [ "${1:-}" = wc1keys ]; then

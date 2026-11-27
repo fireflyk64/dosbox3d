@@ -2207,8 +2207,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_emulated_ms() {
 // The flight loop's performance over the last interval (wcnet_perf.h):
 // 0 fps, 1 emulator speed against real time, 2 ms per frame waiting for the
 // network, 3 cycles, 4 the longest frame in ms, 5 the share of the time the
-// game was working; -1 before the first interval.
+// game was working; -1 before the first interval.  Running totals, at any
+// time: 6 flight frames since the start, 7 wall ms spent drawing Wing
+// Commander 1 at 640 x 400 (wcnet_wch.cpp).
 extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_perf(int what) {
+    if (what == 6) return wc::perf_flight_frames();
+    if (what == 7) return wc::wch_cost_ms();
     const wc::PerfSample &p = wc::perf_last();
     if (!p.valid) {
         return -1;
