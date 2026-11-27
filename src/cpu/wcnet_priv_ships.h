@@ -22,13 +22,15 @@ struct PrivAddedShip {
 
 // The ship the player owns, if an added one (0: one of the game's four).
 const PrivAddedShip *priv_added_ship();
-// At the player's record's maker (stub372:003E).
-void priv_ships_record_make();
+// At the IFF reader's table seek (seg214:03DF).
+void priv_ships_table_seek();
 
 // A file of the game's TRE by its full name there.
 typedef bool (*PrivTreFile)(const std::string &name, std::vector<Bit8u> *out);
 // The added ship's cockpit made from the game's own (wcnet_priv_cockpit.cpp): its IFF and its PAK.
 bool priv_ship_cockpit(const PrivAddedShip &ship, PrivTreFile file, std::vector<Bit8u> *iff, std::vector<Bit8u> *pak);
+// Its appearance given what a player's ship needs (the weapons display's picture); false: good as it is.
+bool priv_ship_appearance(const PrivAddedShip &ship, PrivTreFile file, std::vector<Bit8u> *iff);
 
 }
 

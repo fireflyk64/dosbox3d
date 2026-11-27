@@ -8,11 +8,11 @@
  *  size, the dealer's screens).  An added ship is therefore flown ON one of the four (its `hull`: the Stiletto on the
  *  Centurion), and what makes it itself is data the game reads by NAME, which the layer adds to:
  *
- *  - the player's record names the ship's appearance (+0x75: "FIGHTER"); the record's maker (ovr372:0000, through
- *    its thunk stub372:003E) is given the added ship's ("STILETTO": the ship as every view and every other player
- *    sees it);
- *  - OPTIONS\APPRCOCK.IFF names an appearance's cockpit, MIDGAMES\SHIP2CHR.IFF its ship in the landing and takeoff
- *    scenes: each gets a row for the added ship;
+ *  - OPTIONS\APPRCOCK.IFF has a row per hull: the ship's appearance ("FIGHTER") and its cockpit ("FIGHTCK").  It gets
+ *    a row per added ship ("STILETTO", "STILCK"), and the flight's set-up, which seeks the hull's row (ovr262:07AF,
+ *    through the IFF reader's seg214:03DF), is given the added ship's row.  The appearance is the ship as every
+ *    view and every other player sees it, and by SKELETON.IFF its gun mounts and flight numbers too;
+ *  - MIDGAMES\SHIP2CHR.IFF names an appearance's ship in the landing and takeoff scenes: a row for the added ship;
  *  - the cockpit itself (COCKPITS\<name>.IFF and .PAK) is a new file, made here from the game's own cockpits.
  *
  *  The files are added to PRIV.TRE as the game reads it, not on the disk: the game finds a file by a binary search of
@@ -49,6 +49,7 @@ const PrivAddedShip kShips[] = {
 const int kShipCount = (int)(sizeof(kShips) / sizeof(kShips[0]));
 
 int g_ship = 0;             // the added ship the player owns (its id; 0: one of the game's four)
+int g_gameRows = 4;         // APPRCOCK.IFF's rows of the game's own hulls: the added ships' follow
 int g_shipEnv = -1;         // WCPRIVSHIP=<name>: the player's ship is that one whatever the game says (a rig's)
 
 const PrivAddedShip *ship_by_id(int id) {
@@ -78,6 +79,7 @@ bool apprcock_with_rows(const std::vector<Bit8u> &in, std::vector<Bit8u> *out) {
     }
     for (int i = 0; i < kShipCount; i++) { put_name8(body, kShips[i].appearance); put_name8(body, kShips[i].cockpit); }
     const Bit32u n = (Bit32u)(body.size() / 16);
+    g_gameRows = (int)rows;
     out->clear();
     out->insert(out->end(), (const Bit8u *)"FORM", (const Bit8u *)"FORM" + 4);
     put32be(*out, 4 + 8 + n * 4 + n * 28);
@@ -210,6 +212,7 @@ void tre_build() {
         }
         tre_add(tre_name("COCKPITS", (std::string(kShips[i].cockpit) + ".IFF").c_str()), out);
         tre_add(tre_name("COCKPITS", (std::string(kShips[i].cockpit) + ".PAK").c_str()), pak);
+        if (priv_ship_appearance(kShips[i], real_file, &out)) tre_add(tre_name("APPEARNC", (std::string(kShips[i].appearance) + ".IFF").c_str()), out);
     }
 
     // the directory: the real entries (a replaced file's pointed at ours), the new ones, sorted by name
@@ -325,22 +328,25 @@ const PrivAddedShip *priv_added_ship() {
     return ship_by_id(g_shipEnv ? g_shipEnv : g_ship);
 }
 
-// At stub372:003E, the player's record about to be made: (this, place x y z, appearance far, type far).  The record
-// keeps the names' first 8 letters (+0x75, +0x7E).  An added ship's appearance: written where the maker will copy it
-// to, and the argument pointed there (a copy onto itself).
-void priv_ships_record_make() {
+// At seg214:03DF, the IFF reader's (reader near, index dword): a table's row sought.  The flight's set-up
+// (ovr262:07AF) reads the player's ship's appearance and cockpit from APPRCOCK.IFF's row of the HULL (the call that
+// returns to ovr262:0941, told by the bytes there: add sp,6 / push 1 / push 'ASHP').  For an added ship the row is
+// its own: the appearance (the ship in space, its mounts and flight numbers by SKELETON.IFF) and the cockpit follow.
+void priv_ships_table_seek() {
+    const PhysPt stack = SegPhys(ss) + reg_sp;
+    if (mem_readw(stack) != 0x0941) return;
+    static const Bit8u after[] = { 0x83, 0xC4, 0x06, 0x6A, 0x01, 0x66, 0x68, 'A', 'S', 'H', 'P' };
+    const PhysPt ret = ((PhysPt)mem_readw(stack + 2) << 4) + 0x0941;
+    for (size_t i = 0; i < sizeof(after); i++) if (mem_readb(ret + i) != after[i]) return;
     const PrivAddedShip *s = priv_added_ship();
     if (!s || !g_tre.on) return;
-    const PhysPt stack = SegPhys(ss) + reg_sp;
-    const Bit16u rec = mem_readw(stack + 4);
-    char was[9] = {0};
-    const RealPt name = mem_readd(stack + 0x12);
-    for (int i = 0; i < 8; i++) was[i] = (char)mem_readb(Real2Phys(name) + i);
-    const PhysPt to = SegPhys(ds) + (Bit16u)(rec + 0x75);
-    for (int i = 0; i < 9; i++) mem_writeb(to + i, i < (int)strlen(s->appearance) ? (Bit8u)s->appearance[i] : 0);
-    mem_writew(stack + 0x12, (Bit16u)(rec + 0x75));
-    mem_writew(stack + 0x14, SegValue(ds));
-    wclog(1, "Privateer: added ships: the player's record made as %s (the game's: %s)", s->appearance, was);
+    const Bit32u row = mem_readd(stack + 6);
+    if ((int)row != s->hull) {
+        wclog(1, "Privateer: added ships: the flight asks for hull %u's cockpit, not the %s's hull %d: left alone", row, s->name, s->hull);
+        return;
+    }
+    mem_writed(stack + 6, (Bit32u)(g_gameRows + (int)(s - kShips)));
+    wclog(1, "Privateer: added ships: the flight's ship is the %s (APPRCOCK.IFF's row %d, not the hull's %u)", s->name, g_gameRows + (int)(s - kShips), row);
 }
 
 }

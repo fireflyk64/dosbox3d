@@ -70,7 +70,8 @@ def shape_decode(v, o=0):
     return (x2, x1, y1, y2), pts
 
 def shape_encode(ext, pts):
-    """Rows of raw pixels (the unpacked kind: every reader takes it)."""
+    """Rows of pixels, each stretch of a row packed: repeats of 3 or more as (count * 2 + 1, colour), the rest as
+    (count * 2, the colours)."""
     out = bytearray(struct.pack('<4h', *ext))
     rows = {}
     for (x, y), c in pts.items(): rows.setdefault(y, {})[x] = c
@@ -80,9 +81,25 @@ def shape_encode(ext, pts):
             j = i
             while j + 1 < len(xs) and xs[j + 1] == xs[j] + 1: j += 1
             run = bytes(rows[y][x] for x in xs[i:j + 1])
-            out += struct.pack('<Hhh', len(run) * 2, xs[i], y) + run
+            out += struct.pack('<Hhh', len(run) * 2 + 1, xs[i], y) + pack_run(run)
             i = j + 1
     out += b'\0\0'
+    return bytes(out)
+
+def pack_run(run):
+    out = bytearray(); lit = bytearray(); k = 0
+    def flush():
+        nonlocal lit
+        while lit:
+            part = lit[:127]; out.append(len(part) * 2); out.extend(part); lit = lit[127:]
+    while k < len(run):
+        n = 1
+        while k + n < len(run) and run[k + n] == run[k] and n < 127: n += 1
+        if n >= 3:
+            flush(); out.append(n * 2 + 1); out.append(run[k])
+        else: lit.extend(run[k:k + n])
+        k += n
+    flush()
     return bytes(out)
 
 def pack_shapes(v):
