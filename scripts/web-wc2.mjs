@@ -45,6 +45,8 @@ async function open(name, callsign, before) {
   page.on("pageerror", (e) => console.log(`[${name}] PAGE ERROR: ${e.message}`));
   const u = new URL(pageUrl);
   for (const [k, v] of Object.entries({ room, server: lobbyUrl, callsign, firstname: "Chris", "env.WCNET_LOG": "2" })) u.searchParams.set(k, v);
+  // (KEYSCRIPT: a key script for both pages, from the first frame in space -- PERF's fight: "2:a,20:!tail=foe:300,...")
+  if (process.env.KEYSCRIPT) u.searchParams.set("env.WCNET_KEYSCRIPT", process.env.KEYSCRIPT);
   // (HIRES=1: the High resolution (2x) box ticked, as remembered -- src/cpu/wcnet_wch.cpp)
   if (process.env.HIRES === "1") await page.addInitScript(() => { try { localStorage.setItem("wc:wcHires", "1"); } catch (e) { /* fresh */ } });
   await page.goto(u.toString());
@@ -107,6 +109,58 @@ if (process.env.HIRES === "1") {
     check(`${name}: the box shown and ticked, WC2 at 640 x 400 (level 2)`, !(await page.$eval("#wcHiresLabel", (el) => el.hidden)) && lv[0] === 2 && canvas[0] === 640 && canvas[1] === 400, [lv[0], canvas]);
     check(`${name}: WC2's gunsight drawn as line art`, m2 > lv[1], [lv[1], m2]);
     await shot(page, `wc2-hires-${name}`);
+  }
+  if (process.env.PERF === "1") {
+    // (PERF=1: the speed at 640 x 400 on slow browsers, as scripts/web-wc1-hires-perf.mjs measures WC1's: both pages
+    //  held to half speed now (Chrome's CPU throttling, THROTTLE), the picture at 640 x 400 (level 2) and the game's
+    //  own (level 0) by turns, 6 s each, twelve turns; the frames each page's game makes in each second of the wall
+    //  clock counted from inside the page; a second at 640 x 400 more than 2 frames below the game's own fewest fails)
+    const pages = { host, wing };
+    await sleep(Number(process.env.PERFDELAY || 0));   // (the fight's start: the autopilot's fly-by)
+    for (const page of Object.values(pages)) {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.THROTTLE || 2) });
+      await page.evaluate(() => {
+        const M = window.DOSBox;
+        window.__wall = [];
+        setInterval(() => window.__wall.push([performance.now(), M._wc_web_perf(6), M._wc_web_perf(7), M._wc_web_emulated_ms(), M._wc_web_wc_hires(-1)]), 100);
+      });
+    }
+    await sleep(3);
+    const windows = { 2: [], 0: [] };
+    for (let b = 0; b < 12; b++) {
+      const level = b % 2 ? 0 : 2;
+      await Promise.all(Object.values(pages).map((p) => p.evaluate((l) => window.DOSBox._wc_web_wc_hires(l), level)));
+      windows[level].push(await Promise.all(Object.values(pages).map((p) => p.evaluate(() => performance.now()))));
+      await sleep(6.3);
+      if (b < 2) for (const [name, page] of Object.entries(pages)) await shot(page, `wc2-perf-${name}-${level}`);
+    }
+    await Promise.all(Object.values(pages).map((p) => p.evaluate(() => window.DOSBox._wc_web_wc_hires(2))));
+    let pi = 0;
+    for (const [name, page] of Object.entries(pages)) {
+      const s = await page.evaluate(() => window.__wall);
+      const at = (t) => s.reduce((best, r) => Math.abs(r[0] - t) < Math.abs(best[0] - t) ? r : best, s[0]);
+      const per = {};
+      for (const level of [2, 0]) {
+        const fps = [], cost = [], speed = [];
+        for (const starts of windows[level]) {
+          const from = starts[pi] + 500;
+          for (let k = 0; k < 5; k++) {
+            const a = at(from + k * 1000), b2 = at(from + (k + 1) * 1000), wall = b2[0] - a[0] || 1;
+            fps.push(Math.round((b2[1] - a[1]) * 1000 / wall));
+            cost.push((b2[2] - a[2]) * 1000 / wall);
+            speed.push((b2[3] - a[3]) / wall);
+          }
+        }
+        per[level] = { fps, min: Math.min(...fps), mean: fps.reduce((x, y) => x + y, 0) / fps.length, cost: cost.reduce((x, y) => x + y, 0) / cost.length, speed: Math.min(...speed) };
+        console.log(`[${name}] WC2 ${level ? "640 x 400" : "the game's own"}, ${fps.length} wall seconds at 1/${process.env.THROTTLE || 2} speed: fewest frames in one ${per[level].min}, ` +
+                    `mean ${per[level].mean.toFixed(1)}, the emulator at ${(100 * per[level].speed).toFixed(0)}% of real time at worst, the drawing ${per[level].cost.toFixed(1)} ms a second; each second: ${fps.join(" ")}`);
+      }
+      check(`${name}: WC2 at 640 x 400 as fast as the game's own on a half-speed browser`,
+            per[0].mean >= 10 && per[2].min >= per[0].min - 2 && per[2].mean >= 0.95 * per[0].mean,
+            [per[2].min, per[2].mean.toFixed(1), per[0].min, per[0].mean.toFixed(1)]);
+      pi++;
+    }
   }
 }
 check("the game has the page's first name and callsign", has("host", `WCFIRSTNAME: the game's "FIRSTNAME" is now "Chris"`) && has("wing", `WCCALLSIGN: the game's "CALLSIGN" is now "WINGMAN"`),
