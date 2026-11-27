@@ -1134,11 +1134,10 @@ bool shapes_from(Bit16u where, Bit16u off, Bit16u seg);
 // ---- the VDUs' ship pictures at the top level: wireframes -----------------------------------------------------------
 //
 // The VDUs' pictures (the weapons display's own ship and its missiles, the target display's ship and its shields) are
-// SHAPEs on the VDUs' records on the screen (leftVdu, rightVdu): line art of one game pixel.  At the top level the
-// shields' arcs (shieldShapes) are drawn as Privateer's target display's are; the ships wait for the user's approval of
-// a sheet of every one (2026-11-27: "Shield lines are good but wait on sprites wireframe until [I] approve the contact
-// sheet of both horizontal and vertical") and stay the game's pixels, unless WCHIRESWIRE=all (the sheet's rig) -- the
-// way the picture is drawn (wcnet_wire.cpp: lines one fine pixel wide between the pixels' middles, rings
+// SHAPEs on the VDUs' records on the screen (leftVdu, rightVdu, and copies of them with narrower clips): line art of
+// one game pixel.  At the top level they are drawn as Privateer's target display's are (the user, 2026-11-27, of the
+// sheets of every ship, scripts/wchsheet/: "Shield lines are good", then "All uprez are acceptable") -- the way the
+// picture is drawn (wcnet_wire.cpp: lines one fine pixel wide between the pixels' middles, rings
 // round, solid parts the game's blocks, drawn exactly symmetric where the art is).  The shapes drawn on one VDU one
 // after another are gathered into one picture of the VDU (a ship comes in parts, the missiles over it), made when
 // anything else is drawn next, and kept as a cell of the screen as the letters are: shown while every pixel of it
@@ -1146,17 +1145,14 @@ bool shapes_from(Bit16u where, Bit16u off, Bit16u seg);
 // kArtColours colours, or filling more than kArtFill per cent of its box, is no line art (the comm display's face):
 // left the game's.
 struct Art { Bit16u rec; int x, y, w, h; std::vector<Bit16s> lit; std::vector<Bit8u> under; std::shared_ptr<const WireFrame> wf; bool seen; double at; };
-enum { kMaxArts = 32, kArtMax = 96, kArtColours = 12, kArtFill = 45, kWireCache = 16 };
+// (the wireframes kept: one per picture seen -- a target's sections and shields each change it -- so that a picture
+//  is made once and then copied, the user: "Make sure to cache the drawings so it doesn't slow down framerate")
+enum { kMaxArts = 32, kArtMax = 96, kArtColours = 12, kArtFill = 45, kWireCache = 128 };
 std::vector<Art> g_arts;
 Bit32u g_artsSerial = 0;
 struct ArtGather { bool pending; Bit16u rec; int sx, sy, w, h; std::vector<Bit16s> px; std::vector<Bit8u> under; };
 ArtGather g_gather = { false, 0, 0, 0, 0, 0, std::vector<Bit16s>(), std::vector<Bit8u>() };
 
-bool wire_all() {                   // (WCHIRESWIRE=all: every VDU picture as a wireframe, for the sheet's rig)
-    static int on = -1;
-    if (on < 0) { const char *e = getenv("WCHIRESWIRE"); on = e && !strcmp(e, "all"); }
-    return on == 1;
-}
 
 struct WireCached { Bit32u hash; int w, h; std::shared_ptr<const WireFrame> wf; };
 WireCached g_wires[kWireCache];
@@ -1175,7 +1171,7 @@ std::shared_ptr<const WireFrame> wire_of(int w, int h, const std::vector<Bit16s>
     c.w = w;
     c.h = h;
     WireFrame *made = new WireFrame();
-    wire_make(w, h, px, std::vector<char>(), *made);
+    wire_picture(w, h, px, *made);
     c.wf.reset(made);
     return c.wf;
 }
@@ -1246,23 +1242,38 @@ void art_flush() {
     g_artsSerial++;
 }
 
-bool vdu_record(Bit16u rec) {
-    return (ds::known(ds::leftVdu) && rec == ds::leftVdu) || (ds::known(ds::rightVdu) && rec == ds::rightVdu);
+// The VDU a record draws on: one of the VDUs' records, or a copy of one with a narrower clip (the target display draws
+// the hull a section at a time so, each section in its state's colours: WC1 ovr137:025D, records on the stack); 0 none.
+Bit16u vdu_of(Bit16u rec, const Target &t, Target &vdu) {
+    const Bit16u vdus[2] = { ds::known(ds::leftVdu) ? ds::leftVdu : (Bit16u)0, ds::known(ds::rightVdu) ? ds::rightVdu : (Bit16u)0 };
+    for (int i = 0; i < 2; i++) {
+        if (vdus[i] && rec == vdus[i]) { vdu = t; return vdus[i]; }
+    }
+    for (int i = 0; i < 2; i++) {
+        Target v;
+        if (!vdus[i] || !read_target(vdus[i], v)) continue;
+        if (v.seg == t.seg && v.rowTable == t.rowTable && t.x0 >= v.x0 && t.x1 <= v.x1 && t.y0 >= v.y0 && t.y1 <= v.y1) {
+            vdu = v;
+            return vdus[i];
+        }
+    }
+    return 0;
 }
 
-// A SHAPE on a VDU's record: gathered into the VDU's picture (true), or the record not one the screen holds row under
-// row (false).
-bool art_shape(const Target &t, Bit16u rec, const Shape &s, int x, int y, bool line) {
+// A SHAPE on a VDU (vdu: its record's; t: the drawing's own clip): gathered into the VDU's picture (true), or the VDU
+// not one the screen holds row under row (false).  A picture the VDU's size (a comm display's face, its static) is
+// no ship: left the game's, the gathering going on.
+bool art_shape(const Target &vdu, const Target &t, Bit16u rec, const Shape &s, int x, int y) {
     ArtGather &g = g_gather;
-    if (!line && !wire_all()) return true;          // (the game's own pixels: not gathered, the gathering goes on)
+    if (s.w >= vdu.x1 - vdu.x0 - 1 && s.h >= vdu.y1 - vdu.y0 - 1) return true;
     if (g.pending && g.rec != rec) art_flush();
     if (!g.pending) {
         // the VDU's clip on the screen (the record's rows: the screen's, one under the other)
-        const int w = t.x1 - t.x0 + 1, h = t.y1 - t.y0 + 1;
-        const int off = dsw((Bit16u)(t.rowTable + 2 * t.y0)) + t.x0;
+        const int w = vdu.x1 - vdu.x0 + 1, h = vdu.y1 - vdu.y0 + 1;
+        const int off = dsw((Bit16u)(vdu.rowTable + 2 * vdu.y0)) + vdu.x0;
         if (w <= 0 || h <= 0 || w > 160 || h > 160 || off < 0 || off % LW + w > LW || off / LW + h > LH) return false;
         for (int v = 1; v < h; v++) {
-            if (dsw((Bit16u)(t.rowTable + 2 * (t.y0 + v))) + t.x0 != off + v * LW) return false;
+            if (dsw((Bit16u)(vdu.rowTable + 2 * (vdu.y0 + v))) + vdu.x0 != off + v * LW) return false;
         }
         g.pending = true;
         g.rec = rec;
@@ -1290,11 +1301,14 @@ bool art_shape(const Target &t, Bit16u rec, const Shape &s, int x, int y, bool l
             }
         }
     }
-    const int X = x - s.left - t.x0, Y = y - s.top - t.y0;     // (the shape's corner in the VDU's clip)
+    const int X = x - s.left - vdu.x0, Y = y - s.top - vdu.y0;  // (the shape's corner in the VDU's clip; drawn in its own)
     for (int v = 0; v < s.h; v++) {
         for (int u = 0; u < s.w; u++) {
             const Bit16s c = s.px[v * s.w + u];
-            if (c >= 0 && X + u >= 0 && X + u < g.w && Y + v >= 0 && Y + v < g.h) g.px[(Y + v) * g.w + X + u] = c;
+            const int sx = x - s.left + u, sy = y - s.top + v;
+            if (c >= 0 && X + u >= 0 && X + u < g.w && Y + v >= 0 && Y + v < g.h && sx >= t.x0 && sx <= t.x1 && sy >= t.y0 && sy <= t.y1) {
+                g.px[(Y + v) * g.w + X + u] = c;
+            }
         }
     }
     return true;
@@ -1524,7 +1538,9 @@ void call(const Place &p) {
         g_frameOps.push_back(b);
     }
     if (!read_target((Bit16u)arg16(0), t)) return;
-    if (p.op == OP_SHAPE && t.seg == kScreenSeg && vdu_record((Bit16u)arg16(0))) {
+    Target vdu;
+    const Bit16u onVdu = p.op == OP_SHAPE && t.seg == kScreenSeg ? vdu_of((Bit16u)arg16(0), t, vdu) : 0;
+    if (onVdu) {
         const Shape *s = shape_of((Bit16u)arg16(3), (Bit16u)arg16(4), arg16(5));
         {   // (dev: WCHIRESPARTS=1 writes each new part drawn on a VDU, its shapes and index)
             static int on = -1, n = 0;
@@ -1547,13 +1563,23 @@ void call(const Place &p) {
                     }
                     fclose(f);
                 }
+                if (!n) {                                   // (and the palette, 256 x RGB 0..63, for the sheet's rig)
+                    snprintf(path, sizeof(path), "%s/palette.bin", dir && dir[0] ? dir : ".");
+                    FILE *pf = fopen(path, "wb");
+                    if (pf) {
+                        for (int c = 0; c < 256; c++) {
+                            const Bit8u rgb[3] = { vga.dac.rgb[c].red, vga.dac.rgb[c].green, vga.dac.rgb[c].blue };
+                            fwrite(rgb, 1, 3, pf);
+                        }
+                        fclose(pf);
+                    }
+                }
                 wclog(1, "VDU part %d: on %04X, shapes %04X:%04X #%d at %d,%d, %dx%d anchor %d,%d", n, (Bit16u)arg16(0), (Bit16u)arg16(4),
                       (Bit16u)arg16(3), arg16(5), arg16(1), arg16(2), s->w, s->h, s->left, s->top);
                 n++;
             }
         }
-        const bool shields = ds::known(ds::shieldShapes) && shapes_from(ds::shieldShapes, (Bit16u)arg16(3), (Bit16u)arg16(4));
-        if (s && art_shape(t, (Bit16u)arg16(0), *s, arg16(1), arg16(2), shields)) return;
+        if (s && art_shape(vdu, t, onVdu, *s, arg16(1), arg16(2))) return;
     }
     if (g_gather.pending) art_flush();
     // (a cockpit drawn -- its picture's corner at the screen's: not the radar's or the gauges' marks, every frame --

@@ -46,11 +46,10 @@ const marks0 = await page.evaluate(() => window.DOSBox._wc_web_wc_hires(-2));
 await sleep(1500);
 const marks1 = await page.evaluate(() => window.DOSBox._wc_web_wc_hires(-2));
 check("the gunsight drawn as line art", marks1 > marks0, [marks0, marks1]);
-// (the cockpit's letters and the KPS / SET labels in the user's font; the VDUs' ships stay the game's until the user
-//  approves the sheet: only a target's shield arcs are drawn as lines, and Enyo 1 starts with none)
+// (the cockpit's letters and the KPS / SET labels in the user's font, the weapons display's ship as a wireframe)
 const finer = () => page.evaluate(() => [window.DOSBox._wc_web_wc_hires(-3), window.DOSBox._wc_web_wc_hires(-5), window.DOSBox._wc_web_wc_hires(-4)]);
 const fine2 = await finer();
-check("the cockpit's letters and the KPS / SET labels drawn finer, no VDU ship", fine2[0] > 20 && fine2[1] === 2 && fine2[2] === 0, fine2);
+check("the cockpit's letters, the KPS / SET labels and the VDU's ship drawn finer", fine2[0] > 20 && fine2[1] === 2 && fine2[2] >= 1, fine2);
 check("the canvas is 640 x 400", JSON.stringify(await canvas()) === "[640,400]", await canvas());
 await shot("wc1-hires-all.png");
 await page.keyboard.press("Backquote");
@@ -68,7 +67,7 @@ await page.keyboard.press("Backquote");
 await sleep(1500);
 check("` again: all (2)", (await level()) === 2, await level());
 const fineBack = await finer();
-check("... the finer letters and labels back with it", fineBack[0] > 20 && fineBack[1] === 2, fineBack);
+check("... the finer letters, labels and VDU ship back with it", fineBack[0] > 20 && fineBack[1] === 2 && fineBack[2] >= 1, fineBack);
 // (in flight the flight panel covers the options: the box changed as a click would change it)
 const tick = (on) => page.evaluate((on) => { const b = document.getElementById("wcHires"); b.checked = on; b.dispatchEvent(new Event("change")); }, on);
 await tick(false);

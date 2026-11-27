@@ -506,4 +506,90 @@ void wire_make(int w, int h, const std::vector<Bit16s> &px, const std::vector<ch
 }
 
 
+// ---- the user's notes on single pictures --------------------------------------------------------------------------
+//
+// A place in a picture, known by its pixels (`#` and `x` of one colour, the sample's, `.` none of it), drawn by hand:
+// its `x` pixels left out of the line art and quarter-ellipses drawn instead (fine pixels from the pattern's corner:
+// x = cx + sx a sin t, y = cy + sy b cos t, t from 0 to t1 degrees), in the sample's colour (a section's damage shows).
+// The user, 2026-11-27, of WC1's Hornet on the target display: "Hornet sideways nose wedge is a bit too far to the
+// right. The <> should be more like a (>": the nose's back edge (its top pixels 29-30 of row 15, then 28 of rows 16
+// and 17 into the block at 26-27 of rows 18-19, and their mirror images below) rounded: the part of a ( about the
+// nose's middle row (an ellipse 4 fine pixels wide and 10 high to its middle) from the top's left pixel's middle to
+// where it meets the block, and its mirror image below.
+struct WireArc { double cx, cy, a, b; int sx, sy; double t1; };
+struct WireFix { int w, h; const char *rows[16]; int sampleU, sampleV; WireArc arcs[4]; int arcCount; };
+const WireFix kWireFixes[] = {
+    { 13, 15, { "#............",               // WC1's Hornet, SHIPTYPE.V00's target picture: its hull's (22, 13) on
+                ".#...........",               // (the systems' picture over its middle row: not the hull's colour)
+                "#.#....##....",
+                "#..#..x..#...",
+                ".#..#.x...#..",
+                "##..##.....#.",
+                ".#######....#",
+                "............#",
+                ".#######....#",
+                "##..##.....#.",
+                ".#..#.x...#..",
+                "#..#..x..#...",
+                "#.#....##....",
+                ".#...........",
+                "#............" },
+      7, 2, { { 15, 15, 4, 10, -1, -1, 66 }, { 15, 15, 4, 10, -1, 1, 66 } }, 2 },
+};
+enum { kWireFixCount = sizeof(kWireFixes) / sizeof(kWireFixes[0]) };
+
+void wire_picture(int w, int h, const std::vector<Bit16s> &px, WireFrame &out) {
+    std::vector<Bit16s> art(px);
+    struct Found { int fix, u, v, colour; };
+    std::vector<Found> found;
+    for (int f = 0; f < kWireFixCount; f++) {
+        const WireFix &x = kWireFixes[f];
+        for (int pv = 0; pv + x.h <= h; pv++) {
+            for (int pu = 0; pu + x.w <= w; pu++) {
+                const int colour = px[(pv + x.sampleV) * w + pu + x.sampleU];
+                if (colour < 0) continue;
+                bool ok = true;
+                for (int v = 0; v < x.h && ok; v++) {
+                    for (int u = 0; u < x.w && ok; u++) {
+                        const bool lit = x.rows[v][u] != '.';
+                        ok = (px[(pv + v) * w + pu + u] == colour) == lit;
+                    }
+                }
+                if (!ok) continue;
+                for (int v = 0; v < x.h; v++) {
+                    for (int u = 0; u < x.w; u++) {
+                        if (x.rows[v][u] == 'x') art[(pv + v) * w + pu + u] = (Bit16s)-1;
+                    }
+                }
+                Found fd = { f, pu, pv, colour };
+                found.push_back(fd);
+            }
+        }
+    }
+    wire_make(w, h, art, std::vector<char>(), out);
+    const int W = 2 * w, H = 2 * h;
+    for (size_t i = 0; i < found.size(); i++) {
+        const WireFix &x = kWireFixes[found[i].fix];
+        for (int k = 0; k < x.arcCount; k++) {
+            const WireArc &a = x.arcs[k];
+            int lx = 0, ly = 0;
+            for (int n = 0; n <= 32; n++) {
+                const double t = n * a.t1 * 3.141592653589793 / 180 / 32;
+                const int X = (int)floor(2 * found[i].u + a.cx + a.sx * a.a * sin(t) + 0.5);
+                const int Y = (int)floor(2 * found[i].v + a.cy + a.sy * a.b * cos(t) + 0.5);
+                // (each step to the next point, one fine pixel at a time: the curve 8-connected)
+                int px0 = n ? lx : X, py0 = n ? ly : Y;
+                for (int guard = 0; guard < 64; guard++) {
+                    if (px0 >= 0 && py0 >= 0 && px0 < W && py0 < H) out.fine[py0 * W + px0] = (Bit16s)found[i].colour;
+                    if (px0 == X && py0 == Y) break;
+                    px0 += X > px0 ? 1 : X < px0 ? -1 : 0;
+                    py0 += Y > py0 ? 1 : Y < py0 ? -1 : 0;
+                }
+                lx = X;
+                ly = Y;
+            }
+        }
+    }
+}
+
 }  // namespace wc

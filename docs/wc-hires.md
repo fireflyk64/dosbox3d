@@ -52,14 +52,19 @@ other labels are the cockpit's picture, not text.
 
 ## The VDUs' pictures (level 2)
 
-The target display's shield arcs (SHAPEs from `shieldShapes`, WC1 ovr137:019C, WC2 ovr110:01CC: index 2n the left arc
-at strength n, 2n + 1 the right) are drawn by Privateer's wireframe maker (`wcnet_wire.cpp`, a copy of
-`wcnet_priv_hires.cpp`'s `wire_make` without Privateer's hand-made parts): one fine pixel wide, rings fitted.  Kept as
-a cell of the screen like the letters (checked by its pixels).  **The ships stay the game's pixels** until the user
-approves a sheet of every one (2026-11-27: "Shield lines are good but wait on sprites wireframe until [I] approve the
-contact sheet of both horizontal and vertical"); `WCHIRESWIRE=all` draws every VDU picture as a wireframe for that
-sheet's rig (a picture of more than 12 colours or filling more than 45% of its box, a comm face, stays the game's
-even then).  `WCHIRESPARTS=1` writes each new VDU part (its shapes and index) as a picture.
+The VDUs' pictures (the weapons display's own ship and its missiles; the target display's hull, drawn a section at a
+time through copies of the VDU's record with narrower clips, its systems and its shield arcs) are SHAPEs on the VDUs;
+those drawn on one VDU one after another are gathered into one picture and drawn by Privateer's wireframe maker
+(`wcnet_wire.cpp`: a copy of `wcnet_priv_hires.cpp`'s `wire_make` without Privateer's hand-made parts) plus the user's
+notes on single pictures (`kWireFixes`: WC1's Hornet's nose, "The <> should be more like a (>").  A picture the VDU's
+size (a comm face, the static) stays the game's, as does one of more than 12 colours or filling more than 45% of its
+box.  Each picture's wireframe is made once and kept (128 of them) and then copied (the user: "Make sure to cache the
+drawings so it doesn't slow down framerate").  Kept as a cell of the screen like the letters (checked by its pixels).
+
+The user approved the sheets of every ship (2026-11-27, "All uprez are acceptable"): `scripts/wchsheet/sheet.py` draws
+them from the game's files with the same code (WC1's target display, 22 ships; its weapons display, 6; WC2's target
+display, 29; WC2 has no own-ship picture found).  After a change, compare the new sheets with the approved ones pixel
+for pixel (the Hornet's nose is the one change since).  `WCHIRESPARTS=1` writes each new VDU part and the palette.
 
 ## The speed readouts' labels (level 2)
 
