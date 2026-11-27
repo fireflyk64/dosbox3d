@@ -2108,6 +2108,9 @@ bool priv_check_hooks(Bit32u ip) {
         priv_ships_table_seek();
         return true;
     }
+    if (priv_ships_hook((Bit16u)ip, codeSeg, g_privLoadSeg)) {
+        return true;
+    }
     if (ip == kDeathEject && codeSeg == (Bit16u)(g_privLoadSeg + kSeg053)) {
         const Bit16u ship = (Bit16u)(reg_di + 2);       // (DI is the ship's allocation; our pointers are 2 bytes in)
         if (priv_session_is_puppet(ship, 0)) {
@@ -2270,6 +2273,8 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kFireGuns);
     watch(kShipLoad);
     watch(kTableSeek);
+    watch(kShipsRecordLoad); watch(kShipsRecordStored); watch(kShipsHoldSet);
+    watch(kShipsHoldPlain); watch(kShipsHoldMore); watch(kShipsHoldPlainEnd); watch(kShipsHoldMoreEnd);
     const std::vector<WatchPlace> &w = watch_places();
     for (size_t i = 0; i < w.size(); i++) {
         watch(w[i].off);

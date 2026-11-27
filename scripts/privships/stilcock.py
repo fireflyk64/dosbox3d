@@ -64,10 +64,10 @@ def frame(src, box, rim, dx, dy, w, h):
 # The Centurion's VDU frame: 98 x 86 at (114, 102), its screen at (124, 112)-(202, 176), its border 10 wide.
 VDU = (114, 102, 98, 86)
 VDU_DROP = (139, 158, 167, 185)         # four columns between its buttons left out: 94 wide, the screen 74
-VDU_Y = 82
+VDU_Y = 110                             # (low: the user, "shove the cockpit down to obscure the keyboards to give us the better visibility")
 VDU_LX, VDU_RX = -5, 231                # (the outer rims run off the screen's edges: cramped)
 BOX = (74, 105, 34, 10)                 # the Centurion's small readout frame (its fuel gauge's), rim 2
-BLOCK = (89, 110, 142, 66)              # the middle housing between the VDUs: the VDU's frame again, made wider
+BLOCK = (89, 134, 142, 66)              # the middle housing between the VDUs: the VDU's frame again, made wider
 DARK = (120, 150)                       # a pixel of the frame's dark face
 
 def bezel(dx, dy, w, h):
@@ -89,7 +89,7 @@ def bezel(dx, dy, w, h):
 #    bit taller to match the example file"): each column slid down, the middle by HOOP_DOWN rows and the sides by up
 #    to HOOP_MORE rows more, so the hoop's band keeps its thickness and its ends come down onto the VDUs' outer
 #    corners as the example's do.  The box under its top (the Centurion's energy gauge) blank.
-HOOP_DOWN, HOOP_MORE = 24, 12
+HOOP_DOWN, HOOP_MORE = 24, 40
 def hoop_drop(x):
     d = abs(2 * x - 319)                # twice the distance from the middle, 1..319
     return HOOP_DOWN + (HOOP_MORE * d * d * d * d + 319 ** 4 // 2) // 319 ** 4
@@ -99,17 +99,18 @@ while x < 320:
     while x + n < 320 and hoop_drop(x + n) == hoop_drop(x): n += 1
     copy(C, x, 0, n, 102, x, hoop_drop(x)); x += n
 fill(C, *DARK, 135, 25 + HOOP_DOWN, 56, 7)
-# 2. the dashboard under it: the Centurion's own
-copy(C, 0, 104, 320, 96, 0, 104)
+clear(50, 100, 19, 10); clear(251, 100, 19, 10)      # (the struts' stubs over the VDUs' tops)
+# 2. what shows of the dashboard beside and under the VDUs: the Centurion's own
+copy(C, 0, 112, 89, 88, 0, 112)
+copy(C, 231, 112, 89, 88, 231, 112)
 # 3. the two VDUs
 strips(put, C, *VDU, VDU_LX, VDU_Y, drop_cols=VDU_DROP)
 strips(put, C, *VDU, VDU_RX, VDU_Y, drop_cols=VDU_DROP)
-# 4. the middle housing, and under it the Orion's console on a dark plate
+# 4. the middle housing on a dark plate
 bx, by, bw, bh = BLOCK
 fill(C, *DARK, bx, by - 12, bw, 200 - by + 12)
 bezel(bx, by, bw, bh)
 clear(bx + 10, by + 10, bw - 20, bh - 20)
-copy(O, 104, 141, 112, 24, 104, by + bh)
 # 5. its three bays: the bars, the scope, the shields; a rib of the frame's rim between them
 INX, INY, INW, INH = bx + 10, by + 10, bw - 20, bh - 20
 BARS_W, RADAR_W, SHLD_W = 28, 48, 41
@@ -131,7 +132,7 @@ LAYOUT = dict(
     vdu_left=(VDU_LX + 10, VDU_Y + 10, VDU_LX + 84, VDU_Y + 74),
     vdu_right=(VDU_RX + 10, VDU_Y + 10, VDU_RX + 84, VDU_Y + 74),
     radar=RADAR, shield=SHLD, fuel=FUEL, energy=ENER, set=SET, kps=KPS, auto=AUTO)
-SIGHT = (-24, -7)                       # the cockpit's OFFS: the gunsight's rows above the screen's middle (the Centurion's -25)
+SIGHT = (-14, -7)                       # the cockpit's OFFS: the gunsight's rows above the screen's middle (the Centurion's -25)
 
 # ---- drawing it -------------------------------------------------------------------------------------------------------
 def view_pixels(tre, ck, view='FRNT'):

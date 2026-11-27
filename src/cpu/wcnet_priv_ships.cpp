@@ -43,13 +43,14 @@ namespace {
 // ---- The added ships ------------------------------------------------------------------------------------------------
 
 const PrivAddedShip kShips[] = {
-    // id  name        appearance   cockpit    hull  scene ship
-    { 1,  "Stiletto", "STILETTO",  "STILCK",   2,    2 },
+    // id  name        appearance   cockpit    hull  scene ship  hold  more
+    { 1,  "Stiletto", "STILETTO",  "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } } },
 };
 const int kShipCount = (int)(sizeof(kShips) / sizeof(kShips[0]));
 
 int g_ship = 0;             // the added ship the player owns (its id; 0: one of the game's four)
 int g_gameRows = 4;         // APPRCOCK.IFF's rows of the game's own hulls: the added ships' follow
+int g_hullHeld = -1;        // the hull byte's own value while it is hidden from the hold's routines (-1: not)
 int g_shipEnv = -1;         // WCPRIVSHIP=<name>: the player's ship is that one whatever the game says (a rig's)
 
 const PrivAddedShip *ship_by_id(int id) {
@@ -111,6 +112,40 @@ bool ship2chr_with_rows(const std::vector<Bit8u> &in, std::vector<Bit8u> *out) {
     (*out)[4] = (Bit8u)((now + 12) >> 24); (*out)[5] = (Bit8u)((now + 12) >> 16); (*out)[6] = (Bit8u)((now + 12) >> 8); (*out)[7] = (Bit8u)(now + 12);
     (*out)[16] = (Bit8u)(now >> 24); (*out)[17] = (Bit8u)(now >> 16); (*out)[18] = (Bit8u)(now >> 8); (*out)[19] = (Bit8u)now;
     return true;
+}
+
+// APPEARNC\SKELETON.IFF: a table of offsets (from byte 20), each record a length and a FORM SKEL whose FORM WEAP's
+// FORM GUNS has a POSG per mount: the mount, its place on the ship (three words), a word, and its mark's place on the
+// weapons display (two words).  The marks of the added ship's skeleton (the number in its appearance's SKEL chunk)
+// moved; nothing else of the file changes.
+bool skeleton_with_marks(const PrivAddedShip &ship, const std::vector<Bit8u> &appearance, std::vector<Bit8u> *skel) {
+    int id = -1;
+    static const Bit8u tag[] = { 'S', 'K', 'E', 'L', 0, 0, 0, 1 };
+    for (size_t i = appearance.size() >= 9 ? appearance.size() - 9 : 0; i > 12; i--) {
+        if (!memcmp(&appearance[i], tag, 8)) { id = appearance[i + 8]; break; }
+    }
+    std::vector<Bit8u> &d = *skel;
+    if (id < 0 || d.size() < 24 || memcmp(&d[12], "TABL", 4)) return false;
+    const Bit32u rows = get32be(&d[16]) / 4;
+    if ((Bit32u)id >= rows || 20 + rows * 4 > d.size()) return false;
+    const Bit32u at = get32le(&d[20 + id * 4]);
+    if (at + 4 > d.size()) return false;
+    const Bit32u len = get32le(&d[at]);
+    if (len > d.size() - at - 4) return false;
+    size_t end = at + 4 + len;
+    static const Bit8u posg[] = { 'P', 'O', 'S', 'G', 0, 0, 0, 13 };
+    bool any = false;
+    for (size_t i = at + 4; i + 21 <= end; i++) {
+        if (!memcmp(&d[i], "LNCH", 4)) break;           // (the launchers' follow the guns')
+        if (memcmp(&d[i], posg, 8)) continue;
+        for (int k = 0; k < 4 && ship.marks[k].mount >= 0; k++) {
+            if (d[i + 8] != ship.marks[k].mount) continue;
+            d[i + 17] = (Bit8u)ship.marks[k].x; d[i + 18] = (Bit8u)(ship.marks[k].x >> 8);
+            d[i + 19] = (Bit8u)ship.marks[k].y; d[i + 20] = (Bit8u)(ship.marks[k].y >> 8);
+            any = true;
+        }
+    }
+    return any;
 }
 
 // ---- The TRE as the game reads it -----------------------------------------------------------------------------------
@@ -199,7 +234,8 @@ void tre_build() {
     t.realDir.resize(dataStart);
     if (!real_read(0, &t.realDir[0], dataStart)) return;
 
-    std::vector<Bit8u> in, out, pak;
+    std::vector<Bit8u> in, out, pak, skel;
+    bool skelChanged = false;
     if (real_file(tre_name("OPTIONS", "APPRCOCK.IFF"), &in) && apprcock_with_rows(in, &out)) tre_add(tre_name("OPTIONS", "APPRCOCK.IFF"), out);
     else { wclog(1, "Privateer: added ships: %s's APPRCOCK.IFF not as expected: left as it is", t.file.c_str()); t.added.clear(); return; }
     if (real_file(tre_name("MIDGAMES", "SHIP2CHR.IFF"), &in) && ship2chr_with_rows(in, &out)) tre_add(tre_name("MIDGAMES", "SHIP2CHR.IFF"), out);
@@ -213,7 +249,12 @@ void tre_build() {
         tre_add(tre_name("COCKPITS", (std::string(kShips[i].cockpit) + ".IFF").c_str()), out);
         tre_add(tre_name("COCKPITS", (std::string(kShips[i].cockpit) + ".PAK").c_str()), pak);
         if (priv_ship_appearance(kShips[i], real_file, &out)) tre_add(tre_name("APPEARNC", (std::string(kShips[i].appearance) + ".IFF").c_str()), out);
+        else real_file(tre_name("APPEARNC", (std::string(kShips[i].appearance) + ".IFF").c_str()), &out);
+        if (skel.empty()) real_file(tre_name("APPEARNC", "SKELETON.IFF"), &skel);
+        if (!skel.empty() && skeleton_with_marks(kShips[i], out, &skel)) skelChanged = true;
     }
+
+    if (skelChanged) tre_add(tre_name("APPEARNC", "SKELETON.IFF"), skel);
 
     // the directory: the real entries (a replaced file's pointed at ours), the new ones, sorted by name
     std::vector<std::vector<Bit8u> > dir;
@@ -319,13 +360,118 @@ bool priv_tre_read(Bit16u entry, Bit8u *data, Bit16u *amount) {
 
 // ---- The player's ship ----------------------------------------------------------------------------------------------
 
+enum { kHullByte = 0x655E };
+
+// The ship the player owns, if an added one.  Which: the saved game's word (below), kept while the game's hull byte
+// is that ship's hull -- the game writes the byte at a load and at the dealer's sale only, so a ship of the game's
+// bought on another hull ends it.
 const PrivAddedShip *priv_added_ship() {
     if (g_shipEnv < 0) {
         g_shipEnv = 0;
-        const char *e = getenv("WCPRIVSHIP");
+        const char *e = getenv("WCPRIVSHIP");       // (a rig's: that ship whatever the saved game says)
         for (int i = 0; e && i < kShipCount; i++) if (!strcasecmp(e, kShips[i].name)) g_shipEnv = kShips[i].id;
     }
-    return ship_by_id(g_shipEnv ? g_shipEnv : g_ship);
+    const PrivAddedShip *s = ship_by_id(g_shipEnv ? g_shipEnv : g_ship);
+    if (!s || !g_tre.on) return 0;
+    if (g_hullHeld < 0 && priv_r8(kHullByte) != s->hull) {
+        if (g_ship && !g_shipEnv) {
+            wclog(1, "Privateer: added ships: the hull is %u now: the %s is no longer the player's ship", priv_r8(kHullByte), s->name);
+            g_ship = 0;
+        }
+        return 0;
+    }
+    return s;
+}
+
+namespace {
+
+bool code_is(const Bit8u *want, size_t n) {
+    const PhysPt at = SegPhys(cs) + reg_ip;
+    for (size_t i = 0; i < n; i++) if (mem_readb(at + i) != want[i]) return false;
+    return true;
+}
+
+// The hold's size.  The game sets it by the hull in its own code (ovr269:0AA5, 0B40, 0B89: 50 for the Centurion, 75
+// with the expansion), and leaves it alone for a hull that is none of the four: an added ship's is written here, and
+// the routine given no hull (0AA5's is an argument; the other two read the hull byte, which is put back at their
+// ends).
+void hold_hook(int which) {
+    const PrivAddedShip *s = priv_added_ship();
+    if (getenv("PRIVSHIPLOG")) wclog(1, "Privateer: added ships: hold routine %d, ship %s, hull byte %u, arg %u", which, s ? s->name : "none", priv_r8(kHullByte), mem_readb(SegPhys(ss) + reg_sp + 6));
+    if (!s) return;
+    const PhysPt stack = SegPhys(ss) + reg_sp;
+    const Bit16u hold = mem_readw(stack + 4);
+    const PhysPt h = SegPhys(ds) + hold;
+    if (which == 0) {
+        if (mem_readb(stack + 6) != s->hull) return;
+        mem_writew(h + 0xC, (Bit16u)(s->hold + (mem_readb(h + 0xA) ? s->holdMore : 0)));
+        mem_writeb(stack + 6, 0xFF);
+        return;
+    }
+    if (g_hullHeld >= 0 || priv_r8(kHullByte) != s->hull) return;
+    mem_writew(h + 0xC, (Bit16u)(s->hold + (which == 2 ? s->holdMore : 0)));
+    g_hullHeld = s->hull;
+    priv_w8(kHullByte, 0xFF);
+}
+
+void hold_end() {
+    if (g_hullHeld < 0) return;
+    priv_w8(kHullByte, (Bit8u)g_hullHeld);
+    g_hullHeld = -1;
+}
+
+}   // namespace
+
+// The saved game's word.  A saved game's first record begins with the hull as a word, and the game writes the high
+// byte 0 and reads only the low one (ovr262:0000 and 0040): that byte is the added ship's id.  The game without this
+// layer (or with WCPRIVSHIPS=0) loads such a game as the hull's own ship with what the added ship carried.
+bool priv_ships_hook(Bit16u ip, Bit16u codeSeg, Bit16u loadSeg) {
+    enum { kStub262 = 0x69E2 };
+    const PhysPt stack = SegPhys(ss) + reg_sp;
+    switch (ip) {
+    case kShipsRecordLoad:
+        if (codeSeg != (Bit16u)(loadSeg + kStub262)) return false;
+        {
+            const int id = mem_readb(SegPhys(ds) + (Bit16u)(mem_readw(stack + 4) + 1));
+            const PrivAddedShip *s = ship_by_id(id);
+            hold_end();
+            if (s && mem_readb(SegPhys(ds) + mem_readw(stack + 4)) != s->hull) s = 0;
+            if ((s ? s->id : 0) != g_ship) wclog(1, "Privateer: added ships: the game loaded is %s%s", s ? "a " : "one of the game's own ships", s ? s->name : "");
+            g_ship = g_tre.on && s ? s->id : 0;
+        }
+        return true;
+    case kShipsRecordStored: {
+        // (mov al,[6560] / mov [si+8],al / pop si / pop bp / retf)
+        static const Bit8u code[] = { 0x5E, 0x5D, 0xCB };
+        static const Bit8u before[] = { 0xA0, 0x60, 0x65, 0x88, 0x44, 0x08 };
+        if (!code_is(code, sizeof(code))) return false;
+        for (size_t i = 0; i < sizeof(before); i++) if (mem_readb(SegPhys(cs) + reg_ip - sizeof(before) + i) != before[i]) return false;
+        const PrivAddedShip *s = priv_added_ship();
+        if (s && g_ship == s->id) mem_writeb(SegPhys(ds) + (Bit16u)(reg_si + 1), (Bit8u)s->id);
+        return true;
+    }
+    case kShipsHoldSet: {
+        static const Bit8u code[] = { 0x55, 0x8B, 0xEC, 0x56, 0x8B, 0x76, 0x06, 0x8A, 0x46, 0x08, 0xB4, 0x00, 0x8B, 0xD8, 0x83, 0xFB, 0x03 };
+        if (!code_is(code, sizeof(code))) return false;
+        hold_hook(0);
+        return true;
+    }
+    case kShipsHoldPlain:
+    case kShipsHoldMore: {
+        static const Bit8u code[] = { 0x55, 0x8B, 0xEC, 0x56, 0x8B, 0x76, 0x06, 0xC6, 0x44, 0x0A };
+        if (!code_is(code, sizeof(code)) || mem_readb(SegPhys(cs) + reg_ip + 10) != (ip == kShipsHoldMore ? 1 : 0)) return false;
+        hold_hook(ip == kShipsHoldMore ? 2 : 1);
+        return true;
+    }
+    case kShipsHoldPlainEnd:
+    case kShipsHoldMoreEnd: {
+        static const Bit8u code[] = { 0x5E, 0x5D, 0xCB };
+        if (g_hullHeld < 0 || !code_is(code, sizeof(code))) return false;
+        hold_end();
+        return true;
+    }
+    }
+    return false;
 }
 
 // At seg214:03DF, the IFF reader's (reader near, index dword): a table's row sought.  The flight's set-up
