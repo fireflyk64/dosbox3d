@@ -384,6 +384,7 @@ bool DOS_ReadFile(Bit16u entry,Bit8u * data,Bit16u * amount) {
 	}
 */
 	Bit16u toread=*amount;
+	if (wc::priv_tre_is(entry) && wc::priv_tre_read(entry,data,amount)) return true;	// (Privateer's added ships: PRIV.TRE with more files, wcnet_priv_ships.cpp)
 	bool ret=Files[handle]->Read(data,&toread);
 	*amount=toread;
 	if (ret) wc::priv_file_read(entry,data,toread);	// (Privateer's crew: the pilot's ship read in the gunner's game, wcnet_priv_crew.cpp)
@@ -423,6 +424,7 @@ bool DOS_SeekFile(Bit16u entry,Bit32u * pos,Bit32u type) {
 		DOS_SetError(DOSERR_INVALID_HANDLE);
 		return false;
 	};
+	if (wc::priv_tre_is(entry) && wc::priv_tre_seek(entry,pos,type)) return true;
 	return Files[handle]->Seek(pos,type);
 }
 

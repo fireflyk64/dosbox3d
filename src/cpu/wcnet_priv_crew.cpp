@@ -721,6 +721,7 @@ void priv_crew_tick() {
 
 void priv_file_opened(const char *fullname, Bit16u entry, bool created) {
     if (!priv_found()) return;
+    priv_ships_file_opened(fullname, entry);
     OpenFile f;
     f.name = fullname;
     f.created = created;
@@ -772,6 +773,7 @@ void priv_file_written(Bit16u entry, const Bit8u *data, Bit16u amount) {
 }
 
 void priv_file_closed(Bit16u entry) {
+    priv_ships_file_closed(entry);
     std::map<Bit16u, OpenFile>::iterator it = g_files.find(entry);
     if (it == g_files.end()) return;
     const OpenFile &f = it->second;

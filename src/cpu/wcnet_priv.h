@@ -288,6 +288,13 @@ void priv_file_opened(const char *fullname, Bit16u entry, bool created);
 void priv_file_read(Bit16u entry, Bit8u *data, Bit16u amount);
 void priv_file_written(Bit16u entry, const Bit8u *data, Bit16u amount);
 void priv_file_closed(Bit16u entry);
+// The added ships (wcnet_priv_ships.cpp, docs/privateer.md section 42).  The game's TRE as the program reads it: `entry`
+// is its handle and the layer answers for it; a seek (*pos the new place); a read.
+bool priv_tre_is(Bit16u entry);
+bool priv_tre_seek(Bit16u entry, Bit32u *pos, Bit32u type);
+bool priv_tre_read(Bit16u entry, Bit8u *data, Bit16u *amount);
+void priv_ships_file_opened(const char *fullname, Bit16u entry);
+void priv_ships_file_closed(Bit16u entry);
 // Its tick (from priv_tick).
 void priv_crew_tick();
 // At stub273:0020, the game about to build the base's ship (ovr273:0000).

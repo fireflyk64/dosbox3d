@@ -16,6 +16,7 @@
 #include <deque>
 #include <algorithm>
 #include "wcnet_priv.h"
+#include "wcnet_priv_ships.h"
 #include "wcnet_priv_hires.h"
 #include "wcnet_priv_native.h"
 #include "wcnet_log.h"
@@ -111,6 +112,8 @@ enum {
     kWeaponsSeat = 0x3F,            // the weapons record's seat: the station whose guns fire (seg125:024B, from the view)
     kGunStation = 0x22, kGunOn = 0x35, kGunEnergy = 0x33,
     kStub273 = 0x6A66,              // stub273's paragraph: the thunks of the overlay that builds the base's ship
+    kStub372 = 0x6C82,              // stub372's paragraph: the player's record's overlay
+    kRecordMake = 0x003E,           // stub372:003E -> ovr372:0000, the record's maker (wcnet_priv_ships.cpp)
     kShipLoad = 0x0020,             // stub273:0020 -> ovr273:0000 (wcnet_priv_crew.cpp, priv_crew_ship_load)
     kWeaponsUpdate = 0x0158,        // seg125:0158(weapons far, scene, control record far): a ship's guns (and launcher) as its record says
     kScene = 0x66C6,                // the scene (its object list at +8, ds:66CE)
@@ -2101,6 +2104,10 @@ bool priv_check_hooks(Bit32u ip) {
         priv_crew_ship_load();
         return true;
     }
+    if (ip == kRecordMake && codeSeg == (Bit16u)(g_privLoadSeg + kStub372)) {
+        priv_ships_record_make();
+        return true;
+    }
     if (ip == kDeathEject && codeSeg == (Bit16u)(g_privLoadSeg + kSeg053)) {
         const Bit16u ship = (Bit16u)(reg_di + 2);       // (DI is the ship's allocation; our pointers are 2 bytes in)
         if (priv_session_is_puppet(ship, 0)) {
@@ -2262,6 +2269,7 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kHitPlace);
     watch(kFireGuns);
     watch(kShipLoad);
+    watch(kRecordMake);
     const std::vector<WatchPlace> &w = watch_places();
     for (size_t i = 0; i < w.size(); i++) {
         watch(w[i].off);
