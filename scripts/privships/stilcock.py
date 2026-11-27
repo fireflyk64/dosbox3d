@@ -64,10 +64,12 @@ def frame(src, box, rim, dx, dy, w, h):
 # The Centurion's VDU frame: 98 x 86 at (114, 102), its screen at (124, 112)-(202, 176), its border 10 wide.
 VDU = (114, 102, 98, 86)
 VDU_DROP = (139, 158, 167, 185)         # four columns between its buttons left out: 94 wide, the screen 74
-VDU_Y = 110                             # (low: the user, "shove the cockpit down to obscure the keyboards to give us the better visibility")
+VDU_Y = 96                              # (low: the user, "shove the cockpit down to obscure the keyboards to give us the better
+                                        # visibility", then "shift it up just a little bit ... only 1/2 as much as you moved it down.
+                                        # Otherwise it looks a bit \" close\"")
 VDU_LX, VDU_RX = -5, 231                # (the outer rims run off the screen's edges: cramped)
 BOX = (74, 105, 34, 10)                 # the Centurion's small readout frame (its fuel gauge's), rim 2
-BLOCK = (89, 134, 142, 66)              # the middle housing between the VDUs: the VDU's frame again, made wider
+BLOCK = (89, 122, 142, 66)              # the middle housing between the VDUs: the VDU's frame again, made wider
 DARK = (120, 150)                       # a pixel of the frame's dark face
 
 def bezel(dx, dy, w, h):
@@ -89,7 +91,7 @@ def bezel(dx, dy, w, h):
 #    bit taller to match the example file"): each column slid down, the middle by HOOP_DOWN rows and the sides by up
 #    to HOOP_MORE rows more, so the hoop's band keeps its thickness and its ends come down onto the VDUs' outer
 #    corners as the example's do.  The box under its top (the Centurion's energy gauge) blank.
-HOOP_DOWN, HOOP_MORE = 24, 40
+HOOP_DOWN, HOOP_MORE = 24, 26
 def hoop_drop(x):
     d = abs(2 * x - 319)                # twice the distance from the middle, 1..319
     return HOOP_DOWN + (HOOP_MORE * d * d * d * d + 319 ** 4 // 2) // 319 ** 4
@@ -99,16 +101,16 @@ while x < 320:
     while x + n < 320 and hoop_drop(x + n) == hoop_drop(x): n += 1
     copy(C, x, 0, n, 102, x, hoop_drop(x)); x += n
 fill(C, *DARK, 135, 25 + HOOP_DOWN, 56, 7)
-clear(50, 100, 19, 10); clear(251, 100, 19, 10)      # (the struts' stubs over the VDUs' tops)
+#STUBS      # (the struts' stubs over the VDUs' tops)
 # 2. what shows of the dashboard beside and under the VDUs: the Centurion's own
-copy(C, 0, 112, 89, 88, 0, 112)
-copy(C, 231, 112, 89, 88, 231, 112)
+copy(C, 0, 104, 89, 96, 0, 104)
+copy(C, 231, 104, 89, 96, 231, 104)
 # 3. the two VDUs
 strips(put, C, *VDU, VDU_LX, VDU_Y, drop_cols=VDU_DROP)
 strips(put, C, *VDU, VDU_RX, VDU_Y, drop_cols=VDU_DROP)
 # 4. the middle housing on a dark plate
 bx, by, bw, bh = BLOCK
-fill(C, *DARK, bx, by - 12, bw, 200 - by + 12)
+fill(C, *DARK, bx, by, bw, 200 - by)
 bezel(bx, by, bw, bh)
 clear(bx + 10, by + 10, bw - 20, bh - 20)
 # 5. its three bays: the bars, the scope, the shields; a rib of the frame's rim between them
@@ -121,18 +123,18 @@ for rx in (RADAR[0] - RIB, SHLD[0] - RIB):
     put(C, 115, 116, RIB, INH, rx, INY)
 FUEL = (INX + 1, INY + 11, 13, 24)      # upright bars: the Orion's fuel gauge, the Tarsus's energy gauge
 ENER = (INX + 15, INY + 11, 13, 24)
-# 6. the readouts on top of the housing, in the Centurion's small frames
-AUTO = (106, by - 7, 26, 5)
-SET = (140, by - 8, 32, 6)
-KPS = (180, by - 8, 32, 6)
-for r in (AUTO, SET, KPS):
-    frame(C, BOX, 2, r[0] - 2, r[1] - 2, r[2] + 4, r[3] + 4); clear(*r)
+# 6. over the housing, against space: the autopilot's light, and the speeds as the Centurion shows them, on the
+#    glass (the user: "The gray box around the speed readouts looks a bit weird. Maybe let those readouts be
+#    floating directly against the background")
+AUTO = (147, by - 7, 26, 5)
+SET = (96, by - 9, 0, 0)                # (their text's left end and top)
+KPS = (184, by - 9, 0, 0)
 
 LAYOUT = dict(
     vdu_left=(VDU_LX + 10, VDU_Y + 10, VDU_LX + 84, VDU_Y + 74),
     vdu_right=(VDU_RX + 10, VDU_Y + 10, VDU_RX + 84, VDU_Y + 74),
     radar=RADAR, shield=SHLD, fuel=FUEL, energy=ENER, set=SET, kps=KPS, auto=AUTO)
-SIGHT = (-14, -7)                       # the cockpit's OFFS: the gunsight's rows above the screen's middle (the Centurion's -25)
+SIGHT = (-19, -7)                       # the cockpit's OFFS: the gunsight's rows above the screen's middle (the Centurion's -25)
 
 # ---- drawing it -------------------------------------------------------------------------------------------------------
 def view_pixels(tre, ck, view='FRNT'):
@@ -189,7 +191,13 @@ def cockpit_iff(tre):
     cmfd = Chunk('FORM', form='CMFD', kids=[amfd(L['vdu_left'], 0x1a, 0x6c), amfd(L['vdu_right'], 0x1b, 0x72), cent.find('CMFD', 'SOFT')])
     chud_c = cent.find('CHUD')
     hinf = chud_c.find('HINF').data[:9] + bytes(8)              # the colour, the forward view's box; no turret's
-    hsft = Chunk('FORM', form='HSFT', kids=[k for k in chud_c.find('HSFT').kids if (k.form or k.tag) not in ('SSPD', 'ASPD')])
+    hx, hy = struct.unpack_from('<2h', hinf, 1)                 # (the speeds' places are from the box's corner)
+    hsft = Chunk('FORM', form='HSFT', kids=[])
+    for k in chud_c.find('HSFT').kids:
+        if k.form in ('SSPD', 'ASPD'):
+            r = L['set'] if k.form == 'SSPD' else L['kps']
+            k = Chunk('FORM', form=k.form, kids=[Chunk('INFO', struct.pack('<2h', r[0] - hx, r[1] - hy) + k.find('INFO').data[4:])])
+        hsft.kids.append(k)
     chud = Chunk('FORM', form='CHUD', kids=[Chunk('HINF', hinf), hsft, chud_c.find('DAMG')])
     def centre(info): x1, y1, x2, y2 = struct.unpack('<4h', info); return (x1 + x2) // 2, (y1 + y2) // 2
     def gauge(view, r):
@@ -202,16 +210,12 @@ def cockpit_iff(tre):
     sh = dc.find('SHLD'); scx, scy = L['shield'][0] + L['shield'][2] // 2, L['shield'][1] + L['shield'][3] // 2
     auto = dc.find('AUTO'); acx, acy = centre(auto.find('INFO').data)
     ar = L['auto']
-    def speed(name, r):
-        t = clunk.find('DIAL', name)
-        return Chunk('FORM', form=name, kids=[Chunk('INFO', rect(r[0], r[1], r[2] - 1, r[3] - 1)), t.find('DATA')])
     dial = Chunk('FORM', form='DIAL', kids=[
         Chunk('FORM', form='RADR', kids=[Chunk('INFO', rect(*L['radar']))]),
         Chunk('FORM', form='SHLD', kids=[Chunk('INFO', struct.pack('<4h', scx - 20, scy - 18, scx + 21, scy + 19)), sh.find('DATA'), sh.find('SHAP')]),
         Chunk('FORM', form='ENER', kids=[gauge(clunk.find('DIAL', 'ENER', 'VIEW'), L['energy'])]),
         Chunk('FORM', form='FUEL', kids=[gauge(tug.find('DIAL', 'FUEL', 'VIEW'), L['fuel'])]),
-        Chunk('FORM', form='AUTO', kids=[Chunk('INFO', moved(auto.find('INFO').data, ar[0] + ar[2] // 2 - acx, ar[1] + ar[3] // 2 - acy)), auto.find('SHAP')]),
-        speed('SSPD', L['set']), speed('ASPD', L['kps'])])
+        Chunk('FORM', form='AUTO', kids=[Chunk('INFO', moved(auto.find('INFO').data, ar[0] + ar[2] // 2 - acx, ar[1] + ar[3] // 2 - acy)), auto.find('SHAP')])])
     root = Chunk('FORM', form='COCK', kids=[frnt, cent.find('RITE'), cent.find('BACK'), cent.find('LEFT'),
                                            Chunk('OFFS', struct.pack('<2h', *SIGHT)), cent.find('FONT'),
                                            cmfd, chud, dial, cent.find(('DAMG', 0)), cent.find('CDMG')])

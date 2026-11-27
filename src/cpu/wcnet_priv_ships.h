@@ -36,6 +36,8 @@ enum {
     kShipsHoldSet = 0x0AA5,         // ovr269:0AA5(hold, hull): the hold's size by the hull
     kShipsHoldPlain = 0x0B40,       // ovr269:0B40(hold): the same, no expansion
     kShipsHoldMore = 0x0B89,        // ovr269:0B89(hold): the same, expanded
+    kShipsHoldRead = 0x0BD2,        // ovr269:0BD2(hold, size, hull): the expansion told from a ship file's size
+    kShipsHoldSize = 0x178F,        // ovr269:178F: the end of ovr269:173B(base ship, hull), the size for the ship's file in DX
     kShipsHoldPlainEnd = 0x0B7E,    // their ends when the hull is none of the four
     kShipsHoldMoreEnd = 0x0BC7
 };

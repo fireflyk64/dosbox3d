@@ -463,6 +463,27 @@ bool priv_ships_hook(Bit16u ip, Bit16u codeSeg, Bit16u loadSeg) {
         hold_hook(ip == kShipsHoldMore ? 2 : 1);
         return true;
     }
+    case kShipsHoldRead: {
+        // (the game knows the Centurion's 50 and 75 only -- anything else is its error 7024: ours are told as those)
+        static const Bit8u code[] = { 0x55, 0x8B, 0xEC, 0x56, 0x57, 0x8B, 0x76, 0x06, 0x8B, 0x7E, 0x08, 0x8A, 0x46, 0x0A };
+        if (!code_is(code, sizeof(code))) return false;
+        const PrivAddedShip *s = priv_added_ship();
+        if (s && mem_readb(stack + 8) == s->hull && s->hull == 2) {
+            const Bit16u size = mem_readw(stack + 6);
+            if (size == s->hold) mem_writew(stack + 6, 50);
+            else if (size == s->hold + s->holdMore) mem_writew(stack + 6, 75);
+        }
+        return true;
+    }
+    case kShipsHoldSize: {
+        static const Bit8u code[] = { 0x8B, 0xC2, 0x5E, 0x5D, 0xCB };
+        if (!code_is(code, sizeof(code))) return false;
+        const PrivAddedShip *s = priv_added_ship();
+        if (s && mem_readb(SegPhys(ss) + reg_bp + 8) == s->hull) {
+            reg_dx = (Bit16u)(s->hold + (mem_readb(SegPhys(ds) + (Bit16u)(reg_si + 0x28)) ? s->holdMore : 0));
+        }
+        return true;
+    }
     case kShipsHoldPlainEnd:
     case kShipsHoldMoreEnd: {
         static const Bit8u code[] = { 0x5E, 0x5D, 0xCB };

@@ -17,7 +17,8 @@
  *      picture shows: space, and the instruments, which are drawn under the cockpit;
  *    OFFS: the gunsight's rows above the screen's middle (the view's centre);  FONT;
  *    FORM CMFD: FORM AMFD per VDU (INFO: x1, y1, x2, y2, the view, the VDU's number and letter), SOFT;
- *    FORM CHUD: HINF (a colour, a box per view), FORM HSFT (the target's and nav point's marks, the gunsight);
+ *    FORM CHUD: HINF (a colour, a box per view), FORM HSFT (the speeds' texts on the glass -- SSPD, ASPD: INFO a place
+ *      from the box's corner and the label -- the target's and nav point's marks, the gunsight);
  *    FORM DIAL: RADR (INFO its box), SHLD (box, the eight bars' places, their art), ENER and FUEL (FORM VIEW: box,
  *      DATA the bar's direction and box, SHAP its art), AUTO (box, the light's two pictures), and -- the Tarsus's
  *      way, on the panel -- SSPD and ASPD (box, DATA the label);
@@ -370,9 +371,18 @@ bool stiletto_cockpit(PrivTreFile file, Bytes *iff, Bytes *pak) {
         h.resize(17, 0);
         chud.kids.push_back(leaf("HINF", h));
         Chunk hsft = form("HSFT");
+        const int hx = le16s(&h[1]), hy = le16s(&h[3]);             // (the speeds' places are from the box's corner)
         for (size_t i = 0; i < hsftIn->kids.size(); i++) {
-            const Chunk &k = hsftIn->kids[i];
-            if (k.tag != "SSPD" && k.tag != "ASPD") hsft.kids.push_back(k);    // (the speeds are on the panel here)
+            Chunk k = hsftIn->kids[i];
+            if (k.tag == "SSPD" || k.tag == "ASPD") {
+                const int *r = k.tag == "SSPD" ? L.set : L.kps;
+                Chunk *info = k.find("INFO");
+                if (!info || info->data.size() < 4) return false;
+                Bytes b; add16(b, r[0] - hx); add16(b, r[1] - hy);
+                b.insert(b.end(), info->data.begin() + 4, info->data.end());
+                info->data = b;
+            }
+            hsft.kids.push_back(k);
         }
         chud.kids.push_back(hsft);
         chud.kids.push_back(*hdamg);
@@ -403,16 +413,6 @@ bool stiletto_cockpit(PrivTreFile file, Bytes *iff, Bytes *pak) {
         au.kids.push_back(leaf("INFO", moved(&auInfo->data[0], L.autopilot[0] + L.autopilot[2] / 2 - acx, L.autopilot[1] + L.autopilot[3] / 2 - acy)));
         au.kids.push_back(*auShap);
         dial.kids.push_back(au);
-        static const char *const speeds[2] = { "SSPD", "ASPD" };
-        for (int i = 0; i < 2; i++) {
-            const Chunk *t = path(clunk, "DIAL", speeds[i], "DATA");
-            if (!t) return false;
-            const int *r = i ? L.kps : L.set;
-            Chunk f = form(speeds[i]);
-            f.kids.push_back(leaf("INFO", rect(r[0], r[1], r[2] - 1, r[3] - 1)));
-            f.kids.push_back(*t);
-            dial.kids.push_back(f);
-        }
     }
 
     Chunk root = form("COCK");
