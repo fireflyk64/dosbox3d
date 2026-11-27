@@ -305,7 +305,7 @@ bool crew_from_env() {
     const char *env = getenv("WCPRIVCREW");
     return env && env[0] == '1';
 }
-enum { kCrewSeats = 3 };            // the pilot and a gunner a turret (the Galaxy's two)
+enum { kCrewSeats = 6 };            // the pilot, a gunner a turret (the Galaxy's two), the rest passengers (the user, 2026-11-26: 6)
 
 // "<cast>:<id>" from WCPRIVFACE (the page's Face choice), MER_DP:-1 without.
 std::string own_face() {

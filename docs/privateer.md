@@ -1490,7 +1490,7 @@ complement of bolts" (yes: below).
 (sections 7-18) or "one ship, crewed" (`lobby.privCrew`, told in the lobby's hello and start as the other host's
 choices are; `WCPRIVCREW=1` for the emulator, whose hello tells the guests: `PrivHello.crew`).  The host is the pilot;
 seat 1 mans turret 1 and seat 2 turret 2 (the game's F5 and F6: the Orion's and the Centurion's tail turret, the
-Galaxy's two), three seats at most.  A guest whose turret the ship does not have rides as a passenger (any view, no
+Galaxy's two), six seats at most (three until 2026-11-26, when the user asked for 6: seats 3-5 are passengers).  A guest whose turret the ship does not have rides as a passenger (any view, no
 guns).  Everybody keeps their own game: their own pilot, saved games, money, bases' screens.
 
 **What the game has** (found for this: the turrets were never looked at before).

@@ -1252,8 +1252,8 @@ function soloGame(code) {
 const ROOM_HINT = $("lobbyHint").textContent;
 const SOLO_HINT = "A room of one, on this page alone: nobody else comes in. Leave it and join a room with Players at 2 or 3 to fly with company.";
 // The seats of a room this page makes: 1, 2 (the default) or 3; a game's registry may allow more (maxSeats).
-// (Privateer's one ship, crewed: the pilot and a gunner a turret, 3 at most)
-const seatCount = () => Math.min(isPriv() && lobby.privCrew === "crew" ? 3 : maxSeats(), Math.max(minSeats(), Math.round(Number($("seats").value)) || 2));
+// (Privateer's one ship, crewed: the pilot, a gunner a turret, the rest passengers, 6 at most: the emulator's kCrewSeats)
+const seatCount = () => Math.min(isPriv() && lobby.privCrew === "crew" ? 6 : maxSeats(), Math.max(minSeats(), Math.round(Number($("seats").value)) || 2));
 // A phone or a tablet makes a room of one to begin with (the user, 2026-11-03,
 // after a host on a phone was dropped at random: "default the number of
 // people per room in mobile to 1..that way mobile players can try the game
@@ -2455,7 +2455,7 @@ $("privCrew").addEventListener("change", () => {
   lobby.privCrew = PRIV_CREWS.includes($("privCrew").value) ? $("privCrew").value : "own";
   try { localStorage.setItem(PRIV_CREW_KEY, lobby.privCrew); } catch (e) { /* not kept */ }
   if (lobby.game) {
-    chatLine(lobby.privCrew === "crew" ? "One ship, crewed: you fly, the others man your turrets (up to 3 in the room). They launch after you do."
+    chatLine(lobby.privCrew === "crew" ? "One ship, crewed: you fly, the others man your turrets (up to 6 in the room: two gunners, the rest passengers). They launch after you do."
       : "Everyone their own ship.", "sys");
     sayHello();
   }
