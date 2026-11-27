@@ -56,8 +56,3 @@ def shapes(table):
                     for _ in range(run): px[(x, y)] = table[p]; p += 1; x += 1
         out.append((w, h, x1, y1, px))
     return out
-
-def palette(path='/home/sandbox/dev/dosbox3d/wc/GAMEDAT/GAME.PAL'):
-    d = open(path, 'rb').read()
-    d = d[-768:] if len(d) >= 768 else d
-    return [(d[3*i] << 2 & 255, d[3*i+1] << 2 & 255, d[3*i+2] << 2 & 255) for i in range(256)]

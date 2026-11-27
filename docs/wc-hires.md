@@ -66,6 +66,13 @@ them from the game's files with the same code (WC1's target display, 22 ships; i
 display, 29; WC2 has no own-ship picture found).  After a change, compare the new sheets with the approved ones pixel
 for pixel (the Hornet's nose is the one change since).  `WCHIRESPARTS=1` writes each new VDU part and the palette.
 
+Static and comm effects stay the game's 320 x 200 pixels at every level (the user: "static and comms effects should
+remain at 320x200 resolution per original"): the snow of a broken VDU (SNOW, ST 74C6, not hooked; ovr134:0B9F when the
+VDU's page is out, the words at dseg:BF32, 8 bytes a VDU) and the comm display's static and faces (VDU-sized
+pictures) are never redrawn, and the letters and wireframes step aside as soon as the pixels under them change.  To
+see it without harm: `!poke=BF32:00` ... `!poke=BF41:00` in a key script (both VDUs' pages broken, the hull
+untouched).
+
 ## The speed readouts' labels (level 2)
 
 "KPS" and "SET" (the user: "ops set font") are the cockpits' pictures: four rows of one ink colour, the 3 x 4 letters
