@@ -1246,7 +1246,7 @@ const lobby = { game: null, names: new Map(), links: new Map(), flying: new Set(
                 // capital ships with three times their hull: the host's choice
                 capHull: false,
                 // the host keeps the room out of "Join open game" (its Private box)
-                hostPrivate: false,
+                hostPrivate: false, roomPrivate: null,
                 // game-protocol messages that arrive before DOSBox has adopted this
                 // connection (a wingman faster to the launch than the host), handed
                 // to the transport at adoption so nothing is lost
@@ -1331,7 +1331,11 @@ const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: 
   wingBumps: isHost() ? lobby.wingBumps : undefined, difficulty: isHost() ? lobby.difficulty : undefined,
   privCrew: isHost() && isPriv() ? lobby.privCrew : undefined,
   latency: isHost() ? lobby.latency : undefined, fps: isHost() ? lobby.fps : undefined,
-  capHull: isHost() ? lobby.capHull : undefined, private: isHost() ? privateOn() : undefined, ...buildFields() }, to);
+  capHull: isHost() ? lobby.capHull : undefined, private: isHost() ? privateOn() : undefined,
+  // (the room's Private as its maker set it, and when: said by every page in it, the latest kept -- an open room goes
+  // on after its maker left, and its newcomer in seat 1 knows no more of it than the others say: roomPrivate)
+  roomPrivate: lobby.roomPrivate ? lobby.roomPrivate.on : undefined, privAt: lobby.roomPrivate ? lobby.roomPrivate.at : undefined,
+  ...buildFields() }, to);
 
 // Another page in the room is another version (build.js): a line once a seat and a verdict, nothing when the same.  A
 // page from before builds were compared hears nothing of ours but the chat: it is asked there, that pilot alone.
@@ -1758,6 +1762,7 @@ function onLobbyEvent(ev) {
           renderMission();
         }
         if (ev.from === 0) lobby.hostPrivate = m.private === true;
+        if (typeof m.roomPrivate === "boolean" && typeof m.privAt === "number" && (!lobby.roomPrivate || m.privAt > lobby.roomPrivate.at)) lobby.roomPrivate = { on: m.roomPrivate, at: m.privAt };
         if (ev.from === 0 && !isHost() && typeof m.capHull === "boolean" && m.capHull !== lobby.capHull) {
           lobby.capHull = m.capHull;
           if (lobbyCapHull()) chatLine(`${esc(m.name)} set ${capHullLabel(lobby.capHull)}`, "sys");
@@ -2040,6 +2045,7 @@ async function joinRoom({ create = true, game = null } = {}) {
     // (a room that had pilots in it when we came is theirs: a Privateer room's Ships choice is its maker's, told in its
     // hello -- ours, from this browser's last room, is no word of this one)
     lobby.madeRoom = !game.players.some((p) => p.occupied && p.id !== game.selfId);
+    lobby.roomPrivate = lobby.madeRoom ? { on: privateOn(), at: Date.now() } : null;
     if (isPriv() && !lobby.madeRoom) lobby.privCrew = "own";
     setTimeout(updateActions, GUEST_HELLO_MS + 100);   // (a host still silent then: a native one, not waited for)
     lobby.names.clear(); lobby.links.clear(); lobby.flying.clear(); lobby.games.clear();
@@ -2168,14 +2174,24 @@ $("advertise").addEventListener("click", () => { if (lobby.game) void hall.adver
 // have become confused how others could not join using join open game when
 // that button was accidentally ticked"); what an earlier page kept goes.
 try { localStorage.removeItem(PRIVATE_KEY); } catch (e) { /* nothing kept */ }
-$("private").addEventListener("change", () => sayHello());
+$("private").addEventListener("change", () => { if (lobby.game && lobby.madeRoom) lobby.roomPrivate = { on: privateOn(), at: Date.now() }; sayHello(); });
 // The room this page offers to a pilot looking for an open game, or null.
 function openRoom() {
   const g = lobby.game;
   // (A room in flight is offered too while it has a free seat: whoever comes joins the mission in progress.)
-  if (!g || privateOn() || lobby.hostPrivate) return null;
+  if (!g || privateOn() || lobby.hostPrivate || (lobby.roomPrivate && lobby.roomPrivate.on)) return null;
   const free = g.players.filter((p) => !p.occupied).length;
   return free > 0 ? { code: g.code, game: lobbyGameId(), free } : null;
+}
+// The line a pilot coming into the lobby is told of our room, however long ago it was offered (the user, 2026-11-27:
+// "the lowest player/ host if connected keeps answering open privateer games if it's public so people loading the
+// page late after game start still see PRV-1212 open messages in the associated main lobby chat"): an open room's,
+// public with a seat free, told by the lowest seat present in it (its maker, until it leaves or sleeps: then the next).
+function standingOffer() {
+  const g = lobby.game;
+  if (!g || g.solo || !comeAndGo() || !openRoom()) return null;
+  const here = g.players.filter((p) => p.occupied && (p.connected || p.id === g.selfId)).map((p) => p.id);
+  return here.length && Math.min(...here) === g.selfId ? offerText() : null;
 }
 // Can this browser fly in an offered room: the program it plays is here, or free to fetch?  (The room's code is
 // only its name.)
@@ -2265,7 +2281,7 @@ function leaveRoom() {
   voice.stopAll();
   if (lobby.unsubscribe) lobby.unsubscribe();
   if (lobby.game) { try { lobby.game.close(); } catch (e) { /* gone */ } }
-  lobby.game = null; lobby.unsubscribe = null; lobby.adopted = false; lobby.backlog = []; lobby.hostPrivate = false;
+  lobby.game = null; lobby.unsubscribe = null; lobby.adopted = false; lobby.backlog = []; lobby.hostPrivate = false; lobby.roomPrivate = null;
   if (lobby.seatsBefore) { $("seats").value = lobby.seatsBefore; lobby.seatsBefore = null; }
   // (this browser's own Ships choice back: a room's maker's was taken while in its room)
   try { const v = localStorage.getItem(PRIV_CREW_KEY); lobby.privCrew = PRIV_CREWS.includes(v) ? v : "own"; } catch (e) { lobby.privCrew = "own"; }
@@ -3150,6 +3166,7 @@ const hall = initHall({
   fits: (tag) => !source || !gameByTag(tag) || !!holderOf(gameByTag(tag).id),
   onCode: (code) => void joinFromLobby(code),
   room: myRoom,
+  standingOffer,
   openRoom,
   log,
 });

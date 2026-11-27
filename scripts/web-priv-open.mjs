@@ -126,8 +126,21 @@ check("BRAVO decides the nav points now", await waitLog(bravo, /Privateer: we de
 await sleep(4000);
 check("BRAVO's game goes on", !bravo.logs.some((l) => /session closed|the room is closed/.test(l)), found(bravo, /session closed|room is closed/));
 
-// CHARLIE: in afterwards, in the seat ALPHA gave back
+// CHARLIE: in afterwards, in the seat ALPHA gave back; its page told of the room in the lobby's chat as it comes in,
+// by BRAVO, the lowest seat now (the user: "the lowest player/ host if connected keeps answering open privateer games if
+// it's public so people loading the page late after game start still see PRV-1212 open messages")
 const charlie = await open("CHARLIE", code);
+const told = async () => {
+  for (let i = 0; i < 40; i++) {
+    const lines = await charlie.page.$eval("#hallLog", (el) => Array.from(el.children).map((c) => c.textContent));
+    const line = lines.find((l) => l.includes(code));
+    if (line) return line;
+    await sleep(1000);
+  }
+  return "";
+};
+const toldLine = await told();
+check("CHARLIE, loading the page late, is told of the room in the lobby by BRAVO", /BRAVO/.test(toldLine) && /seats? free/.test(toldLine), toldLine.slice(0, 120));
 await charlie.page.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 60000 });
 const crew = await charlie.page.evaluate(() => { const el = document.getElementById("privCrew"); return `${el.value}${el.disabled ? " (greyed)" : ""}`; });
 check("CHARLIE, in seat 1 of a room it did not make, cannot change its Ships choice", crew === "own (greyed)", crew);

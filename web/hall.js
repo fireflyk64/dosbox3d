@@ -406,7 +406,10 @@ const store = (s, key, value) => { try { if (value == null) s.removeItem(key); e
 // advertisement, { code, offer } or null (the page joins the room of its
 // room form first when the pilot is in none), openRoom() the room offered to
 // a pilot who asks for an open game, { code, game, free } or null (none, or
-// private), log(line), code (another row of lobbies, for tests).
+// private), standingOffer() the line a pilot coming into the lobby is told of
+// this page's room whatever its age, or null (web/wc.js: an open room's
+// lowest seat present, its room public with a seat free), log(line), code
+// (another row of lobbies, for tests).
 export function initHall(opts) {
   const code = opts.code || LOBBY_CODE;
   // The lobbies' own codes, this row's and the public one's, are not rooms.
@@ -628,7 +631,11 @@ export function initHall(opts) {
     if (!net) return;
     if (open) {
       hello(id, false);
-      if (lastLine && Date.now() - lastLine.at < REPLAY_AGE_MS) net.send(id, JSON.stringify({ t: "chat", text: lastLine.text, old: Date.now() - lastLine.at }));
+      // (one line a seat is taken by a newcomer: the room's standing offer before our last line -- the user,
+      // 2026-11-27: "people loading the page late after game start still see PRV-1212 open messages")
+      const standing = opts.standingOffer ? opts.standingOffer() : null;
+      if (standing && checkMessage(standing).ok) net.send(id, JSON.stringify({ t: "chat", text: standing, old: 0 }));
+      else if (lastLine && Date.now() - lastLine.at < REPLAY_AGE_MS) net.send(id, JSON.stringify({ t: "chat", text: lastLine.text, old: Date.now() - lastLine.at }));
     } else {
       pilots.delete(id);
     }

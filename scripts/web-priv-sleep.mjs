@@ -61,7 +61,11 @@ const browserB = await launch();
 // toward the nearest ship (another pilot's, launched from the same pad) for the pictures
 let route = "4:esc,8:!mouse=0.14:0.94,8.3:!button=0:1,8.6:!button=0:0,10:j,10.3:o,10.6:e,11:enter,11.5:a,11.8:c,12.1:e,12.5:enter,15:!mouse=0.45:0.6,16:!button=0:1,16.3:!button=0:0";
 for (let t = 30; t < 900; t += 15) route += `,${t}:!privturn=ship:90:10`;
-async function open(browser, name, room) {
+// (from 150 s of its own -- after the first pictures, and after the sleep for the sleeper, whose clock stood still --
+// each pilot puts itself off Achilles every 5 s, `off` metres from its middle: the pilots side by side again for the
+// last pictures however far they flew apart while one slept)
+const together = (off) => { let r = ""; for (let t = 150; t < 900; t += 5) r += `,${t}:!privgonav=1:${off}`; return r; };
+async function open(browser, name, room, off) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
   const page = await ctx.newPage();
   const logs = [];
@@ -78,7 +82,7 @@ async function open(browser, name, room) {
   u.searchParams.set("advertise", "off");
   u.searchParams.set("callsign", name);
   if (room) u.searchParams.set("room", room);
-  u.searchParams.set("env.WCNET_KEYSCRIPT", route);
+  u.searchParams.set("env.WCNET_KEYSCRIPT", route + together(off));
   u.searchParams.set("env.WCNET_KEYSCRIPT_FROM", "boot");
   u.searchParams.set("env.WCNET_LOG", "2");
   if (scenario === "reseat") u.searchParams.set("claimms", String(claimMs));
@@ -125,7 +129,7 @@ const fly = async (p) => {
 };
 
 // ALPHA makes the room and flies; BRAVO joins by the code and flies
-const alpha = await open(browserA, "ALPHA", "");
+const alpha = await open(browserA, "ALPHA", "", 3000);
 if (scenario === "reseat") {
   await alpha.page.evaluate(() => { const el = document.getElementById("seats"); el.value = "2"; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); });
 }
@@ -137,7 +141,7 @@ await fly(alpha);
 const roomSeats = scenario === "reseat" ? 2 : 32;
 check(`ALPHA: pilot 1 of an open room of ${roomSeats}`, await waitLog(alpha, new RegExp(`Privateer: OPEN ROOM at room \\S+, ${roomSeats} seats`), 120000), found(alpha, /Privateer: (OPEN ROOM|HOST|GUEST) at/));
 check("ALPHA in space", await waitLog(alpha, /our presence sent \(a launch\)/, 180000), found(alpha, /presence sent \(a launch\)/));
-const bravo = await open(browserB, "BRAVO", code);
+const bravo = await open(browserB, "BRAVO", code, 3800);
 await bravo.page.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 60000 });
 await fly(bravo);
 check("BRAVO: pilot 2", await waitLog(bravo, new RegExp(`Privateer: In room \\S+ as pilot 2 of ${roomSeats}`), 120000), found(bravo, /as pilot/));
@@ -155,7 +159,7 @@ if (scenario === "reseat") {
   for (const pid of pids) { try { process.kill(pid, "SIGSTOP"); } catch (e) { /* gone */ } }
   // (ALPHA's last word to the server was up to 25 s before: its seat claimable CLAIM_MS after that)
   await sleep(claimMs + 8000);
-  const charlie = await open(browserB, "CHARLIE", code);
+  const charlie = await open(browserB, "CHARLIE", code, 3800);
   await charlie.page.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 120000 });
   check("CHARLIE took ALPHA's silent seat in the full room", await waitLog(charlie, /room \S+ was full: seat 1, silent/, 5000), found(charlie, /was full|lobby:/));
   await fly(charlie);
@@ -176,7 +180,8 @@ if (scenario === "reseat") {
   check("CHARLIE sees ALPHA's ship", await waitLog(charlie, /Privateer: ALPHA's \w+ is in your space/, 60000, woke), found(charlie, /is in your space/, woke));
   check("ALPHA takes CHARLIE, the lowest seat, for the decider", await waitLog(alpha, /Privateer: pilot 1 decides the nav points/, 30000, woke), found(alpha, /decides/, woke));
   check("ALPHA never back at the menu", !alpha.logs.some(([at, l]) => at >= slept && /session closed|PRCD\.EXE ended|The game left the room/.test(l)), found(alpha, /session closed|PRCD\.EXE ended|left the room/, slept));
-  await sleep(12000);
+  check("ALPHA and CHARLIE side by side off Achilles", await waitLog(alpha, /put in nav sphere 1/, 240000, woke) && await waitLog(charlie, /put in nav sphere 1/, 240000, woke));
+  await sleep(5000);
   await pictures(alpha, 2, charlie, 1, "reseat-after");
   for (const p of [alpha, charlie]) {
     const errs = p.logs.filter(([, l]) => /reports error|PRCD\.EXE ended|RuntimeError|Aborted/.test(l)).map(([, l]) => l);
@@ -213,7 +218,8 @@ check("ALPHA decides again, BRAVO's table heard", await waitLog(alpha, /Privatee
 check("BRAVO takes ALPHA for the decider again", await waitLog(bravo, /Privateer: pilot 1 decides the nav points/, 30000, woke), found(bravo, /pilot 1 decides/, woke));
 const menu = await alpha.page.evaluate(() => document.getElementById("canvas").offsetParent !== null);
 check("ALPHA never back at the menu: its game still on the page", menu && !alpha.logs.some(([at, l]) => at >= slept && /session closed|PRCD\.EXE ended|The game left the room/.test(l)), found(alpha, /session closed|PRCD\.EXE ended|left the room/, slept));
-await sleep(12000);
+check("ALPHA and BRAVO side by side off Achilles", await waitLog(alpha, /put in nav sphere 1/, 240000, woke) && await waitLog(bravo, /put in nav sphere 1/, 240000, woke));
+await sleep(5000);
 await pictures(alpha, 1, bravo, 2, "sleep-3-after");
 for (const p of [alpha, bravo]) {
   const errs = p.logs.filter(([, l]) => /reports error|PRCD\.EXE ended|RuntimeError|Aborted/.test(l)).map(([, l]) => l);
