@@ -46,11 +46,17 @@ const marks0 = await page.evaluate(() => window.DOSBox._wc_web_wc_hires(-2));
 await sleep(1500);
 const marks1 = await page.evaluate(() => window.DOSBox._wc_web_wc_hires(-2));
 check("the gunsight drawn as line art", marks1 > marks0, [marks0, marks1]);
+// (the cockpit's letters in the user's font, the weapons display's ship as a wireframe)
+const finer = () => page.evaluate(() => [window.DOSBox._wc_web_wc_hires(-3), window.DOSBox._wc_web_wc_hires(-4)]);
+const fine2 = await finer();
+check("the cockpit's letters and the VDU's ship drawn finer", fine2[0] > 20 && fine2[1] >= 1, fine2);
 check("the canvas is 640 x 400", JSON.stringify(await canvas()) === "[640,400]", await canvas());
 await shot("wc1-hires-all.png");
 await page.keyboard.press("Backquote");
 await sleep(1500);
 check("` steps to the space alone (1)", (await level()) === 1, await level());
+const fine1 = await finer();
+check("... the game's letters and VDU pictures there", fine1[0] === 0 && fine1[1] === 0, fine1);
 await shot("wc1-hires-space.png");
 await page.keyboard.press("Backquote");
 await sleep(1500);
@@ -60,6 +66,8 @@ await shot("wc1-hires-off.png");
 await page.keyboard.press("Backquote");
 await sleep(1500);
 check("` again: all (2)", (await level()) === 2, await level());
+const fineBack = await finer();
+check("... the finer letters and VDU pictures back with it", fineBack[0] > 20 && fineBack[1] >= 1, fineBack);
 // (in flight the flight panel covers the options: the box changed as a click would change it)
 const tick = (on) => page.evaluate((on) => { const b = document.getElementById("wcHires"); b.checked = on; b.dispatchEvent(new Event("change")); }, on);
 await tick(false);

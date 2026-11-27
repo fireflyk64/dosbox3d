@@ -2330,11 +2330,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_turn_latch(int original) {
     }
     return wc::turn_latch() ? 1 : 0;
 }
-// Wing Commander 1 at 640 x 400 (the page's box): 2 all, 1 the space alone, 0 off; -1 only asks; -2 asks how many
-// times the gunsight and lock cross were drawn as line art (the page's test).
+// Wing Commander 1 at 640 x 400 (the page's box): 2 all, 1 the space alone, 0 off; -1 only asks; the page's test
+// asks -2 how many times the gunsight and lock cross were drawn as line art, -3 how many of the cockpit's letters and
+// -4 how many of the VDUs' pictures the last picture drew in the finer way.
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_wc_hires(int on) {
     if (on == -2) {
         return wc::wch_marker_draws();
+    }
+    if (on == -3) {
+        return wc::wch_letters_shown();
+    }
+    if (on == -4) {
+        return wc::wch_arts_shown();
     }
     if (on >= 0) {
         wc::wch_set(on);

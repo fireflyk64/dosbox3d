@@ -16,6 +16,8 @@ int wch_level();                            // what shows: 2 all, 1 the space al
 bool wch_key(bool pressed);                 // the backquote key: true when it is ours (allowed; a press flips)
 bool wch_on();                              // the override is ours
 int wch_marker_draws();                     // the gunsight and lock cross drawn as line art so far (the page's test)
+int wch_letters_shown();                    // the cockpit's letters in the user's font in the last picture (the test)
+int wch_arts_shown();                       // the VDUs' pictures drawn as wireframes in the last picture (the test)
 double wch_cost_ms();                       // wall ms spent in this picture's drawing so far (the page's meter)
 
 }  // namespace wc

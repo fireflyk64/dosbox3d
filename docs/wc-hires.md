@@ -50,6 +50,24 @@ header).  Characters the user's font lacks (`# $ % & * + / ; < = > ? @ [ \ ] ^ _
 The comm text in the view is another font (eight rows, capitals six high): the game's own.  "KPS", "SET" and the
 other labels are the cockpit's picture, not text.
 
+## The VDUs' ships (level 2)
+
+The weapons display's own ship (and its missiles over it) and the target display's hull and shields are SHAPEs on
+the VDUs' records on the screen (`leftVdu`, `commVdu`; found with `WCHIRESOPS=1`), line art of one game pixel, as
+Privateer's target display.  The shapes drawn on one VDU one after another are gathered into one picture and drawn
+by Privateer's wireframe maker (`wcnet_wire.cpp`, a copy of `wcnet_priv_hires.cpp`'s `wire_make` without Privateer's
+hand-made parts, so that Privateer's approved ships cannot move with a change here): lines one fine pixel wide
+between the pixels' middles, rings fitted, solid parts the game's blocks, exactly symmetric where the art is.  Kept
+as a cell of the screen like the letters (checked by its pixels).  A picture of more than 12 colours or filling more
+than 45% of its box (the comm display's face) stays the game's.  Letters and pictures are kept while ` passes level
+0: the game does not draw a static VDU again.
+
+## WC2
+
+WC2's `GAMEDAT\SUPERTM.DRV` VGA entry is byte for byte WC1's (TURNSCALE ST 161E, SPANCOPY ST 7454); its `TM.DRV` is
+another build (entries stored, flag E0, not LZW): SHAPE at 0EBC, FILLRECT 1AC8, RECT 1B6C, GLYPH 2BFB by WC1's
+signatures.  Not hooked yet.
+
 ## Speed
 
 `web-smoke.sh wc1hiresperf` (scripts/web-wc1-hires-perf.mjs): two pages in a room, each throttled to half speed
@@ -60,4 +78,5 @@ second (`wc_web_perf(6)`), the drawing's wall time (`wc_web_perf(7)`).
 
 `WCHIRESCHECK=1` (agreement with the game's buffer, logged), `WCHIRESDUMP=<per cent>` / `WCHIRESDUMPFROM=<frame>`
 (frames below it written with the frame's calls), `WCHIRESFONTS=1` (the fonts used, dumped), `WCHIRESOPS=1` (calls on
-the cockpit's screens, each kind once with its caller).  Page test: `web-smoke.sh wc1hires`.
+the cockpit's screens, each kind once with its caller).  Page test: `web-smoke.sh wc1hires` (it asks
+`wc_web_wc_hires(-2 / -3 / -4)`: the gunsight's line-art draws, the letters and the VDU pictures drawn finer).

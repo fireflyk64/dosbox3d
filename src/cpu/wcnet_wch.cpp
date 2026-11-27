@@ -31,11 +31,13 @@
 #include <string.h>
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 #include "dosbox.h"
 #include "wcnet_wch.h"
 #include "wcnet_wch_font.h"
+#include "wcnet_wire.h"
 #include "wcnet_priv_font.h"
 #include "wcnet_game.h"
 #include "wcnet_memory.h"
@@ -118,6 +120,7 @@ bool g_override = false;
 Bit16u g_watchedTm = 0, g_watchedSt = 0;   // the drivers' segments the places are watched in (0: none watched)
 bool g_onlyOurs[0x10000];           // an IP watched for these places alone
 Bit32u g_markerDraws = 0;           // the gunsight and lock cross drawn as line art (the page's test asks)
+int g_lettersShown = 0, g_artsShown = 0;   // in the last picture made: the user's letters, the VDUs' wireframes (the test)
 double g_costMs = 0;                // wall ms in the drawing (call, compose): the page's meter
 
 void read_env() {
@@ -1097,18 +1100,216 @@ void letter_draw(const Letter &l, const Look &k) {
 // At the VGA's frame, after the picture: each cell checked, shown in the user's letters or forgotten.
 void letters_compose(const Bit8u *low, bool show) {
     const double now = PIC_FullIndex();
+    g_lettersShown = 0;
     for (size_t i = 0; i < g_letters.size();) {
         Letter &l = g_letters[i];
         if (letter_there(l, l.now, low)) {
             l.seen = true;
             l.hasPrev = false;
-            if (show) letter_draw(l, l.now);
+            if (show) {
+                letter_draw(l, l.now);
+                g_lettersShown++;
+            }
         } else if (!l.seen && now - l.at < kLetterYoungMs) {
             if (show && l.hasPrev && letter_there(l, l.prev, low)) letter_draw(l, l.prev);
         } else {
             g_letters[i] = g_letters.back();
             g_letters.pop_back();
             continue;
+        }
+        i++;
+    }
+}
+
+// ---- the VDUs' ship pictures at the top level: wireframes -----------------------------------------------------------
+//
+// The VDUs' ships (the weapons display's own ship and its missiles, the target display's hull and shields) are SHAPEs
+// on the VDUs' records on the screen (leftVdu, commVdu): line art of one game pixel.  At the top level they are drawn
+// as Privateer's target display's are (wcnet_wire.cpp: lines one fine pixel wide between the pixels' middles, rings
+// round, solid parts the game's blocks, drawn exactly symmetric where the art is).  The shapes drawn on one VDU one
+// after another are gathered into one picture of the VDU (a ship comes in parts, the missiles over it), made when
+// anything else is drawn next, and kept as a cell of the screen as the letters are: shown while every pixel of it
+// still has its colour there, its pixels then what was under them and the wireframe on them.  A picture of more than
+// kArtColours colours, or filling more than kArtFill per cent of its box, is no line art (the comm display's face):
+// left the game's.
+struct Art { Bit16u rec; int x, y, w, h; std::vector<Bit16s> lit; std::vector<Bit8u> under; std::shared_ptr<const WireFrame> wf; bool seen; double at; };
+enum { kMaxArts = 32, kArtMax = 96, kArtColours = 12, kArtFill = 45, kWireCache = 16 };
+std::vector<Art> g_arts;
+Bit32u g_artsSerial = 0;
+struct ArtGather { bool pending; Bit16u rec; int sx, sy, w, h; std::vector<Bit16s> px; std::vector<Bit8u> under; };
+ArtGather g_gather = { false, 0, 0, 0, 0, 0, std::vector<Bit16s>(), std::vector<Bit8u>() };
+
+struct WireCached { Bit32u hash; int w, h; std::shared_ptr<const WireFrame> wf; };
+WireCached g_wires[kWireCache];
+int g_wiresUsed = 0, g_wiresNext = 0;
+
+std::shared_ptr<const WireFrame> wire_of(int w, int h, const std::vector<Bit16s> &px) {
+    Bit32u hash = 2166136261u;
+    for (size_t i = 0; i < px.size(); i++) hash = (hash ^ (Bit16u)px[i]) * 16777619u;
+    for (int i = 0; i < g_wiresUsed; i++) {
+        if (g_wires[i].hash == hash && g_wires[i].w == w && g_wires[i].h == h) return g_wires[i].wf;
+    }
+    WireCached &c = g_wires[g_wiresNext];
+    g_wiresNext = (g_wiresNext + 1) % kWireCache;
+    if (g_wiresUsed < kWireCache) g_wiresUsed++;
+    c.hash = hash;
+    c.w = w;
+    c.h = h;
+    WireFrame *made = new WireFrame();
+    wire_make(w, h, px, std::vector<char>(), *made);
+    c.wf.reset(made);
+    return c.wf;
+}
+
+bool art_there(const Art &a, const Bit8u *low) {
+    for (int v = 0; v < a.h; v++) {
+        for (int u = 0; u < a.w; u++) {
+            const Bit16s c = a.lit[v * a.w + u];
+            if (c >= 0 && low[(a.y + v) * LW + a.x + u] != (Bit8u)c) return false;
+        }
+    }
+    return true;
+}
+
+void art_flush() {
+    if (!g_gather.pending) return;
+    g_gather.pending = false;
+    const ArtGather &g = g_gather;
+    // the picture: its pixels' box, its colours
+    int u0 = g.w, u1 = -1, v0 = g.h, v1 = -1;
+    int colours[kArtColours + 1], ncol = 0;
+    for (int v = 0; v < g.h; v++) {
+        for (int u = 0; u < g.w; u++) {
+            const Bit16s c = g.px[v * g.w + u];
+            if (c < 0) continue;
+            u0 = std::min(u0, u); u1 = std::max(u1, u); v0 = std::min(v0, v); v1 = std::max(v1, v);
+            bool known = false;
+            for (int k = 0; k < ncol && !known; k++) known = colours[k] == c;
+            if (!known && ncol <= kArtColours) colours[ncol++] = c;
+        }
+    }
+    // (the VDU's earlier pictures go: this one is the VDU's now)
+    for (size_t i = 0; i < g_arts.size();) {
+        if (g_arts[i].rec == g.rec) {
+            g_arts[i] = g_arts.back();
+            g_arts.pop_back();
+            g_artsSerial++;
+        } else {
+            i++;
+        }
+    }
+    if (u1 < 0 || ncol > kArtColours || u1 - u0 + 1 > kArtMax || v1 - v0 + 1 > kArtMax) return;
+    // (line art leaves most of its box empty; a picture fills it: the comm display's face and its scan lines)
+    int lit = 0;
+    for (int v = v0; v <= v1; v++) {
+        for (int u = u0; u <= u1; u++) lit += g.px[v * g.w + u] >= 0;
+    }
+    if (lit * 100 > (u1 - u0 + 1) * (v1 - v0 + 1) * kArtFill) return;
+    Art a;
+    a.rec = g.rec;
+    a.x = g.sx + u0;
+    a.y = g.sy + v0;
+    a.w = u1 - u0 + 1;
+    a.h = v1 - v0 + 1;
+    a.lit.resize(a.w * a.h);
+    a.under.resize(a.w * a.h);
+    for (int v = 0; v < a.h; v++) {
+        for (int u = 0; u < a.w; u++) {
+            a.lit[v * a.w + u] = g.px[(v0 + v) * g.w + u0 + u];
+            a.under[v * a.w + u] = g.under[(v0 + v) * g.w + u0 + u];
+        }
+    }
+    a.wf = wire_of(a.w, a.h, a.lit);
+    a.seen = false;
+    a.at = PIC_FullIndex();
+    if (g_arts.size() >= kMaxArts) g_arts.erase(g_arts.begin());
+    g_arts.push_back(a);
+    g_artsSerial++;
+}
+
+bool vdu_record(Bit16u rec) {
+    return (ds::known(ds::leftVdu) && rec == ds::leftVdu) || (ds::known(ds::commVdu) && rec == ds::commVdu);
+}
+
+// A SHAPE on a VDU's record: gathered into the VDU's picture (true), or the record not one the screen holds row under
+// row (false).
+bool art_shape(const Target &t, Bit16u rec, const Shape &s, int x, int y) {
+    ArtGather &g = g_gather;
+    if (g.pending && g.rec != rec) art_flush();
+    if (!g.pending) {
+        // the VDU's clip on the screen (the record's rows: the screen's, one under the other)
+        const int w = t.x1 - t.x0 + 1, h = t.y1 - t.y0 + 1;
+        const int off = dsw((Bit16u)(t.rowTable + 2 * t.y0)) + t.x0;
+        if (w <= 0 || h <= 0 || w > 160 || h > 160 || off < 0 || off % LW + w > LW || off / LW + h > LH) return false;
+        for (int v = 1; v < h; v++) {
+            if (dsw((Bit16u)(t.rowTable + 2 * (t.y0 + v))) + t.x0 != off + v * LW) return false;
+        }
+        g.pending = true;
+        g.rec = rec;
+        g.sx = off % LW;
+        g.sy = off / LW;
+        g.w = w;
+        g.h = h;
+        g.px.assign(w * h, (Bit16s)-1);
+        g.under.assign(w * h, 0);
+        const Bit8u *low = vga.fastmem;
+        for (int v = 0; v < h; v++) {
+            for (int u = 0; u < w; u++) g.under[v * w + u] = low[(g.sy + v) * LW + g.sx + u];
+        }
+        // (a picture of this VDU still shown -- the text drawn between its parts flushed it -- goes on in this one)
+        for (size_t i = 0; i < g_arts.size(); i++) {
+            const Art &a = g_arts[i];
+            if (a.rec != rec || !art_there(a, low)) continue;
+            for (int v = 0; v < a.h; v++) {
+                for (int u = 0; u < a.w; u++) {
+                    const int gu = a.x + u - g.sx, gv = a.y + v - g.sy;
+                    if (gu < 0 || gv < 0 || gu >= w || gv >= h) continue;
+                    g.under[gv * w + gu] = a.under[v * a.w + u];
+                    if (a.lit[v * a.w + u] >= 0) g.px[gv * w + gu] = a.lit[v * a.w + u];
+                }
+            }
+        }
+    }
+    const int X = x - s.left - t.x0, Y = y - s.top - t.y0;     // (the shape's corner in the VDU's clip)
+    for (int v = 0; v < s.h; v++) {
+        for (int u = 0; u < s.w; u++) {
+            const Bit16s c = s.px[v * s.w + u];
+            if (c >= 0 && X + u >= 0 && X + u < g.w && Y + v >= 0 && Y + v < g.h) g.px[(Y + v) * g.w + X + u] = c;
+        }
+    }
+    return true;
+}
+
+void arts_compose(const Bit8u *low, bool show) {
+    const double now = PIC_FullIndex();
+    g_artsShown = 0;
+    for (size_t i = 0; i < g_arts.size();) {
+        Art &a = g_arts[i];
+        const bool there = art_there(a, low);
+        if (there) {
+            a.seen = true;
+        } else if (a.seen || now - a.at >= kLetterYoungMs) {
+            g_arts[i] = g_arts.back();
+            g_arts.pop_back();
+            continue;
+        }
+        if (there && show && a.wf && a.wf->w == a.w && a.wf->h == a.h) {
+            g_artsShown++;
+            for (int v = 0; v < a.h; v++) {
+                for (int u = 0; u < a.w; u++) {
+                    if (a.lit[v * a.w + u] < 0) continue;
+                    const Bit8u c = a.under[v * a.w + u];
+                    Bit8u *o = g_out + 2 * (a.y + v) * HW + 2 * (a.x + u);
+                    o[0] = o[1] = o[HW] = o[HW + 1] = c;
+                }
+            }
+            const int W = 2 * a.w;
+            for (int Y = 0; Y < 2 * a.h; Y++) {
+                for (int X = 0; X < W; X++) {
+                    const Bit16s c = a.wf->fine[Y * W + X];
+                    if (c >= 0) g_out[(2 * a.y + Y) * HW + 2 * a.x + X] = (Bit8u)c;
+                }
+            }
         }
         i++;
     }
@@ -1137,6 +1338,7 @@ bool markers(Bit16u off, Bit16u seg) {
 
 void call(const Place &p) {
     g_framed = p.framed;
+    if (g_gather.pending && p.op != OP_SHAPE) art_flush();
     if (p.op == OP_GLYPH) {
         glyph_call();
         return;
@@ -1174,6 +1376,11 @@ void call(const Place &p) {
         g_frameOps.push_back(b);
     }
     if (!read_target((Bit16u)arg16(0), t)) return;
+    if (p.op == OP_SHAPE && t.seg == kScreenSeg && vdu_record((Bit16u)arg16(0))) {
+        const Shape *s = shape_of((Bit16u)arg16(3), (Bit16u)arg16(4), arg16(5));
+        if (s && art_shape(t, (Bit16u)arg16(0), *s, arg16(1), arg16(2))) return;
+    }
+    if (g_gather.pending) art_flush();
     if (!flights_buffer(t)) {
         // Test aid (WCHIRESOPS=1): the calls on other records (the cockpit's screens), each kind once with its caller.
         static int ops = -1;
@@ -1259,13 +1466,14 @@ void compose() {
     static Bit32u madeSerial = 0;
     static int madeFlight = -1;
     const Bit32u serial = flight ? g_frameSerial : 0;
-    static Bit32u madeLetters = 0;
+    static Bit32u madeLetters = 0, madeArts = 0;
     static int madeLevel = -1;
-    if (madeFlight == (int)flight && madeSerial == serial && madeLetters == g_lettersSerial && madeLevel == g_level &&
-        !memcmp(madeFrom, low, LW * LH)) return;
+    if (madeFlight == (int)flight && madeSerial == serial && madeLetters == g_lettersSerial && madeArts == g_artsSerial &&
+        madeLevel == g_level && !memcmp(madeFrom, low, LW * LH)) return;
     madeFlight = flight;
     madeSerial = serial;
     madeLetters = g_lettersSerial;
+    madeArts = g_artsSerial;
     madeLevel = g_level;
     memcpy(madeFrom, low, LW * LH);
     for (int y = 0; y < LH; y++) {
@@ -1284,6 +1492,7 @@ void compose() {
             }
         }
     }
+    arts_compose(low, flight && g_level == 2);
     letters_compose(low, flight && g_level == 2);
 }
 
@@ -1302,7 +1511,10 @@ void set_override(bool want) {
     } else {
         g_haveFrame = false;
         g_fresh = true;
-        g_letters.clear();
+        // (the letters and the VDUs' pictures kept: each is checked against the screen before it is shown, and the
+        //  game does not draw a VDU again for nothing -- forgotten here, they stayed the game's blocks after ` came
+        //  back round to the top level)
+        g_gather.pending = false;
         VGA_SetOverride(false);
         wclog(1, "Wing Commander: the picture is the game's own");
     }
@@ -1312,6 +1524,8 @@ void set_override(bool want) {
 
 bool wch_on() { return g_override; }
 int wch_marker_draws() { return (int)(g_markerDraws & 0x7FFFFFFF); }
+int wch_letters_shown() { return g_lettersShown; }
+int wch_arts_shown() { return g_artsShown; }
 double wch_cost_ms() { return g_costMs; }
 
 int wch_level() {
