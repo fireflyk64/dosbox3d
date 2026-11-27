@@ -1945,3 +1945,119 @@ lobby's chat, clicks the code and is in the room.
 coturn with `min-port=49160`, `max-port=49260` (`deploy/turnserver.conf.template`; its setup scripts open that range):
 101 relay ports, one per relayed side of a link.  Raised on the server by editing `/etc/turnserver.conf` (49152-65535,
 coturn's own default), opening that UDP range in ufw and the provider's firewall, and `systemctl restart coturn`.
+
+## 42. Added ships: the Stiletto (2026-11-27, branch `stiletto`)
+
+The user: "I want it so you can purchase the stiletto in privateer after talking to admiral terrell after winning the
+original campaign ... To do this we would need a new cockpit. It would look like a very cramped version of the
+centurion cockpit with 2 VDUs instead of one, very much like the epee. I have the sample cockpit in ~/stiletto_cp but
+it was made by hand and the style doesn't much match. That' show I want the dials to be...can you manufature at
+runtime the actual cockpit from the centurion and orion pieces. It needs to be able to coexist with other players ...
+Lets start by just making it flyable and hack a version of the oxford savegame ... The stiletto should have 2
+configurable weapons. engine up to level 2 shield up to level 1 or 2. Cargo space should be about 10 or 20 or 30 ...
+no turret obviuosly. Think extensibly since we may want a place to insert the demon as well ... Make sure to have this
+on a branch in case it causes instability or people don't like it".
+
+**Done in this step:** a saved game's pilot flies a Stiletto, alone or in a room; its cockpit is made at run time.
+**Not yet:** the purchase from Terrell, the ship's pictures at the dealer, on the pad and in the launch and landing
+scenes (those show the Centurion), the upgrade screen's gun mounts (see "Open" below).  Nothing is merged or deployed.
+
+Code: `src/cpu/wcnet_priv_ships.cpp` (the table `kShips`, the TRE, the hooks), `src/cpu/wcnet_priv_cockpit.cpp` and
+`wcnet_priv_stiletto.h` (the cockpit), `scripts/privships/` (`privart.py` the art formats, `stilcock.py` the cockpit's
+recipe, `stilsave.py` the saved game).  `WCPRIVSHIPS=0` runs the game's files as they are.
+
+**An added ship is flown on one of the game's four hulls.**  The game knows hulls 0-3 (ds:655E) and answers by that
+number in its own code in some twenty places (switches of four cases: the hold's size, the dealer's screens, the
+sale).  A fifth number would be read as none of them.  So the Stiletto is hull 2, the Centurion's, and what makes it
+a Stiletto is what the game reads by name:
+
+| what | where the game takes it from | what the layer does |
+|---|---|---|
+| the ship in space, its gun mounts, speed, turning, afterburner | the appearance: `APPEARNC\STILETTO.IFF`, and by its SKEL number a record of `APPEARNC\SKELETON.IFF` (FORM GUNS / LNCH: a POSG per mount; FORM GUID SHIP: 500 kps, 1,400 on the afterburner) | nothing: the game's own data, as its Stilettos fly |
+| which appearance and cockpit | `OPTIONS\APPRCOCK.IFF`, a row per HULL (appearance, cockpit: "FIGHTER", "FIGHTCK"), sought by the flight's set-up (ovr262:07AF) through the IFF reader's table seek seg214:03DF | a row per added ship after the four; the seek that returns to ovr262:0941 is given that row |
+| the cockpit | `COCKPITS\<name>.IFF` and `.PAK` | new files STILCK.IFF / .PAK, made from the game's (below) |
+| the weapons display's picture of the ship | the appearance's FORM MFDS chunk WEAP: only the four player ships have one, and a second VDU shows the display at once (without it the game's error 150E) | made from the Stiletto's own target-display drawing (TARG's first four parts as one shape, nose up, in the colour the Centurion's picture uses most) |
+| the guns' marks on that display | SKELETON.IFF's POSG, its last two words | the Stiletto's two moved from +-20 to +-16 (the user: "pulled together too so they touch the stiletto wings") |
+| the ship in the landing and takeoff scenes | `MIDGAMES\SHIP2CHR.IFF` (appearance -> a number; not found is the game's error 61F3) | a row: STILETTO -> 2, the Centurion's pictures for now |
+| the hold's size | the game's code by the hull: ovr269:0AA5, 0B40, 0B89 set it, 173B writes it to the ship's file, 0BD2 tells the expansion from a file's size (the Centurion's 50 or 75, else its error 7024) | hooked by their code's bytes (they are in an overlay: no fixed segment): 20, and 30 with the expansion |
+| what the dealers sell | `OPTIONS\LIMITS.IFF`: per hull the item numbers NOT sold | the Stiletto's owner reads a list with the tail turret, shield generator 3 and engine upgrade 3 added |
+
+The user asked whether the game agrees with "2/2 Eng and shield": it does.  `TYPES\STILTYPE.IFF` carries the
+generators of engine upgrade 2 (LIMITS.IFF's FORM ENGN: two of generator 1, one each of 3, 4, 5) and shield 0x60, 200 a
+side, which is shield generator 2's strength (0x5B).  Measured at Achilles' Repair and Upgrade: a Stiletto's owner is
+offered Engine Upgrade 1-2 and Shield Generator 1-2 and no turret; a Centurion's list is as before.
+
+**The game's files are added to as it reads them, not on disk.**  The game finds a file by a binary search of
+PRIV.TRE's directory ON DISK at every open (measured: a seek to entry 416, 208, ...), the count read from the file's
+head each time, and the directory has room for 339 more entries before the first file's data (the head's second word:
+86,688).  So DOS's read and seek of the TRE's handle are answered by the layer (`priv_tre_read`, `priv_tre_seek`, from
+src/dos/dos_files.cpp): the directory with the added names in their sorted places, a replaced file's entry pointed
+past the real end, and the bytes there.  Nothing of the game's memory is touched and RF.TRE is treated alike.  One
+trap: the program's file buffer keeps what it read of the directory (a 65,472-byte read covers it all), so the
+directory cannot change while the game runs -- a file that differs for a ship's owner (LIMITS.IFF) has ONE entry and
+two contents of one length, chosen at the read.
+
+**Whose ship it is** rides in the saved game: a saved game's first record begins with the hull as a word, the game
+writes the high byte 0 (ovr262:0000) and reads only the low one (ovr262:0040); that byte is the added ship's id (1).
+Read at stub262:01CE, written at ovr262:003D.  A game without this layer loads such a saved game as a Centurion with
+two guns.  It is forgotten when the hull byte changes (the game writes it at a load and at the dealer's sale only).
+`scripts/privships/stilsave.py <Centurion's.SAV> <out.SAV>` makes one: two guns on mounts 2 and 3 (the Stiletto's
+only gun mounts: any other is the game's error 6482, a launcher's 6484), a launcher on mount 0, no turret, engine
+upgrade 2, shield generator 2, the hold 20.  `WCPRIVSHIP=stiletto` (a rig's) makes any Centurion a Stiletto.
+
+**The cockpit** (the user's rulings as they came, all on the first day): "cramped", two VDUs, the dials where the
+sample has them; "The hoop might need to be stretched a bit taller to match the example file"; "shove the cockpit
+down to obscure the keyboards to give us the better visibility", then "shift it up just a little bit actually. But
+only 1/2 as much as you moved it down. Otherwise it looks a bit \" close\""; "The gray box around the speed readouts
+looks a bit weird. Maybe let those readouts be floating directly against the background"; "The center needs a place
+to put your legs. Before it had the dark regions"; "flip the console upside down exactly from what's there right
+now.  After crop".  As it stands:
+- the Centurion's hoop, every column slid down (24 rows in the middle, up to 26 more at the sides: its band keeps its
+  thickness and its ends come down onto the VDUs' outer corners), the box under its top blank;
+- the Centurion's VDU frame twice (four columns between its buttons left out: a screen of 74 x 64), their outer rims
+  off the screen's sides;
+- between them the same frame once more, made 142 wide (corners as they are, sides repeated), as a housing of three
+  bays with a rib of its rim between: the fuel and energy bars upright (the Orion's fuel gauge, the Tarsus's energy
+  gauge), the scope (48 x 36, the Tarsus's size), the shields (the Centurion's);
+- over the housing, on the glass: the autopilot's light and the set and true speeds as the Centurion shows them;
+- under it black, where the legs go, with the top of the Orion's console upside down between;
+- the side and rear views are the Centurion's.
+None of the game's art is in the repository or the emulator: `stilcock.py` holds the recipe -- a list of cuts
+(which rectangle of which cockpit's forward view goes where: copied, put, a fill in a source pixel's colour, cleared)
+and the instruments' places -- draws it from a PRIV.TRE for looking at (`stilcock.py <PRIV.TRE> out.png`), and
+writes it as a table (`--header src/cpu/wcnet_priv_stiletto.h`); the emulator follows the table on the player's own
+files.  The two sides' files are compared byte for byte (`stilcock.py --files <TRE> <dir>`; `WCPRIVCKDUMP=<dir>`
+writes the emulator's): identical.  `WCPRIVCKDIR=<dir>` flies files from a directory (a recipe tried before it is
+built in).
+
+A cockpit file, as found (FORM COCK): a view (FRNT, RITE, BACK, LEFT; TUR1 and TUR2 a turret's) is SHAP, its picture,
+and TPLT, its template: the spans of every row where the picture has NO pixel -- there the flight's picture shows:
+space, and the instruments, which are drawn under the cockpit.  OFFS is the gunsight's rows above the screen's middle
+(without it the sight sits at 92).  FORM CMFD has a FORM AMFD per VDU (box, the view, number and letter: 0x1A 'l',
+0x1B 'r'); FORM CHUD the HUD (HINF a colour and a box per view; HSFT the speeds' texts, placed from the box's corner);
+FORM DIAL the instruments (RADR a box only: the scope is drawn to its size; SHLD a box, eight bars' places and their
+art; ENER and FUEL a FORM VIEW per view: box, the bar's direction and box, art; AUTO).  The PAK holds the damage
+sparks' pictures (CDMG's places).  A shape: four words of extents, then stretches of rows (a word of pixels * 2, + 1
+when packed; x; y; the pixels), packed as pieces of (count * 2 + 1, colour) or (count * 2, colours).
+
+**In a room.**  The state tells which added ship a pilot flies (`PrivState.added_ship`); `appearance` stays the
+hull's (FIGHTER), which is what a game without the added ships shows.  A game with them makes the pilot's ship as
+the game's own type of it (STILTYPE: with a Tarsus's type, the old fallback, the Stiletto's appearance was the game's
+error 6484).  Two Stilettos launched together from the saved game: each has the other on its target display,
+"Stiletto 712m", no error on either.
+
+**Tested** (native, the saved game at Oxford): launch, the takeoff scene, flight, 1,400 kps on the afterburner (the
+Stiletto's), both guns' bolts either side of the gunsight, the engines' flames from outside (the appearance's own),
+all four views, a landing at Oxford and the pad again, the hold 20 in the ship's file, both high-resolution levels
+(640 x 400 all, and space only), two in a room.
+
+**Open.**
+- The upgrade screen is still the Centurion's: it offers four gun mounts and two launchers, and a gun put on a
+  mount the Stiletto has not is the game's error 6482 at the next launch.  The next step (with the ship's picture
+  there).
+- The purchase (Terrell, 500,000 credits, his lines cut together), the ship's pictures at the dealer, on the pad, in
+  the launch and landing scenes.
+- A crew's room with a Stiletto as the pilot's ship (the gunner's game would fly it as a Centurion: unguarded).
+- Buying a Centurion while owning a Stiletto: the game answers that the hull is owned.
+- The weapons picture sits a little low over the display's text.
+- The Demon: a row of `kShips` (DEMNTYPE / DEMON, hull 2), a cockpit recipe of its own, its marks.
