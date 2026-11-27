@@ -126,7 +126,8 @@ bool g_override = false;
 Bit16u g_watchedTm = 0, g_watchedSt = 0;   // the drivers' segments the places are watched in (0: none watched)
 bool g_onlyOurs[0x10000];           // an IP watched for these places alone
 Bit32u g_markerDraws = 0;           // the gunsight and lock cross drawn as line art (the page's test asks)
-int g_lettersShown = 0, g_artsShown = 0;   // in the last picture made: the user's letters, the VDUs' wireframes (the test)
+int g_lettersShown = 0, g_artsShown = 0, g_labelsShown = 0;   // in the last picture made: the user's letters, the VDUs'
+                                                            // wireframes, the KPS / SET labels (the page's test)
 double g_costMs = 0;                // wall ms in the drawing (call, compose): the page's meter
 
 void read_env() {
@@ -1422,6 +1423,7 @@ void labels_compose(const Bit8u *low, bool show) {
         g_labelsSearched = now;
         labels_search(low);
     }
+    g_labelsShown = 0;
     if (!show) return;
     for (size_t i = 0; i < g_labels.size(); i++) {
         const Label &l = g_labels[i];
@@ -1455,6 +1457,7 @@ void labels_compose(const Bit8u *low, bool show) {
             }
             X += g[k]->w + 2;
         }
+        g_labelsShown++;
     }
 }
 
@@ -1705,6 +1708,7 @@ bool wch_on() { return g_override; }
 int wch_marker_draws() { return (int)(g_markerDraws & 0x7FFFFFFF); }
 int wch_letters_shown() { return g_lettersShown; }
 int wch_arts_shown() { return g_artsShown; }
+int wch_labels_shown() { return g_labelsShown; }
 double wch_cost_ms() { return g_costMs; }
 
 int wch_level() {
