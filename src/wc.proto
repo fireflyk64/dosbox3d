@@ -593,6 +593,8 @@ message PrivHello {
     optional uint32 friendly_fire = 5;  // (the host's reply) its room's rule: 0 between two pilots targeting each other, 1 always, 2 never
     optional uint32 crew = 6;           // (the host's reply) 1: a crew's room -- the host flies, the guests man its ship's turrets
                                         // (docs/privateer.md section 30)
+    optional bool mesh = 7;             // an open room's hello (section 37): every pilot linked to every other, its seat the
+                                        // room's; `player` is then the seat of the one it is said to (an older guest's own)
 }
 // Where a pilot is (Privateer): flying or not, its system (the name the game shows), its place in the system (the
 // game's world units: 256 to the game's metre), and why it was sent now (PrivWhy).  Sent on those occasions and every

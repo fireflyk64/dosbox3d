@@ -11,6 +11,14 @@
  *  same system with its distance in the game's metres (as the destination display gives a range: the world's units
  *  over 256), the others by their system.  What comes next (step 4 on): the pilots near each other in each other's
  *  space, the nav points' owners, shots, cargo, the Steltek drone.
+ *
+ *  An open room (the user, 2026-11-27: "people to be able to join a room code after it launches and leave ... up to
+ *  32 ... come and go at will ... it shouldn't affect scalability as long as we don't have universal sync points";
+ *  docs/privateer.md section 37) is a mesh instead: every lobby room but a crew's.  Each pilot's seat is its room seat,
+ *  every pilot links with every other (lobbylink's own links: each pair of browsers has one already), nobody relays,
+ *  and a pilot's ship and the ships it runs go only to the pilots in its system.  What the host decided (a nav point's
+ *  owner, the friendly fire rule) the lowest seat present decides, so the room lives on whoever leaves; a pilot alone
+ *  in it flies as the game does alone.  A crew's room and TCP stay as they were: the host, the guests through it.
  */
 #include <stdio.h>
 #include <math.h>
@@ -44,7 +52,8 @@ void park_pos(Bit16u obj, Bit32s out[3]) {
 namespace {
 
 enum {
-    kMaxSeats = 8,
+    kMaxSeats = 32,                 // (an open room's, the room's seats; the masks of seats below are 32 bits)
+    kLinkEveryMs = 250,             // (an open room: the links to the others looked at this often)
     kRetryMs = 10000,
     kHelloWaitMs = 20000,
     kPollMs = 20,                   // the sockets looked at this often (emulated ms)
@@ -113,7 +122,8 @@ struct Peer {
     int player;                 // the seat it flies (the host's guests: 1..; a guest's one peer: the host, 0)
     std::string callsign;
     bool hello;
-    Peer() : player(-1), hello(false) {}
+    bool helloSent;             // (an open room) ours said on this link
+    Peer() : player(-1), hello(false), helloSent(false) {}
 };
 
 // Where each pilot of the room is, by seat (its last PrivPresence).
@@ -191,15 +201,22 @@ struct Puppet {
     Bit32s armor[4], shield[4]; // its damage model's, as its reports say (a target display shows them)
     bool damage;                // its reports had them (an older build's did not)
     int targetSeat;             // the pilot its targeting system is on, as its reports say (-1 none)
+    std::string made;           // the appearance the ship here was made as (another ship flown now: made again)
+    bool release;               // its pilot left the room: the ship here given back at the next frame
     Puppet() : reported(false), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), obj(0), type(0), pending(false), parked(false), deadUntil(-1e9),
-               damage(false), targetSeat(-1) {
+               damage(false), targetSeat(-1), release(false) {
         for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
         for (int i = 0; i < 4; i++) armor[i] = shield[i] = 0;
     }
 };
 
 struct PrivNet {
-    bool host;
+    bool host;                  // the hub of a star (a crew's room, TCP): the others' messages relayed through us
+    bool mesh;                  // an open room: linked to every pilot, nobody relaying (the header)
+    int ffSeat;                 // (an open room) the seat whose friendly fire rule is the room's: the lowest heard
+    double linkedAt;            // (an open room) the links last looked at
+    double startedAt;           // (an open room) when we came in, and when the owners were last heard from another: a
+    double ownersHeardAt;       // newcomer of the lowest seat decides once it has heard the decider before it, or after a wait
     int self;                   // our seat (a guest: -1 until the host's hello)
     int seats;
     std::string callsign;
@@ -249,7 +266,7 @@ struct PrivNet {
     std::vector<std::pair<Bit32u, std::string> > crewLines;   // (a crew member's) id, line: the pilot's comm's lines to show
     std::string commSaid;       // (the pilot's) the comm's line last told to the crew
     unsigned copiesFired, copiesSkipped;
-    PrivNet() : crew(false), crewShipSent(0), turretAt(-1e9), ownShotAt(-1e9), friendlyFire(0), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
+    PrivNet() : crew(false), crewShipSent(0), turretAt(-1e9), ownShotAt(-1e9), friendlyFire(0), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), mesh(false), ffSeat(kMaxSeats), linkedAt(-1e9), startedAt(-1e9), ownersHeardAt(-1e9), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
                 sentAt(-1e9), stateAt(-1e9), frame(0), flightShip(0), lastX(0), lastY(0), lastZ(0), lastAt(-1e9), vx(0), vy(0), vz(0) {}
     ~PrivNet() {
         for (size_t i = 0; i < peers.size(); i++) {
@@ -376,6 +393,11 @@ bool start() {
             n->seats = std::min((int)kMaxSeats, g_lobby->max_players());
         }
         where = "room " + g_lobby->code();
+        // every room but a crew's is an open one (the header): our seat the room's, everybody linked to everybody
+        n->mesh = !n->crew && g_lobby->self_id() >= 0 && g_lobby->self_id() < kMaxSeats;
+        if (n->mesh) {
+            client = false;
+        }
 #else
         wclog(0, "WCROOM is set but this build has no lobbylink support");
         delete n;
@@ -430,19 +452,95 @@ bool start() {
             return false;
         }
         n->listener = l;
-        n->host = true;
-        n->self = 0;
-        n->pilots[0].callsign = n->callsign;
-        if (n->crew && n->seats > kCrewSeats) n->seats = kCrewSeats;
-        priv_crew_role(n->crew ? 1 : 0, 0);
+#ifdef C_LOBBYLINK
+        if (n->mesh) {
+            n->self = g_lobby->self_id();
+            n->ffSeat = n->self;            // (ours, until a lower seat's is heard)
+            n->startedAt = PIC_FullIndex();
+            n->pilots[n->self].callsign = n->callsign;
+            priv_crew_role(0, n->self);
+        } else
+#endif
+        {
+            n->host = true;
+            n->self = 0;
+            n->pilots[0].callsign = n->callsign;
+            if (n->crew && n->seats > kCrewSeats) n->seats = kCrewSeats;
+            priv_crew_role(n->crew ? 1 : 0, 0);
+        }
     }
     g_net = n;
-    wclog(1, "Privateer: %s at %s, %d seats, callsign %s", n->host ? "HOST" : "GUEST", where.c_str(), n->seats, n->callsign.c_str());
-    if (n->host) wclog(1, "Privateer: friendly fire in this room: %s", ff_name(n->friendlyFire));
-    if (n->host) {
+    wclog(1, "Privateer: %s at %s, %d seats, callsign %s", n->mesh ? "OPEN ROOM" : n->host ? "HOST" : "GUEST", where.c_str(), n->seats, n->callsign.c_str());
+    if (n->host || n->mesh) wclog(1, "Privateer: friendly fire in this room: %s%s", ff_name(n->friendlyFire), n->mesh ? " (ours until a lower seat's is heard)" : "");
+    if (n->mesh) {
+        char line[96];
+        snprintf(line, sizeof(line), "In %s as pilot %d of %d: fly where you like", where.c_str(), n->self + 1, n->seats);
+        notice(line);
+    } else if (n->host) {
         notice(n->crew ? "Room open: you fly, the others man your ship's turrets" : "Room open: everybody flies their own Privateer");
     }
     return true;
+}
+
+double distance_to(const Pilot &p);
+
+// Where a message goes and whose it is.  We know each link's seat in an open room (the room's) and as a star's hub (given
+// at the hello): a message for one seat goes to that seat's link alone, and a message's seat is its link's.  A star's
+// guest has one link, its hub's, which relays: everything goes there, and a message says whose it is.
+bool direct() { return g_net->host || g_net->mesh; }
+bool to_seat(const Peer *p, int seat) { return !direct() || p->player == seat; }
+int seat_of(const Peer *p, bool has, Bit32u player) { return direct() ? p->player : has ? (int)player : 0; }
+
+// Who decides the nav points' owners (section 9): a star's hub; in an open room the lowest seat present, ourselves
+// included -- the room goes on deciding whoever leaves.  A newcomer of a lower seat than the decider's takes over once
+// it has heard the decider's word (its table of who had each point this round), or after kOwnersEveryMs and a second
+// without any (nobody deciding: a room of one, or the decider gone with us).
+int decider_seat() {
+    if (!g_net->mesh) return 0;
+    int low = g_net->self;
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        const Peer *p = g_net->peers[i];
+        if (p->hello && p->conn.is_open() && p->player >= 0 && p->player < low) low = p->player;
+    }
+    return low;
+}
+bool deciding() {
+    if (!g_net->mesh) return g_net->host;
+    if (decider_seat() != g_net->self) return false;
+    const double now = PIC_FullIndex();
+    return g_net->ownersHeardAt >= g_net->startedAt || now - g_net->startedAt > kOwnersEveryMs + 1000;
+}
+
+// (an open room) the pilots our ship and the ships we run are sent to: in our system and near, by their presence or
+// by their latest reports (fresher); the others hear only where we are (the presence, every 15 s)
+bool wants_our_space(int seat) {
+    if (!g_net->mesh) return true;
+    if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) return false;
+    const double d = distance_to(g_net->pilots[seat]);
+    if (d >= 0 && d < kStateMetres) return true;
+    const Puppet &p = g_net->puppets[seat];
+    if (!p.reported || PIC_FullIndex() - p.at > 2000 || p.system != g_system || g_system.empty() || !priv_in_flight()) return false;
+    Bit32s pos[3];
+    priv_player_pos(pos);
+    const double dx = p.x - pos[0], dy = p.y - pos[1], dz = p.z - pos[2];
+    return sqrt(dx * dx + dy * dy + dz * dz) / kUnitsPerMetre < kStateMetres;
+}
+
+// (an open room) our hello on a link, said once: our callsign, face and friendly fire rule; `player` the seat of the
+// one it goes to (an older page's guest takes its seat from it), `mesh` that it is an open room's
+void send_hello(Peer *p) {
+    if (p->helloSent) return;
+    p->helloSent = true;
+    NetworkMessage msg;
+    PrivHello *h = msg.mutable_priv_hello();
+    h->set_callsign(g_net->callsign);
+    h->set_face(own_face());
+    h->set_player((Bit32u)p->player);
+    h->set_seats((Bit32u)g_net->seats);
+    h->set_friendly_fire((Bit32u)g_net->friendlyFire);
+    h->set_crew(0);
+    h->set_mesh(true);
+    p->conn.send(msg);
 }
 
 int free_player() {
@@ -634,7 +732,7 @@ void decide_owners(double now, bool &changed) {
     (void)now;
 }
 
-void send_owners() {
+void send_owners(Peer *only = NULL) {
     NetworkMessage msg;
     PrivOwners *po = msg.mutable_priv_owners();
     for (size_t i = 0; i < g_net->owners.size(); i++) {
@@ -646,11 +744,11 @@ void send_owners() {
         o->set_done(g_net->owners[i].done);
     }
     for (size_t i = 0; i < g_net->peers.size(); i++) {
-        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open() && (!only || g_net->peers[i] == only)) {
             g_net->peers[i]->conn.send(msg);
         }
     }
-    g_net->ownersAt = PIC_FullIndex();
+    if (!only) g_net->ownersAt = PIC_FullIndex();
 }
 
 void take_owners(const PrivOwners &po) {
@@ -842,7 +940,60 @@ void take_state(const PrivState &st, int seat) {
 
 void take_pod_taken(const PrivPodTaken &t);
 
+// (an open room) a hub's answer from seat 0 -- a crew's room, or a host on an older page that relays: we are its guest
+// from now on, as before open rooms (our other links let go)
+void become_hubs_guest(Peer *hub) {
+    for (size_t i = 0; i < g_net->peers.size();) {
+        if (g_net->peers[i] == hub) { i++; continue; }
+        delete g_net->peers[i];
+        g_net->peers.erase(g_net->peers.begin() + i);
+    }
+    delete g_net->listener;
+    g_net->listener = NULL;
+    g_net->mesh = false;
+    g_net->host = false;
+    for (int s = 0; s < kMaxSeats; s++) g_net->pilots[s] = Pilot();
+    wclog(1, "Privateer: pilot 1 runs this room as its hub (a crew's room, or an older page): its guest from now on");
+}
+
+// (an open room) a pilot's hello: who it is; its friendly fire rule the room's when it is the lowest seat heard
+void take_mesh_hello(Peer *p, const PrivHello &h) {
+    if (p->hello) {
+        return;
+    }
+    p->hello = true;
+    p->callsign = h.callsign();
+    const int seat = p->player;
+    Pilot &q = g_net->pilots[seat];
+    q.callsign = h.callsign();
+    parse_face(h.face(), q.cast, q.faceId);
+    if (h.has_friendly_fire() && h.friendly_fire() <= 2 && seat < g_net->ffSeat) {
+        g_net->ffSeat = seat;
+        if (g_net->friendlyFire != (int)h.friendly_fire()) {
+            g_net->friendlyFire = (int)h.friendly_fire();
+            wclog(1, "Privateer: friendly fire in this room (pilot %d's rule, the lowest seat's): %s", seat + 1, ff_name(g_net->friendlyFire));
+        }
+    }
+    send_hello(p);
+    // where we are, to the newcomer (everybody else has it)
+    NetworkMessage out;
+    *out.mutable_priv_presence() = own_presence(WHY_HELLO);
+    p->conn.send(out);
+    // and the nav points' owners as we know them: a newcomer of a lower seat decides from then on, with the round's
+    // table as it was
+    if (!g_net->owners.empty()) send_owners(p);
+    tell(p->callsign + " is in the room as pilot " + std::to_string(seat + 1) + (h.mesh() ? "" : " (an older page: it hears only pilot 1)"));
+}
+
 void handle(Peer *p, NetworkMessage &msg) {
+    if (msg.has_priv_hello() && g_net->mesh) {
+        const PrivHello &h = msg.priv_hello();
+        if (h.mesh() || !h.has_player() || p->player != 0) {
+            take_mesh_hello(p, h);
+            return;
+        }
+        become_hubs_guest(p);       // (and on, as its guest, below)
+    }
     if (msg.has_priv_hello()) {
         const PrivHello &h = msg.priv_hello();
         if (g_net->host) {
@@ -932,7 +1083,7 @@ void handle(Peer *p, NetworkMessage &msg) {
         if (!p->hello) {
             return;
         }
-        const int seat = g_net->host ? p->player : (msg.priv_presence().has_player() ? (int)msg.priv_presence().player() : 0);
+        const int seat = seat_of(p, msg.priv_presence().has_player(), msg.priv_presence().player());
         take_presence(msg.priv_presence(), seat);
         if (g_net->host) {
             NetworkMessage out;
@@ -949,7 +1100,7 @@ void handle(Peer *p, NetworkMessage &msg) {
         if (!p->hello) {
             return;
         }
-        const int seat = g_net->host ? p->player : (msg.priv_state().has_player() ? (int)msg.priv_state().player() : 0);
+        const int seat = seat_of(p, msg.priv_state().has_player(), msg.priv_state().player());
         take_state(msg.priv_state(), seat);
         if (g_net->host) {
             NetworkMessage out;
@@ -963,14 +1114,17 @@ void handle(Peer *p, NetworkMessage &msg) {
             }
         }
     } else if (msg.has_priv_owners()) {
-        if (p->hello && !g_net->host) {
+        // (a star's guest: the hub's word; an open room: the decider's -- anybody's while we are not deciding ourselves:
+        // as the lowest seat changes hands, two may speak for a moment)
+        if (p->hello && !g_net->host && !deciding()) {
             take_owners(msg.priv_owners());
+            g_net->ownersHeardAt = PIC_FullIndex();
         }
     } else if (msg.has_priv_scene()) {
         if (!p->hello) {
             return;
         }
-        const int seat = g_net->host ? p->player : (msg.priv_scene().has_player() ? (int)msg.priv_scene().player() : 0);
+        const int seat = seat_of(p, msg.priv_scene().has_player(), msg.priv_scene().player());
         take_scene(msg.priv_scene(), seat);
         if (g_net->host) {
             NetworkMessage out;
@@ -1006,7 +1160,9 @@ void handle(Peer *p, NetworkMessage &msg) {
             return;
         }
         PrivPodTaken t = msg.priv_pod_taken();
-        if (g_net->host) {
+        if (g_net->mesh) {
+            t.set_player((Bit32u)p->player);
+        } else if (g_net->host) {
             t.set_player((Bit32u)p->player);
             if ((int)t.owner() != g_net->self) {
                 NetworkMessage out;
@@ -1023,7 +1179,7 @@ void handle(Peer *p, NetworkMessage &msg) {
         if (!p->hello) {
             return;
         }
-        const int seat = g_net->host ? p->player : (msg.priv_shot().has_player() ? (int)msg.priv_shot().player() : 0);
+        const int seat = seat_of(p, msg.priv_shot().has_player(), msg.priv_shot().player());
         take_shot(seat, msg.priv_shot());
         if (g_net->host) {
             NetworkMessage out;
@@ -1063,7 +1219,7 @@ void handle(Peer *p, NetworkMessage &msg) {
         if (!p->hello) {
             return;
         }
-        take_chat(msg.chat(), g_net->host ? p->player : -1);
+        take_chat(msg.chat(), direct() ? p->player : -1);
         if (g_net->host) {
             for (size_t i = 0; i < g_net->peers.size(); i++) {
                 Peer *to = g_net->peers[i];
@@ -1073,6 +1229,30 @@ void handle(Peer *p, NetworkMessage &msg) {
             }
         }
     }
+}
+
+// (an open room) a link to every pilot in the room whose channel is up and who has none from us yet (each pair of the
+// room's browsers is linked by lobbylink itself; a pilot that says something first is taken by the listener instead)
+void link_mesh() {
+#ifdef C_LOBBYLINK
+    if (!g_lobby) return;
+    for (int s = 0; s < g_net->seats && s < kMaxSeats; s++) {
+        if (s == g_net->self) continue;
+        bool have = false;
+        for (size_t i = 0; i < g_net->peers.size() && !have; i++) {
+            have = g_net->peers[i]->player == s && g_net->peers[i]->conn.is_open();
+        }
+        if (have || !g_lobby->peer_up(s)) continue;
+        Stream *st = g_lobby->open_peer(s, 0);
+        if (!st) continue;
+        Peer *p = new Peer();
+        p->player = s;
+        p->conn.adopt(st);
+        g_net->peers.push_back(p);
+        wclog(1, "Privateer: linked with pilot %d", s + 1);
+        send_hello(p);
+    }
+#endif
 }
 
 void poll_peers() {
@@ -1111,11 +1291,14 @@ void poll_peers() {
             continue;
         }
         if (p->hello) {
-            notice(p->callsign + (g_net->host ? " left the room" : " (the host) is gone: the room is closed"));
+            // (an open room: whoever leaves, the room goes on -- said in the log alone, people come and go)
+            if (g_net->mesh) tell(p->callsign + " (pilot " + std::to_string(p->player + 1) + ") left the room");
+            else notice(p->callsign + (g_net->host ? " left the room" : " (the host) is gone: the room is closed"));
             if (p->player >= 0 && p->player < kMaxSeats) {
                 g_net->pilots[p->player] = Pilot();
                 Puppet &pp = g_net->puppets[p->player];
                 pp.reported = false;    // (its ship parked at the next frame, kept)
+                if (g_net->mesh) pp.release = true;     // (an open room: given back; its seat may be another's next)
                 for (int k = 0; k < kNpcCap; k++) {
                     if (g_net->npcs[k].used && g_net->npcs[k].seat == p->player) g_net->npcs[k].at = -1e9;
                 }
@@ -1199,20 +1382,29 @@ void priv_session_tick() {
         return;
     }
     polledAt = now;
-    if (g_net->host && g_net->listener) {
+    if ((g_net->host || g_net->mesh) && g_net->listener) {
         for (int n = 0; n < 4; n++) {
             Stream *s = g_net->listener->accept(false);
             if (!s) {
                 break;
             }
             Peer *p = new Peer();
+            if (g_net->mesh) p->player = s->room_seat();
             p->conn.adopt(s);
             g_net->peers.push_back(p);
-            wclog(1, "Privateer: a guest at %s", s->describe().c_str());
+            wclog(1, "Privateer: a %s at %s", g_net->mesh ? "pilot" : "guest", s->describe().c_str());
+            if (g_net->mesh) {
+                if (p->player < 0 || p->player >= kMaxSeats || p->player == g_net->self) p->conn.close();
+                else send_hello(p);
+            }
         }
     }
+    if (g_net->mesh && now - g_net->linkedAt >= kLinkEveryMs) {
+        g_net->linkedAt = now;
+        link_mesh();
+    }
     poll_peers();
-    if (!g_net->host && g_net->peers.empty()) {
+    if (!g_net->host && !g_net->mesh && g_net->peers.empty()) {
         shutdown();     // (the host gone: tried again later, as at the start)
         return;
     }
@@ -1237,7 +1429,16 @@ void priv_session_tick() {
         toldMissions = priv_mission_navs();
         priv_session_event(WHY_NAV);
     }
-    if (g_net->host && now - g_net->decidedAt >= kDecideEveryMs) {
+    if (g_net->mesh) {
+        static int saidDecider = -2;
+        const int d = deciding() ? g_net->self : decider_seat() == g_net->self ? -2 : decider_seat();     // (-2: ours soon)
+        if (d != saidDecider && d != -2) {
+            saidDecider = d;
+            if (d == g_net->self && deciding()) wclog(1, "Privateer: we decide the nav points' owners now (the lowest seat here)");
+            else wclog(1, "Privateer: pilot %d decides the nav points' owners", d + 1);
+        }
+    }
+    if (deciding() && now - g_net->decidedAt >= kDecideEveryMs) {
         g_net->decidedAt = now;
         bool changed = false;
         decide_owners(now, changed);
@@ -1381,6 +1582,7 @@ void puppet_made(int seat, Bit16u obj) {
         return;
     }
     p.type = priv_ship_type(obj);
+    p.made = p.appearance.empty() ? "CLUNKER" : p.appearance;
     p.parked = false;
     if (!priv_hold_ai(priv_ship_controller(obj), true)) {
         // (its AI cannot be held: it would fly as it likes; taken away again)
@@ -1485,7 +1687,7 @@ void send_state(double now) {
         st->add_shield(sh[k]);
     }
     for (size_t i = 0; i < g_net->peers.size(); i++) {
-        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open() && wants_our_space(g_net->peers[i]->player)) {
             g_net->peers[i]->conn.send_best_effort(msg);
         }
     }
@@ -1741,7 +1943,7 @@ void send_scene(double now) {
         j++;
     }
     for (size_t i = 0; i < g_net->peers.size(); i++) {
-        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open() && wants_our_space(g_net->peers[i]->player)) {
             g_net->peers[i]->conn.send_best_effort(msg);
         }
     }
@@ -1905,7 +2107,7 @@ void send_pod_taken(int owner, Bit32u id) {
     t->set_id(id);
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         Peer *p = g_net->peers[i];
-        if (p->hello && p->conn.is_open() && (!g_net->host || p->player == owner)) {
+        if (p->hello && p->conn.is_open() && to_seat(p, owner)) {
             p->conn.send(msg);
         }
     }
@@ -1996,7 +2198,7 @@ void send_provoke(NpcPuppet &p, double now) {
     h->set_provoke(true);
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         Peer *q = g_net->peers[i];
-        if (q->hello && q->conn.is_open() && (!g_net->host || q->player == p.seat)) {
+        if (q->hello && q->conn.is_open() && to_seat(q, p.seat)) {
             q->conn.send(msg);
         }
     }
@@ -2381,7 +2583,7 @@ bool priv_session_allow_wing(int sphereId) {
             o->done = done | (1u << owner);
             wclog(1, "Privateer: %s nav %d: pilot %d owns it by the rule, no word yet (present %02x)", g_system.c_str(), sphereId, owner + 1,
                   present);
-            if (g_net->host) send_owners();
+            if (deciding()) send_owners();
         }
     }
     (void)now;
@@ -2489,7 +2691,7 @@ void send_hit(Bit16u target, int loc, int damage, bool byPilot) {
     h->set_by_pilot(byPilot);
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         Peer *p = g_net->peers[i];
-        if (p->hello && p->conn.is_open() && (!g_net->host || p->player == owner)) {
+        if (p->hello && p->conn.is_open() && to_seat(p, owner)) {
             p->conn.send(msg);
         }
     }
@@ -2612,7 +2814,7 @@ void priv_session_fired(Bit16u ship, int groups, Bit16u target) {
     sh->set_target_seat(tSeat);
     sh->set_target_id(tId);
     for (size_t i = 0; i < g_net->peers.size(); i++) {
-        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open() && wants_our_space(g_net->peers[i]->player)) {
             g_net->peers[i]->conn.send_best_effort(msg);
         }
     }
@@ -2843,6 +3045,17 @@ void priv_session_frame() {
             priv_hold_ai(priv_ship_controller(p.obj), false);
             p.obj = 0;
         }
+        if (p.obj && (p.release || (p.reported && !p.appearance.empty() && !p.made.empty() && p.appearance != p.made))) {
+            // its pilot left the room (an open room: the seat may be another's next), or flies another ship now (bought
+            // at a base): ours given back quietly, made again as it is when it is near
+            wclog(1, "Privateer: pilot %d's %s here given back (%s)", s + 1, p.made.c_str(), p.release ? "its pilot left the room" : ("it flies a " + p.appearance + " now").c_str());
+            if (g_net->dying.size() < 32) g_net->dying.push_back(std::make_pair(p.obj, p.type));
+            release_obj(p.obj);
+            p.obj = 0;
+            p.pending = false;
+            p.parked = false;
+        }
+        p.release = false;
         const double age = now - p.at;
         const bool fresh = p.reported && age < kStateStaleMs && p.system == g_system && !g_system.empty();
         double ex = 0, ey = 0, ez = 0, d = -1;
