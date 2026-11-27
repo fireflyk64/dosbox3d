@@ -36,6 +36,8 @@ await page.addInitScript(() => { try { localStorage.removeItem("wc:wc1Keys"); } 
 await page.goto(u.toString());
 if (process.env.GAME_FILE) await page.setInputFiles("#gamefile", process.env.GAME_FILE);
 await page.waitForFunction(() => /^(ready|error)$/.test(document.getElementById("sourceStatus").dataset.state || ""), null, { timeout: 300000 });
+// (the list is drawn again on the controls' next poll after the game is known: a dropped installer takes a moment)
+await page.waitForFunction(() => !!document.querySelector('#padSelect option[value="none-original"]'), null, { timeout: 15000 }).catch(() => {});
 const options = await page.$$eval("#padSelect option", (os) => os.map((o) => [o.value, o.textContent]));
 check("the Controller list: Keyboard + mouse and Original keyboard", JSON.stringify(options.slice(0, 2)) ===
       JSON.stringify([["none", "Keyboard + mouse"], ["none-original", "Original keyboard"]]), options);
