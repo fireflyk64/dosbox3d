@@ -197,16 +197,28 @@ message MissionEnd {
     // writes: a wingman landed by the host's word had none, and the Tiger's
     // Claw was missing from its landing.
     optional uint32 landed_on_plus_one = 5;
+    // Server -> client, Wing Commander 1: the mission objectives' flags, a
+    // byte each (objectiveTable +3), the host's with a landing wingman's
+    // folded in: the debriefing and the score read their "met" bits, which
+    // only the game of the pilot who asked the carrier for landing clearance
+    // sets.  The client's become these as its flight loop returns.
+    optional bytes objective_flags = 6;
 }
 
-// Client -> server: this player's own mission ended (death or ejection).  The
-// server removes the player's ship and the mission continues for everyone
-// else.  Landing is still a shared mission end and travels in MissionEnd.
+// Client -> server: this player's own mission ended (death, ejection or, since
+// 2026-09-25, a landing).  In Wing Commander 1 the host shares the ending
+// with everyone (merge_client_frame); in Wing Commander II a wingman's
+// landing is its own and the mission continues for everyone else.
 message PlayerEnd {
     optional GameState state = 1;
     // RetroVega: a guest that landed says on which ship (its network id + 1),
     // so the host's game lands everyone on it, and scores the landing.
     optional uint32 landed_on_plus_one = 2;
+    // Wing Commander 1: this player's mission objectives' flags as its own
+    // mission ended (MissionEnd.objective_flags): a landing wingman's game is
+    // the one that evaluated them, when it asked for clearance; the host ORs
+    // them into its own before the debriefing.
+    optional bytes objective_flags = 3;
 }
 
 message Frame {

@@ -192,6 +192,65 @@ static void load_mission_tree_progress(const std::string &data) {
     }
 }
 
+// WC1's mission objectives (ds::objectiveTable, a record of 0x19 bytes each, a type word first and -1 after the
+// last): the flags byte at +3 holds 1 and 4, set in flight, and 2, "met", which only the objectives' evaluation
+// (ovr139:0000) sets, and that runs only when the pilot asks the carrier for landing clearance (ovr139:0557).  The
+// debriefing and the score read the 2s.  So in a room only the game of the pilot who asked had them, and a wingman's
+// landing, which ends everyone's mission, left the host and the others with none: in Gimle 1 the wingman who landed
+// was told the Exeter was saved and the other two that it was lost (the user, 2026-11-27, three players).  Since then
+// a wingman's PlayerEnd carries its flags, the host ORs them into its own as its flight loop returns (before its
+// landing, its debriefing and its score), and every other wingman takes the host's from its MissionEnd.
+enum { kObjectiveRecord = 0x19, kObjectivesMax = 15, kObjectiveFlags = 3 };
+
+static int objective_count() {
+    if (!is_wc1() || !ds::known(ds::objectiveTable)) {
+        return 0;
+    }
+    int n = 0;
+    while (n < kObjectivesMax && rd16((Bit16u)(ds::objectiveTable + kObjectiveRecord * n)) != 0xFFFF) {
+        n++;
+    }
+    return n;
+}
+
+static std::string read_objective_flags() {
+    std::string out;
+    const int n = objective_count();
+    for (int i = 0; i < n; i++) {
+        out.push_back((char)rd8((Bit16u)(ds::objectiveTable + kObjectiveRecord * i + kObjectiveFlags)));
+    }
+    return out;
+}
+
+static std::string objective_flags_text(const std::string &flags) {
+    std::string out;
+    char b[4];
+    for (size_t i = 0; i < flags.size(); i++) {
+        snprintf(b, sizeof(b), "%s%02x", i ? " " : "", (Bit8u)flags[i]);
+        out += b;
+    }
+    return out.empty() ? "none" : out;
+}
+
+// merge: OR them into ours (the host, a landing wingman's); else ours become them (a wingman, the host's).
+static void write_objective_flags(const std::string &flags, bool merge, const char *from) {
+    const int n = objective_count();
+    if (flags.empty() || n == 0) {
+        return;
+    }
+    if ((int)flags.size() != n) {
+        wclog(0, "objectives from %s: %d of them, ours %d: not taken", from, (int)flags.size(), n);
+        return;
+    }
+    const std::string before = read_objective_flags();
+    for (int i = 0; i < n; i++) {
+        const Bit16u at = (Bit16u)(ds::objectiveTable + kObjectiveRecord * i + kObjectiveFlags);
+        wr8(at, merge ? (Bit8u)(rd8(at) | (Bit8u)flags[i]) : (Bit8u)flags[i]);
+    }
+    wclog(1, "objectives from %s (%s): %s -> %s", from, merge ? "folded in" : "taken", objective_flags_text(before).c_str(),
+          objective_flags_text(read_objective_flags()).c_str());
+}
+
 // WC2's campaign record: a far-heap block, its length in words first.  The
 // barracks holds it between flights (it is saved and freed before one), so
 // it is there when "Fly mission" is chosen and absent in the mission test.
@@ -253,6 +312,9 @@ static void populate_mission_end(MissionEnd *end) {
     tree->clear();
     for (int i = 0; i < kMissionTreeSize && is_wc1(); i++) {
         tree->push_back((char)rd8((Bit16u)(ds::navPointState + i)));
+    }
+    if (objective_count() > 0) {
+        end->set_objective_flags(read_objective_flags());
     }
     if (is_wc2()) {
         // (The record as the flight loop returned: what the campaign loop
@@ -438,6 +500,9 @@ static int last_shared_end() {
 // it and scores it).
 static void populate_player_end(PlayerEnd *end, int status) {
     end->set_state((GameState)status);
+    if (objective_count() > 0) {
+        end->set_objective_flags(read_objective_flags());   // (WC1: what our game made of the objectives)
+    }
     if (status == EndLand && g_traits.missionTables && ds::known(ds::landedOn)) {
         int slot = (Bit16s)rd16(ds::landedOn);
         if (is_ship_slot(slot) && slot_in_use(slot)) {
@@ -737,6 +802,7 @@ struct RemoteClient {
     Connection conn;
     std::string callsign;
     std::string missionTreeProgress;  // reported with a shared mission end
+    std::string objectiveFlags;       // WC1: its objectives' flags as its own mission ended (PlayerEnd)
     bool requestedBriefingStart;
     bool needsMissionStartState;
     bool inMission;              // takes part in the frame exchange
@@ -960,6 +1026,7 @@ public:
         for (size_t i = 0; i < clients_.size(); i++) {
             clients_[i]->leftThisMission = false;
             clients_[i]->missionTreeProgress.clear();
+            clients_[i]->objectiveFlags.clear();
             clients_[i]->seatSpawnFailed = false;
         }
         // inMission is cleared when the mission-end frame goes out (flush).
@@ -1008,6 +1075,17 @@ public:
         for (size_t i = 0; i < clients_.size(); i++) {
             if (!clients_[i]->missionTreeProgress.empty()) {
                 load_mission_tree_progress(clients_[i]->missionTreeProgress);
+            }
+        }
+        for (size_t i = 0; i < clients_.size(); i++) {
+            // (A wingman who ended its own mission first, the landing that ended ours among them: what its game made
+            // of the objectives, before our debriefing and score read them; the MissionEnd below takes them to the rest.)
+            RemoteClient *c = clients_[i];
+            if (!c->objectiveFlags.empty()) {
+                char who[32];
+                snprintf(who, sizeof(who), "player %d", c->net);
+                write_objective_flags(c->objectiveFlags, true, who);
+                c->objectiveFlags.clear();
             }
         }
         MissionEnd *end = pendingFrame_.mutable_frame()->mutable_mission_end();
@@ -1612,6 +1690,7 @@ private:
         c->leftThisMission = false;
         presencePlace_ = -1;            // (the newcomer told where the host is at the next tick)
         c->missionTreeProgress.clear();
+        c->objectiveFlags.clear();
         wclog(1, "%s connected as player %d (%s)", c->callsign.c_str(), c->net, c->conn.describe().c_str());
         std::map<int, std::string>::iterator was = flownWith_.find(c->roomSeat);
         if (was != flownWith_.end() && was->second != c->callsign) {
@@ -2092,6 +2171,9 @@ private:
         }
         if (frame.has_player_end()) {
             int status = frame.player_end().state();
+            if (frame.player_end().has_objective_flags()) {
+                c->objectiveFlags = frame.player_end().objective_flags();  // (WC1: folded into ours as our flight loop returns)
+            }
             if (is_wc2() && (status == EndLand || status == EndCarrier)) {
                 // In Wing Commander II a landing is the wingman's own
                 // (2026-10-14): it has left the mission, its ship leaves our
@@ -2815,6 +2897,13 @@ public:
             load_mission_tree_progress(missionTreeProgress_);
             missionTreeProgress_.clear();
         }
+        if (!objectiveFlags_.empty()) {
+            // (The host's, a landing wingman's folded in: our debriefing and score as the host's.  A wingman whose
+            // own landing ended the mission is out of its loop before the host's MissionEnd comes, and keeps its own,
+            // which are the ones the host folded in.)
+            write_objective_flags(objectiveFlags_, false, "the host");
+            objectiveFlags_.clear();
+        }
         if (!missionEndCampaignState_.empty()) {
             // The host's record as its flight loop returned, ours as ours
             // does: the campaign loop ahead branches the host's way.
@@ -3304,6 +3393,10 @@ private:
             set_wing_bumps_mode((int)b.wing_bumps());
         }
         load_mission_tree_progress(b.mission_tree_progress());
+        // (A mission's ending that came after our own loop had returned -- our own landing ended it -- is not left to
+        // be taken at the next mission's end.)
+        missionTreeProgress_.clear();
+        objectiveFlags_.clear();
         load_campaign_state(b.campaign_state());
         wr8(ds::currentMission, (Bit8u)b.mission_id());
         wr8(ds::currentSeries, (Bit8u)b.series_id());
@@ -3433,6 +3526,7 @@ private:
                 wr16(ds::missionStatus, (Bit16u)end.game_update());
                 lastWrittenMissionStatus_ = end.game_update();
                 missionTreeProgress_ = end.mission_tree_progress();
+                objectiveFlags_ = end.objective_flags();
                 missionEndCampaignState_ = end.campaign_state();
                 wclog(1, "server ended the mission: %s", status_name(end.game_update()));
             }
@@ -3537,6 +3631,7 @@ private:
     GameState lastWrittenMissionStatus_;
     Bit32u lastVictoryPlusOne_;
     std::string missionTreeProgress_;
+    std::string objectiveFlags_;           // WC1: the host's objectives' flags from its MissionEnd, taken at our loop's return
     std::string missionEndCampaignState_;  // WC2: the host's campaign record at its flight loop's return
     bool isFresh_;
     bool hasRestartedMission_;
