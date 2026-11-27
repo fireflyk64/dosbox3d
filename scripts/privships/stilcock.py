@@ -112,7 +112,8 @@ strips(put, C, *VDU, VDU_RX, VDU_Y, drop_cols=VDU_DROP)
 #    center needs a place to put your legs. Before it had the dark regions")
 bx, by, bw, bh = BLOCK
 fill(C, 100, 198, bx, by, bw, 200 - by)
-copy(O, 122, 141, 76, 200 - by - bh, 122, by + bh)
+for row in range(200 - by - bh):       # (upside down: the user, "flip the console upside down exactly from what's there right now")
+    copy(O, 122, 141 + row, 76, 1, 122, 199 - row)
 bezel(bx, by, bw, bh)
 clear(bx + 10, by + 10, bw - 20, bh - 20)
 # 5. its three bays: the bars, the scope, the shields; a rib of the frame's rim between them

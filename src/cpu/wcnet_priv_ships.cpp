@@ -43,8 +43,9 @@ namespace {
 // ---- The added ships ------------------------------------------------------------------------------------------------
 
 const PrivAddedShip kShips[] = {
-    // id  name        appearance   cockpit    hull  scene ship  hold  more
-    { 1,  "Stiletto", "STILETTO",  "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } } },
+    // id  name        appearance   type        cockpit    hull  scene ship  hold  more
+    { 1,  "Stiletto", "STILETTO",  "STILTYPE", "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } },
+      { 0x2C, 0x2F, 0x3E, 0 } },      // (the game's own Stiletto: the generators of engine upgrade 2, shield generator 2's 200)
 };
 const int kShipCount = (int)(sizeof(kShips) / sizeof(kShips[0]));
 
@@ -114,6 +115,34 @@ bool ship2chr_with_rows(const std::vector<Bit8u> &in, std::vector<Bit8u> *out) {
     return true;
 }
 
+// OPTIONS\LIMITS.IFF: FORM SHIP { FIGH, MRCH, CLNK, TUGS: per hull (the Centurion's, the Galaxy's, the Tarsus's, the
+// Orion's) the item numbers its dealers do not sell; PRIC ... }.  The added ship's own list: its hull's and its own.
+bool limits_for_ship(const PrivAddedShip &ship, const std::vector<Bit8u> &in, std::vector<Bit8u> *out) {
+    static const char *const tags[4] = { "CLNK", "TUGS", "FIGH", "MRCH" };
+    if (ship.hull < 0 || ship.hull > 3 || in.size() < 20 || memcmp(&in[0], "FORM", 4) || memcmp(&in[8], "SHIP", 4)) return false;
+    size_t at = 12;
+    while (at + 8 <= in.size()) {
+        const Bit32u n = get32be(&in[at + 4]);
+        if (n > in.size() - at - 8) return false;
+        if (!memcmp(&in[at], tags[ship.hull], 4)) {
+            std::vector<Bit8u> list(in.begin() + at + 8, in.begin() + at + 8 + n);
+            for (int i = 0; i < 8 && ship.notSold[i]; i++) {
+                if (std::find(list.begin(), list.end(), ship.notSold[i]) == list.end()) list.push_back(ship.notSold[i]);
+            }
+            out->assign(in.begin(), in.begin() + at + 4);
+            put32be(*out, (Bit32u)list.size());
+            out->insert(out->end(), list.begin(), list.end());
+            if (list.size() & 1) out->push_back(0);
+            out->insert(out->end(), in.begin() + at + 8 + n + (n & 1), in.end());
+            const Bit32u total = (Bit32u)out->size() - 8;
+            (*out)[4] = (Bit8u)(total >> 24); (*out)[5] = (Bit8u)(total >> 16); (*out)[6] = (Bit8u)(total >> 8); (*out)[7] = (Bit8u)total;
+            return true;
+        }
+        at += 8 + n + (n & 1);
+    }
+    return false;
+}
+
 // APPEARNC\SKELETON.IFF: a table of offsets (from byte 20), each record a length and a FORM SKEL whose FORM WEAP's
 // FORM GUNS has a POSG per mount: the mount, its place on the ship (three words), a word, and its mark's place on the
 // weapons display (two words).  The marks of the added ship's skeleton (the number in its appearance's SKEL chunk)
@@ -152,7 +181,14 @@ bool skeleton_with_marks(const PrivAddedShip &ship, const std::vector<Bit8u> &ap
 
 enum { kTreEntry = 74, kTreName = 65 };
 
-struct TreAdded { std::string name; std::vector<Bit8u> data; Bit32u at; };
+struct TreAdded {
+    std::string name; std::vector<Bit8u> data; Bit32u at;
+    // A file that differs for an added ship's owner: `data` is the game's own (for everybody else), `own` that
+    // ship's, both filled with zeros to one length -- the directory cannot differ (the program keeps what it read of
+    // it in its file buffer), only what a read of the file returns.
+    int forShip;
+    std::vector<Bit8u> own;
+};
 
 struct VTre {
     int entry;                      // DOS's handle entry (-1: none open)
@@ -201,9 +237,14 @@ bool real_file(const std::string &name, std::vector<Bit8u> *out) {
     return false;
 }
 
-void tre_add(const std::string &name, const std::vector<Bit8u> &data) {
+void tre_add(const std::string &name, const std::vector<Bit8u> &data, int forShip = 0, const std::vector<Bit8u> *own = 0) {
     TreAdded a;
-    a.name = name; a.data = data; a.at = 0;
+    a.name = name; a.data = data; a.at = 0; a.forShip = forShip;
+    if (own) {
+        a.own = *own;
+        const size_t n = a.own.size() > a.data.size() ? a.own.size() : a.data.size();
+        a.own.resize(n, 0); a.data.resize(n, 0);
+    }
     g_tre.added.push_back(a);
 }
 
@@ -250,6 +291,7 @@ void tre_build() {
         tre_add(tre_name("COCKPITS", (std::string(kShips[i].cockpit) + ".PAK").c_str()), pak);
         if (priv_ship_appearance(kShips[i], real_file, &out)) tre_add(tre_name("APPEARNC", (std::string(kShips[i].appearance) + ".IFF").c_str()), out);
         else real_file(tre_name("APPEARNC", (std::string(kShips[i].appearance) + ".IFF").c_str()), &out);
+        if (real_file(tre_name("OPTIONS", "LIMITS.IFF"), &in) && limits_for_ship(kShips[i], in, &pak)) tre_add(tre_name("OPTIONS", "LIMITS.IFF"), in, kShips[i].id, &pak);
         if (skel.empty()) real_file(tre_name("APPEARNC", "SKELETON.IFF"), &skel);
         if (!skel.empty() && skeleton_with_marks(kShips[i], out, &skel)) skelChanged = true;
     }
@@ -284,7 +326,9 @@ void tre_build() {
     t.head.assign(t.realDir.begin(), t.realDir.end());
     const Bit32u n = (Bit32u)dir.size();
     t.head[0] = (Bit8u)n; t.head[1] = (Bit8u)(n >> 8); t.head[2] = (Bit8u)(n >> 16); t.head[3] = (Bit8u)(n >> 24);
-    for (size_t i = 0; i < dir.size(); i++) memcpy(&t.head[8 + i * kTreEntry], &dir[i][0], kTreEntry);
+    for (size_t i = 0; i < dir.size(); i++) {
+        memcpy(&t.head[8 + i * kTreEntry], &dir[i][0], kTreEntry);
+    }
     t.size = at;
     t.on = true;
     wclog(1, "Privateer: added ships: %s read with %u files of ours (%u entries, was %u; %u bytes past its end)", t.file.c_str(),
@@ -348,7 +392,8 @@ bool priv_tre_read(Bit16u entry, Bit8u *data, Bit16u *amount) {
             const TreAdded &a = t.added[k];
             const Bit32u in = p - a.at;
             if (n > a.data.size() - in) n = (Bit32u)a.data.size() - in;
-            memcpy(data + done, &a.data[in], n);
+            const PrivAddedShip *owner = a.forShip ? priv_added_ship() : 0;
+            memcpy(data + done, owner && owner->id == a.forShip ? &a.own[in] : &a.data[in], n);
         }
         done += n;
     }
@@ -361,6 +406,13 @@ bool priv_tre_read(Bit16u entry, Bit8u *data, Bit16u *amount) {
 // ---- The player's ship ----------------------------------------------------------------------------------------------
 
 enum { kHullByte = 0x655E };
+
+const PrivAddedShip *priv_added_ship_by_id(int id) { return g_tre.on ? ship_by_id(id) : 0; }
+
+const char *priv_hull_appearance(int hull) {
+    static const char *const names[4] = { "CLUNKER", "TUG", "FIGHTER", "MERCHANT" };
+    return hull >= 0 && hull < 4 ? names[hull] : "CLUNKER";
+}
 
 // The ship the player owns, if an added one.  Which: the saved game's word (below), kept while the game's hull byte
 // is that ship's hull -- the game writes the byte at a load and at the dealer's sale only, so a ship of the game's

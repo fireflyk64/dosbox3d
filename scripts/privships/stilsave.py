@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A saved game's pilot put in an added ship (docs/privateer.md section 42): the Stiletto.
 
-  stilsave.py <in.SAV> <out.SAV> [guns=7,7] [missiles=5:10] [engine=2] [shield=<id>] [hold=20]
+  stilsave.py <in.SAV> <out.SAV> [guns=7,7] [missiles=5:10] [engine=2] [shield=91] [hold=20]
 
 The saved game must be a Centurion's (the hull the Stiletto is flown on).  Its ship (the record that is an IFF FORM
 REAL, PLAYTYPE.IFF's bytes) is given what a Stiletto can carry:
@@ -10,6 +10,7 @@ REAL, PLAYTYPE.IFF's bytes) is given what a Stiletto can carry:
 - one missile launcher, on mount 0, with its missiles (type:count; 1 Torpedo, 2 Heat Seeker, 3 FF, 4 Dumbfire, 5 IR);
 - no turret;
 - the engine level (LIMITS.IFF's generators: level 2 is two of generator 1, one each of 3, 4 and 5);
+- shield generator 2 (SHIELDS.IFF's 0x5B: 200 a side, what the game's own Stiletto carries);
 - the hold's size.
 And the saved game says whose ship it is: the second byte of its first record (the hull's high byte, which the game
 writes as 0 and never reads) is the added ship's id, 1.
@@ -42,7 +43,7 @@ def replace_record(sav, k, new):
     struct.pack_into("<I", out, 0, len(out))
     return bytes(out)
 
-def stiletto(sav, guns=(7, 7), missiles=(5, 10), engine=2, shield=None, hold=20, ship_id=1):
+def stiletto(sav, guns=(7, 7), missiles=(5, 10), engine=2, shield=0x5B, hold=20, ship_id=1):
     offs = table(sav)
     if sav[offs[0]] != 2: raise SystemExit("the saved game's hull is %d, not a Centurion's (2)" % sav[offs[0]])
     k = next(i for i, o in enumerate(offs) if sav[o:o + 4] == b"FORM" and sav[o + 8:o + 12] == b"REAL")

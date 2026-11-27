@@ -15,6 +15,7 @@ struct PrivAddedShip {
     int id;                     // told in the saved game and to the room (never renumbered)
     const char *name;           // "Stiletto"
     const char *appearance;     // DATA\APPEARNC\<this>.IFF: the ship in space
+    const char *type;           // DATA\TYPES\<this>.IFF: the game's own ship of that appearance (another pilot's is made as it)
     const char *cockpit;        // DATA\COCKPITS\<this>.IFF and .PAK: made by the layer
     int hull;                   // the game's hull it is flown on (ds:655E: 0 Tarsus, 1 Orion, 2 Centurion, 3 Galaxy)
     int sceneShip;              // its ship in the landing and takeoff scenes (SHIP2CHR.IFF's number)
@@ -23,10 +24,17 @@ struct PrivAddedShip {
     // appearance's own, SKELETON.IFF's, are a display no player saw: the user, "The two bolt mounts need to be
     // pulled together too so they touch the stiletto wings").  A mount of -1 ends them.
     struct Mark { int mount, x, y; } marks[4];
+    // What the dealers do not sell it beyond what they do not sell its hull (LIMITS.IFF's list of item numbers, the
+    // equipment list's: 0x2C the tail turret, 0x2F-0x31 shield generators 3-5, 0x3E-0x40 engine upgrades 3-5); 0 ends.
+    Bit8u notSold[8];
 };
 
 // The ship the player owns, if an added one (0: one of the game's four).
 const PrivAddedShip *priv_added_ship();
+// An added ship by its id (0: none such here).
+const PrivAddedShip *priv_added_ship_by_id(int id);
+// The appearance the game itself gives a hull ("FIGHTER" the Centurion's).
+const char *priv_hull_appearance(int hull);
 // At the IFF reader's table seek (seg214:03DF).
 void priv_ships_table_seek();
 // The other places (their offsets are watched in every segment; the code there tells which is meant).

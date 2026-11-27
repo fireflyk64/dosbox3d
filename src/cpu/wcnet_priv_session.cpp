@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <chrono>
 #include "wcnet_priv.h"
+#include "wcnet_priv_ships.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
 #include "wcnet_log.h"
@@ -959,6 +960,7 @@ void take_state(const PrivState &st, int seat) {
     p.at = PIC_FullIndex();
     p.system = st.system();
     p.appearance = st.appearance();
+    if (const PrivAddedShip *added = st.has_added_ship() ? priv_added_ship_by_id((int)st.added_ship()) : 0) p.appearance = added->appearance;
     p.x = st.x();
     p.y = st.y();
     p.z = st.z();
@@ -1666,6 +1668,7 @@ namespace {
 
 // The NPC type the game makes a player's ship as, by the player's appearance.
 const char *type_of(const std::string &appearance) {
+    for (int id = 1; const PrivAddedShip *s = priv_added_ship_by_id(id); id++) if (appearance == s->appearance) return s->type;
     if (appearance == "TUG") return "ORIOTYPE";
     if (appearance == "FIGHTER") return "CENTTYPE";
     if (appearance == "MERCHANT") return "GLXYTYPE";
@@ -1763,7 +1766,9 @@ void puppet_made(int seat, Bit16u obj) {
     }
     p.obj = obj;
     const std::string who = g_net->pilots[seat].callsign.empty() ? "a pilot" : g_net->pilots[seat].callsign;
-    tell(who + "'s " + (p.appearance == "TUG" ? "Orion" : p.appearance == "FIGHTER" ? "Centurion" : p.appearance == "MERCHANT" ? "Galaxy" : "Tarsus")
+    std::string kind = p.appearance == "TUG" ? "Orion" : p.appearance == "FIGHTER" ? "Centurion" : p.appearance == "MERCHANT" ? "Galaxy" : "Tarsus";
+    for (int id = 1; const PrivAddedShip *s = priv_added_ship_by_id(id); id++) if (p.appearance == s->appearance) kind = s->name;
+    tell(who + "'s " + kind
          + " is in your space");
     wclog(2, "Privateer: pilot %d's ship is ds:%04X (type ds:%04X, controller ds:%04X held)", seat + 1, obj, p.type, priv_ship_controller(obj));
 }
@@ -1836,7 +1841,12 @@ void send_state(double now) {
     for (int i = 0; i < 9; i++) {
         st->add_m(m[i]);
     }
-    st->set_appearance(priv_player_appearance());
+    if (const PrivAddedShip *added = priv_added_ship()) {
+        st->set_appearance(priv_hull_appearance(added->hull));
+        st->set_added_ship((Bit32u)added->id);
+    } else {
+        st->set_appearance(priv_player_appearance());
+    }
     st->set_afterburner(priv_ship_afterburner(priv_player_ship()));
     st->set_vx((Bit32s)g_net->vx);
     st->set_vy((Bit32s)g_net->vy);
