@@ -13,7 +13,12 @@
 // has BRAVO's table, decides again.  Pictures of both screens before, during and after.  Prints "ok"/"FAIL" and
 // "SLEEP OK".
 //
-//   PLAYWRIGHT_DIR=... SHOT_DIR=... ASLEEP=60 node web-priv-sleep.mjs PAGE_URL LOBBY_URL INSTALLER
+// SCENARIO=reseat: the room is of 2 (full), the seat's claim after CLAIM_MS (the page's ?claimms=, 15 s) instead of
+// two minutes; while ALPHA sleeps, CHARLIE comes to the full room and takes ALPHA's silent seat (seat 1), then BRAVO
+// leaves (seat 2 free).  ALPHA wakes: its token is no good any more, it joins in seat 2 -- its game takes the new
+// seat and flies on (pilot 2 now), links with CHARLIE, each sees the other; CHARLIE, the lowest seat, decides.
+//
+//   PLAYWRIGHT_DIR=... SHOT_DIR=... ASLEEP=60 SCENARIO=same|reseat node web-priv-sleep.mjs PAGE_URL LOBBY_URL INSTALLER
 import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
@@ -23,7 +28,9 @@ const [pageUrl, lobbyUrl, installer] = process.argv.slice(2);
 const require = createRequire(path.join(process.env.PLAYWRIGHT_DIR || process.cwd(), "package.json"));
 const { chromium } = require("playwright");
 const shotDir = process.env.SHOT_DIR || ".";
-const asleep = Number(process.env.ASLEEP || 60);
+const scenario = process.env.SCENARIO || "same";
+const asleep = Number(process.env.ASLEEP || (scenario === "reseat" ? 50 : 60));
+const claimMs = Number(process.env.CLAIM_MS || 15000);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const t0 = Date.now();
 const stamp = () => ((Date.now() - t0) / 1000).toFixed(1);
@@ -74,6 +81,7 @@ async function open(browser, name, room) {
   u.searchParams.set("env.WCNET_KEYSCRIPT", route);
   u.searchParams.set("env.WCNET_KEYSCRIPT_FROM", "boot");
   u.searchParams.set("env.WCNET_LOG", "2");
+  if (scenario === "reseat") u.searchParams.set("claimms", String(claimMs));
   await page.goto(u.toString());
   await page.setInputFiles("#gamefile", installer);
   await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "error"
@@ -118,17 +126,21 @@ const fly = async (p) => {
 
 // ALPHA makes the room and flies; BRAVO joins by the code and flies
 const alpha = await open(browserA, "ALPHA", "");
+if (scenario === "reseat") {
+  await alpha.page.evaluate(() => { const el = document.getElementById("seats"); el.value = "2"; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); });
+}
 await alpha.page.click("#join");
 await alpha.page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
 const code = await alpha.page.evaluate(() => document.getElementById("room").value);
 console.log(`${stamp()} the room: ${code}`);
 await fly(alpha);
-check("ALPHA: pilot 1 of an open room", await waitLog(alpha, /Privateer: OPEN ROOM at room \S+, 32 seats/, 120000), found(alpha, /Privateer: (OPEN ROOM|HOST|GUEST) at/));
+const roomSeats = scenario === "reseat" ? 2 : 32;
+check(`ALPHA: pilot 1 of an open room of ${roomSeats}`, await waitLog(alpha, new RegExp(`Privateer: OPEN ROOM at room \\S+, ${roomSeats} seats`), 120000), found(alpha, /Privateer: (OPEN ROOM|HOST|GUEST) at/));
 check("ALPHA in space", await waitLog(alpha, /our presence sent \(a launch\)/, 180000), found(alpha, /presence sent \(a launch\)/));
 const bravo = await open(browserB, "BRAVO", code);
 await bravo.page.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 60000 });
 await fly(bravo);
-check("BRAVO: pilot 2", await waitLog(bravo, /Privateer: In room \S+ as pilot 2 of 32/, 120000), found(bravo, /as pilot/));
+check("BRAVO: pilot 2", await waitLog(bravo, new RegExp(`Privateer: In room \\S+ as pilot 2 of ${roomSeats}`), 120000), found(bravo, /as pilot/));
 check("BRAVO sees ALPHA's ship", await waitLog(bravo, /Privateer: ALPHA's \w+ is in your space/, 240000), found(bravo, /is in your space/));
 check("ALPHA sees BRAVO's ship", await waitLog(alpha, /Privateer: BRAVO's \w+ is in your space/, 60000), found(alpha, /is in your space/));
 check("BRAVO takes ALPHA, the lowest seat, for the decider", await waitLog(bravo, /Privateer: pilot 1 decides the nav points/, 30000), found(bravo, /decides/));
@@ -137,6 +149,46 @@ await pictures(alpha, 1, bravo, 2, "sleep-1-before");
 
 // ALPHA's laptop closed: its Chrome stopped, every process of it
 const pids = tree(alphaChrome[0]);
+if (scenario === "reseat") {
+  const slept = Date.now();
+  console.log(`${stamp()} ALPHA's computer asleep for ${asleep} s (${pids.length} processes stopped)`);
+  for (const pid of pids) { try { process.kill(pid, "SIGSTOP"); } catch (e) { /* gone */ } }
+  // (ALPHA's last word to the server was up to 25 s before: its seat claimable CLAIM_MS after that)
+  await sleep(claimMs + 8000);
+  const charlie = await open(browserB, "CHARLIE", code);
+  await charlie.page.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 120000 });
+  check("CHARLIE took ALPHA's silent seat in the full room", await waitLog(charlie, /room \S+ was full: seat 1, silent/, 5000), found(charlie, /was full|lobby:/));
+  await fly(charlie);
+  check("CHARLIE: pilot 1 (ALPHA's seat)", await waitLog(charlie, /Privateer: In room \S+ as pilot 1 of 2/, 120000), found(charlie, /as pilot/));
+  await bravo.page.close({ runBeforeUnload: false });
+  await bravo.ctx.close();
+  console.log(`${stamp()} BRAVO left (seat 2 free)`);
+  await sleep(Math.max(0, asleep * 1000 - (Date.now() - slept)));
+  for (const pid of pids) { try { process.kill(pid, "SIGCONT"); } catch (e) { /* gone */ } }
+  const woke = Date.now();
+  console.log(`${stamp()} ALPHA's computer awake`);
+  check("ALPHA's page knows it was away", await waitLog(alpha, /the page was away \d+ s/, 20000, woke), found(alpha, /was away/, woke));
+  check("ALPHA's game takes the room's new connection, in seat 2", await waitLog(alpha, /room \S+ joined again as player 1/, 90000, woke), found(alpha, /joined again/, woke));
+  check("ALPHA's game takes its new seat", await waitLog(alpha, /Privateer: the room joined again as pilot 2 \(we were pilot 1\)/, 20000, woke), found(alpha, /the room joined again/, woke));
+  check("ALPHA hears CHARLIE in seat 1", await waitLog(alpha, /Privateer: CHARLIE is in the room as pilot 1/, 60000, woke), found(alpha, /CHARLIE/, woke));
+  check("CHARLIE hears ALPHA in seat 2", await waitLog(charlie, /Privateer: ALPHA is in the room as pilot 2/, 60000, woke), found(charlie, /ALPHA/, woke));
+  check("ALPHA sees CHARLIE's ship", await waitLog(alpha, /Privateer: CHARLIE's \w+ is in your space/, 120000, woke), found(alpha, /is in your space/, woke));
+  check("CHARLIE sees ALPHA's ship", await waitLog(charlie, /Privateer: ALPHA's \w+ is in your space/, 60000, woke), found(charlie, /is in your space/, woke));
+  check("ALPHA takes CHARLIE, the lowest seat, for the decider", await waitLog(alpha, /Privateer: pilot 1 decides the nav points/, 30000, woke), found(alpha, /decides/, woke));
+  check("ALPHA never back at the menu", !alpha.logs.some(([at, l]) => at >= slept && /session closed|PRCD\.EXE ended|The game left the room/.test(l)), found(alpha, /session closed|PRCD\.EXE ended|left the room/, slept));
+  await sleep(12000);
+  await pictures(alpha, 2, charlie, 1, "reseat-after");
+  for (const p of [alpha, charlie]) {
+    const errs = p.logs.filter(([, l]) => /reports error|PRCD\.EXE ended|RuntimeError|Aborted/.test(l)).map(([, l]) => l);
+    check(`${p.name}: no error of the game's, still running`, errs.length === 0 && !p.page.isClosed(), errs.slice(0, 2).join(" | ").slice(0, 160));
+  }
+  fs.writeFileSync(path.join(shotDir, "alpha.log"), alpha.logs.map(([at, l]) => `${((at - t0) / 1000).toFixed(1)} ${l}`).join("\n"));
+  fs.writeFileSync(path.join(shotDir, "charlie.log"), charlie.logs.map(([at, l]) => `${((at - t0) / 1000).toFixed(1)} ${l}`).join("\n"));
+  console.log(failed ? `RESEAT FAILED (${failed})` : "RESEAT OK");
+  await browserA.close();
+  await browserB.close();
+  process.exit(failed ? 1 : 0);
+}
 const slept = Date.now();
 console.log(`${stamp()} ALPHA's computer asleep for ${asleep} s (${pids.length} processes stopped)`);
 for (const pid of pids) { try { process.kill(pid, "SIGSTOP"); } catch (e) { /* gone */ } }

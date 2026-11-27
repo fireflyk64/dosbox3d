@@ -746,7 +746,7 @@ const PRIV_CREWS = ["own", "crew"];
 // A Privateer room of one ship, crewed (the host's Ships choice) is no open room: the host flies, the others board.
 const openRooms = () => !!(gameInfo() && gameInfo().openRooms);
 const comeAndGo = () => openRooms() && lobby.privCrew !== "crew";
-const OPEN_CLAIM_MS = 120000;
+const OPEN_CLAIM_MS = Number(query.get("claimms")) || 120000;     // (?claimms= for the tests alone: scripts/web-priv-sleep.mjs SCENARIO=reseat)
 let seatsSet = false;       // (the pilot set the Players box: kept as they set it, whatever the game)
 const seatsDefault = () => (phoneLike() ? 1 : openRooms() ? maxSeats() : 2);
 const betaSeats = () => seatCount() < 3 || openRooms();      // (the box's "beta" tag hidden: 3 pilots and more are beta but in open rooms)
@@ -1889,6 +1889,9 @@ async function resumeRoom() {
     lobby.adopted = running; lobby.backlog = [];     // (flying: the game takes the new connection's messages itself)
     lobby.links.clear();
     lobby.unsubscribe = game.onEvent(onLobbyEvent);
+    // (flying: the game's transport takes the new connection now, in this same turn, before any of its events -- a
+    // link comes up within a tenth of a second, its "connected" and the first hello with it: src/wclobby_web.js follow)
+    if (running) { try { if (window.DOSBox && typeof window.DOSBox.lobbyFollowNow === "function") window.DOSBox.lobbyFollowNow(); } catch (e) { log(`lobby: the game's transport: ${e.message || e}`); } }
     chatLine(`The lobby server's connection is made again: room ${esc(code)} is open${game.selfId !== old.selfId ? `, and you are player ${game.selfId + 1} of it now` : ""}.`, "sys");
     log(`lobby: room ${code}: the connection made again as player ${game.selfId} of ${game.maxPlayers}`);
     renderRoster(); updateActions();

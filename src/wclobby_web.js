@@ -161,6 +161,13 @@ addToLibrary({
         }
         live.players.forEach((p) => { if (p.occupied && hub.peers[p.id]) hub.peers[p.id].occupied = true; });
         hub.unsub = live.onEvent((ev) => WCLOBBY.handleEvent(hub, ev));
+        // (a link of the new connection already up -- its "connected" told before we listened -- is up for us too; the
+        // page calls lobbyFollowNow as it takes the connection, so this is only the backstop)
+        try {
+          if (live.peers && typeof live.peers.forEach === 'function') live.peers.forEach((link, id) => {
+            if (link && link.pc && link.pc.connectionState === 'connected' && hub.peers[id] && hub.peers[id].occupied) WCLOBBY.linkUp(hub, id);
+          });
+        } catch (e) { /* (the client's insides: only a backstop) */ }
         WCLOBBY.log(0, 'room ' + hub.code + ' joined again as player ' + live.selfId + ': every link made anew');
         WCLOBBY.notify(hub);
       } else if (hub.endedAt && Date.now() - hub.endedAt > 15000) {
@@ -312,7 +319,11 @@ addToLibrary({
         if (p.connected && p.id !== game.selfId && hub.peers[p.id] && how === 'adopted') hub.peers[p.id].link = WCLOBBY.LINK_UP;
       });
       hub.unsub = game.onEvent((ev) => WCLOBBY.handleEvent(hub, ev));
-      if (how === 'adopted') hub.watch = setInterval(() => WCLOBBY.follow(hub), 500);
+      if (how === 'adopted') {
+        hub.watch = setInterval(() => WCLOBBY.follow(hub), 500);
+        // (the page calls this the moment it has a new connection, before any of its events: none missed)
+        Module['lobbyFollowNow'] = () => { for (var k in WCLOBBY.hubs) if (WCLOBBY.hubs[k].adopted) WCLOBBY.follow(WCLOBBY.hubs[k]); };
+      }
       var h = WCLOBBY.nextHandle++;
       WCLOBBY.hubs[h] = hub;
       WCLOBBY.log(1, how + ' room ' + code + ' as player ' + game.selfId + ' of ' + game.maxPlayers);
