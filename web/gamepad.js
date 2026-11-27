@@ -194,8 +194,9 @@ export function stepped(v, steps, reach, edge, top) {
 //   builtIn(): whether the game reads a joystick itself (pads are offered
 //              "built in" too)
 //   builtInHint(): what a built-in pad does in this game, when not Wing Commander's (null: WC's)
-//   noneChoices(): the entries for no controller, [{ value, label, picked }], when not the one "Keyboard + mouse"
-//              (Privateer's two: its pointer shown or not); pickNone(value): one of them picked
+//   noneChoices(): the entries for no controller, [{ value, label, picked, title? }], when not the one "Keyboard + mouse"
+//              (Privateer's two: its pointer shown or not; Wing Commander 1's: its turns as the arrows say, or its own keyboard);
+//              pickNone(value): one of them picked
 //   joystickPort(): null before the launch, then whether it put the game
 //              port in (a built-in pad was chosen then)
 export function initControls(host) {
@@ -265,8 +266,8 @@ export function initControls(host) {
     if (signature !== listed) {
       listed = signature;
       sel.innerHTML = "";
-      const add = (value, text) => { const o = document.createElement("option"); o.value = value; o.textContent = text; sel.appendChild(o); };
-      for (const c of noneChoices()) add(c.value, c.label);
+      const add = (value, text, title) => { const o = document.createElement("option"); o.value = value; o.textContent = text; if (title) o.title = title; sel.appendChild(o); };
+      for (const c of noneChoices()) add(c.value, c.label, c.title);
       for (const p of list) {
         const busy = usedElsewhere(padKey(p)) ? " (in use in another window)" : "";
         add(padKey(p), `${p.index + 1}: ${p.id}${busy}`);

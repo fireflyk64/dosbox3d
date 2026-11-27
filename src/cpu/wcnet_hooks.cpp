@@ -1818,7 +1818,8 @@ static void rv_publish_role() {
 // game's: its keyboard interrupt keeps a byte per scan code, the E0 prefix
 // ignored (WC.EXE seg022:0356), and its ramp (seg001:0945) turns by 8/2 and
 // the keypad's 7 9 1 3 (both axes), 4/6, Ins/Del and , . (roll).
-// WCNET_TURNLATCH=1 keeps the game's own behaviour.
+// WCNET_TURNLATCH=1 at the launch, or wc_web_turn_latch(1) since (the page's
+// Controller list, "Original keyboard"), keeps the game's own behaviour.
 static int g_turnLatch = -1;
 
 static bool turn_latch() {
@@ -2315,6 +2316,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_hires(int on) {
     return wc::priv_hires_on() ? 1 : 0;
 }
 
+// Wing Commander 1's keyboard: 1 the game's own (a turn goes on after its arrow is let go while another key is held),
+// 0 an arrow let go stops its turn (steer_keys_held); a negative value only asks.
+extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_turn_latch(int original) {
+    if (original >= 0) {
+        wc::g_turnLatch = original ? 1 : 0;
+    }
+    return wc::turn_latch() ? 1 : 0;
+}
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_pointer(int shown) {
     if (shown >= 0) {
         wc::priv_pointer_set(shown != 0);

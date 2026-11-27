@@ -2414,6 +2414,20 @@ function setPrivPointer(v) {
   const M = running && window.DOSBox;
   if (M && M._wc_web_priv_pointer && isPriv()) M._wc_web_priv_pointer(privPointer === "ring" ? 1 : 0);
 }
+// (Wing Commander 1's arrows: an arrow let go stops its turn even while Space, Tab or another key is held, the default;
+// or the game's own keyboard, where the turn went on until every key was up (the user, 2026-11-26: "Can we have an
+// option to have the original keyboard control in the mouse and keyboard dropdown"). In the Controller list as
+// "Keyboard + mouse" and "Original keyboard"; given to the emulator at the launch, WCNET_TURNLATCH, and while flying,
+// wc_web_turn_latch: src/cpu/wcnet_hooks.cpp steer_keys_held)
+const WC1_KEYS_KEY = "wc:wc1Keys";
+let wc1Keys = "steady";
+try { if (localStorage.getItem(WC1_KEYS_KEY) === "original") wc1Keys = "original"; } catch (e) { /* the first */ }
+function setWc1Keys(v) {
+  wc1Keys = v === "original" ? "original" : "steady";
+  try { localStorage.setItem(WC1_KEYS_KEY, wc1Keys); } catch (e) { /* not kept */ }
+  const M = running && window.DOSBox;
+  if (M && M._wc_web_turn_latch && isWc1()) M._wc_web_turn_latch(wc1Keys === "original" ? 1 : 0);
+}
 // (Privateer's mouse flying: the game's pitch is a flight stick's, the mouse pushed up dives, with no setting for it;
 // unticked, the default, the emulator turns it the other way up (the user, 2026-11-22: "The mouse is inverted. Is
 // there a way to change it back. An option or toggle"): WCPRIVMOUSEINVERT at the launch, wc_web_priv_mouse_invert while
@@ -2752,6 +2766,7 @@ async function start(fromGesture) {
     if (isTie()) env.WCNET_TIE_TOUCH = "1";
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
     if (isPriv()) env.WCPRIVPOINTER = privPointer;
+    if (isWc1() && wc1Keys === "original") env.WCNET_TURNLATCH = "1";
     if (isPriv()) env.WCPRIVMOUSEINVERT = $("privMouseInvert").checked ? "1" : "0";
     if (isPriv() && privHiresLevel()) env.WCPRIVHIRES = privHiresLevel() === 2 ? "1" : "space";
     if (isArmada() && armHiresLevel()) env.WCARMHIRES = "1";
@@ -3061,6 +3076,7 @@ const isTfd = () => !!(gameInfo() && gameInfo().id === "tiedemo");
 const isXw = () => !!(gameInfo() && gameInfo().id === "xwing");
 const isTie = () => isTf() || isTfd() || isXw();
 const isPriv = () => !!(gameInfo() && (gameInfo().id === "priv" || gameInfo().id === "privrf"));
+const isWc1 = () => !!(gameInfo() && (gameInfo().id === "wc1" || gameInfo().id === "wc1sm2"));
 const isTv = () => !!(gameInfo() && gameInfo().id === "tv");
 const isRap = () => !!(gameInfo() && gameInfo().id === "rap");
 // (the room's game, the loaded one's or the lobby's)
@@ -3170,8 +3186,13 @@ const controls = initControls({
     : isArmada() ? "Built in: calibrate JOY 1 in Armada’s Options before entering net play. The game reads the stick and trigger through its joystick port." : null),
   noneChoices: () => (isPriv()
     ? [{ value: "none", label: "Kbd + mouse (shown)", picked: privPointer === "ring" }, { value: "none-game", label: "Keyboard + mouse", picked: privPointer === "game" }]
+    : isWc1()
+    ? [{ value: "none", label: "Keyboard + mouse", picked: wc1Keys !== "original",
+         title: "An arrow let go stops its turn, whatever other key is held" },
+       { value: "none-original", label: "Original keyboard", picked: wc1Keys === "original",
+         title: "The game's own keyboard: while Space, Tab or any other key is held, a turn goes on after its arrow is let go" }]
     : null),
-  pickNone: (v) => { if (isPriv()) setPrivPointer(v === "none-game" ? "game" : "ring"); },
+  pickNone: (v) => { if (isPriv()) setPrivPointer(v === "none-game" ? "game" : "ring"); else if (isWc1()) setWc1Keys(v === "none-original" ? "original" : "steady"); },
   joystickPort: () => (running ? joystickPort : null),
   log,
 });

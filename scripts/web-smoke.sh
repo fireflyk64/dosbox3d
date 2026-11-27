@@ -7,6 +7,7 @@
 #   scripts/web-smoke.sh [seconds] [mission] [series]
 #   NATIVE_HOST=1 scripts/web-smoke.sh [seconds] [mission] [series]
 #   scripts/web-smoke.sh pad      # a controller's stick in a Hornet and a Rapier (scripts/web-pad.mjs)
+#   scripts/web-smoke.sh wc1keys  # WC1's arrows let go with Space held, and the Controller list's Original keyboard (scripts/web-wc1-keys.mjs)
 #   scripts/web-smoke.sh voice    # voice between two pages (scripts/web-voice.mjs)
 #   scripts/web-smoke.sh hall     # the public lobby and room codes (scripts/web-hall.mjs; scripts/web-chatfilter-test.mjs first)
 #   scripts/web-smoke.sh skew     # pages of different builds: the older told to reload, in the lobby and a room (scripts/web-build-skew.mjs)
@@ -61,6 +62,10 @@ sleep 1
 
 if [ "${1:-}" = pad ]; then
     PLAYWRIGHT_DIR="$PW" SHOT_DIR="$OUT" node "$ROOT/scripts/web-pad.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" wc1 2>&1 | tee "$OUT/pad.log"
+    exit "${PIPESTATUS[0]}"
+fi
+if [ "${1:-}" = wc1keys ]; then
+    PLAYWRIGHT_DIR="$PW" OUT="$OUT" node "$ROOT/scripts/web-wc1-keys.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" 2>&1 | tee "$OUT/wc1keys.log"
     exit "${PIPESTATUS[0]}"
 fi
 if [ "${1:-}" = voice ]; then
