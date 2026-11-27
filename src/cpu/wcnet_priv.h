@@ -123,6 +123,9 @@ bool priv_ship_fire_guns(Bit16u obj, int groups);
 // pilot's ship given a pilot's guns: as many of its own as there are rewritten to them, the rest never fired (their
 // station one no seat fires from); the ones switched on in group 0, the others in group 3.  Both at the frame.
 enum { kGunBytes = 0x36 };
+// A ship's afterburner lit (the control record's +0x1E bit 0), and a copy's set so (its flames: section 39); at the frame.
+bool priv_ship_afterburner(Bit16u obj);
+void priv_ship_set_afterburner(Bit16u obj, bool on);
 int priv_ship_gun_list(Bit16u ship, std::vector<std::string> &out);
 int priv_ship_set_guns(Bit16u ship, const std::vector<std::string> &guns);
 // (A test aid's) angry at the player, as a hit from the player makes it (at the next frame).

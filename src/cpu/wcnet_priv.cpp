@@ -97,7 +97,7 @@ enum {
     kDamageDisplayObj = 0x6803,
     kSeg120 = 0x489B,
     kFireGuns = 0x0004,             // seg120:0004(weapons far, n): a ship's guns fired (the weapons' +0xA is the ship)
-    kControlFire = 0x1E,            // the control record's fire bits: 4 the guns, 2 the launcher
+    kControlFire = 0x1E,            // the control record's fire bits: 4 the guns, 2 the launcher, 1 the afterburner (Tab)
     kShipWeapons = 0x4E,            // a ship's weapons record (far; seg120:0004's first argument)
     kSeg125 = 0x4B2B,
     kView = 0x143C,                 // the view: 0 forward, 1 2 the sides, 3 back, 4 5 the turrets (seg038)
@@ -1900,6 +1900,39 @@ int priv_ship_set_guns(Bit16u ship, const std::vector<std::string> &want) {
 }
 
 bool g_gunsDump, g_gunsAll;
+bool g_shipDump;
+// !privshipdump: our ship's object (0x90 bytes) and what each far pointer in it points at (0x80 bytes), a rig's diff
+// of the ship as it changes (the afterburner's flame: section 39)
+static void ship_dump_frame() {
+    if (!g_shipDump) return;
+    g_shipDump = false;
+    const double t = PIC_FullIndex() / 1000.0;
+    const Bit16u ship = priv_r16(kPlayerShip);
+    if (!ship) return;
+    char hex[3 * 0x90 + 1];
+    for (int j = 0; j < 0x90; j++) snprintf(hex + 3 * j, 4, "%02X ", priv_r8((Bit16u)(ship + j)));
+    wclog(1, "Privateer: ship %.1f ds:%04X: %s", t, ship, hex);
+    for (int k = 0; k < 0x90; k += 2) {
+        const Bit16u off = priv_r16((Bit16u)(ship + k)), seg = priv_r16((Bit16u)(ship + k + 2));
+        if (seg < 0x1000 || seg > 0xF000) continue;
+        char h2[3 * 0x80 + 1];
+        for (int j = 0; j < 0x80; j++) snprintf(h2 + 3 * j, 4, "%02X ", mem_readb(((PhysPt)seg << 4) + off + j));
+        wclog(1, "Privateer: ship %.1f +%02X -> %04X:%04X: %s", t, k, seg, off, h2);
+    }
+    // its controller (near) and the controller's control record (far at +2: the fire bits at +0x1E)
+    const Bit16u ctl = priv_r16((Bit16u)(ship + kShipController));
+    if (ctl) {
+        for (int j = 0; j < 0x60; j++) snprintf(hex + 3 * j, 4, "%02X ", priv_r8((Bit16u)(ctl + j)));
+        hex[3 * 0x60] = 0;
+        wclog(1, "Privateer: ship %.1f ctl ds:%04X: %s", t, ctl, hex);
+        const Bit16u off = priv_r16((Bit16u)(ctl + 2)), seg = priv_r16((Bit16u)(ctl + 4));
+        if (seg) {
+            char h2[3 * 0x80 + 1];
+            for (int j = 0; j < 0x80; j++) snprintf(h2 + 3 * j, 4, "%02X ", mem_readb(((PhysPt)seg << 4) + off + j));
+            wclog(1, "Privateer: ship %.1f rec %04X:%04X: %s", t, seg, off, h2);
+        }
+    }
+}
 // !privguns: our ship's guns (group, station, switched on, the time since its shot, its delay, its energy), the seat the
 // weapons are fired from, the view, and the turrets
 static void guns_dump_frame() {
@@ -2051,6 +2084,7 @@ bool priv_check_hooks(Bit32u ip) {
             plan_dump_frame();
             dmg_dump_frame();
             guns_dump_frame();
+            ship_dump_frame();
             stack_paint_frame();
             gun_stress_frame();
             turn_step();
@@ -2567,6 +2601,10 @@ bool priv_script_item(const std::string &item, double t) {
         const bool queued = item[10] == '1' && priv_ship_fire_guns(ship, 0x18);
         if (item[10] != '1') priv_ship_fire(ship, false);
         wclog(1, "key script %.1fs: ds:%04X %s", t, ship, item[10] == '1' ? (queued ? "fires" : "cannot fire") : "fire bit let go");
+        return true;
+    }
+    if (item.compare(0, 14, "!privshipdump") == 0 && g_found) {
+        g_shipDump = true;      // (at the next frame: far data)
         return true;
     }
     if (item.compare(0, 9, "!privguns") == 0 && g_found) {
@@ -3454,6 +3492,20 @@ static bool fire_record(Bit16u obj, PhysPt *rec) {
     if (!seg) return false;
     *rec = ((PhysPt)seg << 4) + off + kControlFire;
     return true;
+}
+// The afterburner (section 39): the control record's +0x1E bit 0, set by the player's Tab (measured: !privshipdump with
+// Tab held and let go, the only byte of the ship's objects that follows it, the energy aside); a held copy's never set:
+// its flames never lit on the others' screens (the user, 2026-11-27).  Read and set at the frame (far data).
+bool priv_ship_afterburner(Bit16u obj) {
+    PhysPt rec;
+    Bit8u b = 0;
+    return obj && fire_record(obj, &rec) && !mem_readb_checked(rec, &b) && (b & 1);
+}
+void priv_ship_set_afterburner(Bit16u obj, bool on) {
+    PhysPt rec;
+    Bit8u b = 0;
+    if (!obj || !priv_ship_is_alive(obj) || !fire_record(obj, &rec) || mem_readb_checked(rec, &b)) return;
+    if (((b & 1) != 0) != on) mem_writeb(rec, (Bit8u)(on ? (b | 1) : (b & ~1)));
 }
 static void fire_guns_off(Bit16u obj) {
     PhysPt rec;

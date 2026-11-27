@@ -754,6 +754,7 @@ message PrivState {
     repeated sint32 armor = 13 [packed = true];     // the four quadrants' armour, as the target display shows them
     repeated sint32 shield = 14 [packed = true];    // the four quadrants' shields (the damage model's int32 at +0x31 + 6q)
     optional sint32 target_seat = 15;   // the pilot its targeting system is on (the seat; -1 none, or no pilot)
+    optional bool afterburner = 16;     // its afterburner lit (the control record's +0x1E bit 0, Tab: docs/privateer.md section 39)
 }
 message NetworkMessage {
     optional Connect connect = 1;

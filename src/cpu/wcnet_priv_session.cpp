@@ -204,12 +204,13 @@ struct Puppet {
     Bit32s armor[4], shield[4]; // its damage model's, as its reports say (a target display shows them)
     bool damage;                // its reports had them (an older build's did not)
     int targetSeat;             // the pilot its targeting system is on, as its reports say (-1 none)
+    bool burner;                // its afterburner lit, as its reports say (section 39)
     std::string made;           // the appearance the ship here was made as (another ship flown now: made again)
     unsigned gunsApplied;       // its pilot's guns given to the ship here: which change, and to which ship
     Bit16u gunsObj;
     bool release;               // its pilot left the room: the ship here given back at the next frame
     Puppet() : reported(false), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), obj(0), type(0), pending(false), parked(false), deadUntil(-1e9),
-               damage(false), targetSeat(-1), gunsApplied(0), gunsObj(0), release(false) {
+               damage(false), targetSeat(-1), burner(false), gunsApplied(0), gunsObj(0), release(false) {
         for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
         for (int i = 0; i < 4; i++) armor[i] = shield[i] = 0;
     }
@@ -919,6 +920,7 @@ void take_state(const PrivState &st, int seat) {
         p.m[i] = st.m(i);
     }
     p.targetSeat = st.has_target_seat() ? (int)st.target_seat() : -1;
+    p.burner = st.afterburner();
     p.damage = st.armor_size() == 4 && st.shield_size() == 4;
     for (int i = 0; p.damage && i < 4; i++) {
         p.armor[i] = st.armor(i);
@@ -1710,6 +1712,7 @@ void send_state(double now) {
         st->add_m(m[i]);
     }
     st->set_appearance(priv_player_appearance());
+    st->set_afterburner(priv_ship_afterburner(priv_player_ship()));
     st->set_vx((Bit32s)g_net->vx);
     st->set_vy((Bit32s)g_net->vy);
     st->set_vz((Bit32s)g_net->vz);
@@ -3148,6 +3151,12 @@ void priv_session_frame() {
                 wclog(1, "Privateer: pilot %d's ship here given its pilot's guns (%d of its forward guns)", s + 1, k);
             }
             priv_ship_set(p.obj, at, p.m);
+            // its afterburner's flames as its pilot's (section 39), out with its reports (a second's silence)
+            {
+                const bool lit = p.burner && age < 1000;
+                if (lit != priv_ship_afterburner(p.obj)) wclog(2, "Privateer: pilot %d's afterburner %s here", s + 1, lit ? "lit" : "out");
+                priv_ship_set_afterburner(p.obj, lit);
+            }
             if (p.damage) {
                 // (its shields and armour as its own game has them: what our target display shows of it)
                 priv_ship_set_armor(p.obj, p.armor);

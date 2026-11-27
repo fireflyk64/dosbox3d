@@ -1823,3 +1823,19 @@ gun of the ship fires now (switched on, of the station the ship is fired from, i
 the pirates' copies fire at their own rate too.  Measured: the copy fires the pilot's LASER (its red streak, one
 mount) at the laser's rate, 15 copies in the time the old build fired 36; the pilot's own scene 11 bolts in flight,
 the copy's 10.  Open: a pilot with more forward guns than its ship's stock type shows only as many.
+
+## 39. The others' afterburners lit (2026-11-27)
+
+The user (2026-11-27): "the ability to see other players afterburner engines. Right now they never shine even when
+players hit tab and buy the afterburners. The graphics are always zero".
+
+**Found** (`!privshipdump`, a new aid: the player's ship object, each far object it points at, its controller and the
+controller's control record, logged at the frame; OXFORD01.SAV's Centurion has an afterburner): with Tab held and let
+go twice, the only byte of all of them that follows Tab is the control record's +0x1E bit 0 (the byte whose bit 2 is
+the guns' fire, bit 1 the launcher, bits 3-6 the gun groups: section 18) -- the energy object's level aside, which the
+burn drains.  A copy's AI is held (section 8): nothing ever sets the bit on it, and its engines never shone.
+
+**Now:** `PrivState.afterburner` carries the pilot's bit (15 a second while near, `priv_ship_afterburner`), and the
+copy's record gets it every frame (`priv_ship_set_afterburner`), out when the reports stop for a second; the copies'
+own writes of that byte (a shot's fire bits) keep bit 0.  Measured, GUEST facing HOST's Centurion 640-850 m away while
+HOST burns: its four engines glow blue on GUEST's screen, dark before the change and dark again once Tab is let go.
