@@ -71,7 +71,7 @@ const shot = async (p, file) => {
 // T until our targeting system is on the other pilot's ship (T steps through the ships near; the game logs the pilot
 // targeted), then a picture of each screen at the same moment
 const target = async (p, seat) => {
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 12; i++) {    // (T steps through every ship near: an encounter's pirates first, often)
     await p.page.focus("#canvas");
     await p.page.keyboard.press("t");
     await sleep(1500);

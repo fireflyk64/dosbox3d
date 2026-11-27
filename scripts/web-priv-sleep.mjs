@@ -13,8 +13,8 @@
 // has BRAVO's table, decides again.  Pictures of both screens before, during and after.  Prints "ok"/"FAIL" and
 // "SLEEP OK".
 //
-// SCENARIO=reseat: the room is of 2 (full), the seat's claim after CLAIM_MS (the page's ?claimms=, 15 s) instead of
-// two minutes; while ALPHA sleeps, CHARLIE comes to the full room and takes ALPHA's silent seat (seat 1), then BRAVO
+// SCENARIO=reseat: the room is of 2 (full), the seat's claim after CLAIM_MS (the page's ?claimms=, 40 s: more than the
+// pages' 25 s keep-alive, roomBeat -- or a live page's seat is claimable too) instead of two minutes; while ALPHA sleeps, CHARLIE comes to the full room and takes ALPHA's silent seat (seat 1), then BRAVO
 // leaves (seat 2 free).  ALPHA wakes: its token is no good any more, it joins in seat 2 -- its game takes the new
 // seat and flies on (pilot 2 now), links with CHARLIE, each sees the other; CHARLIE, the lowest seat, decides.
 //
@@ -30,7 +30,7 @@ const { chromium } = require("playwright");
 const shotDir = process.env.SHOT_DIR || ".";
 const scenario = process.env.SCENARIO || "same";
 const asleep = Number(process.env.ASLEEP || (scenario === "reseat" ? 50 : 60));
-const claimMs = Number(process.env.CLAIM_MS || 15000);
+const claimMs = Number(process.env.CLAIM_MS || 40000);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const t0 = Date.now();
 const stamp = () => ((Date.now() - t0) / 1000).toFixed(1);
@@ -62,9 +62,9 @@ const browserB = await launch();
 let route = "4:esc,8:!mouse=0.14:0.94,8.3:!button=0:1,8.6:!button=0:0,10:j,10.3:o,10.6:e,11:enter,11.5:a,11.8:c,12.1:e,12.5:enter,15:!mouse=0.45:0.6,16:!button=0:1,16.3:!button=0:0";
 for (let t = 30; t < 900; t += 15) route += `,${t}:!privturn=ship:90:10`;
 // (from 150 s of its own -- after the first pictures, and after the sleep for the sleeper, whose clock stood still --
-// each pilot puts itself off Achilles every 5 s, `off` metres from its middle: the pilots side by side again for the
+// each pilot puts itself off the jump point (nav 0: not a base, whose landing zone would land it) every 5 s, `off` metres from its middle: the pilots side by side again for the
 // last pictures however far they flew apart while one slept)
-const together = (off) => { let r = ""; for (let t = 150; t < 900; t += 5) r += `,${t}:!privgonav=1:${off}`; return r; };
+const together = (off) => { let r = ""; for (let t = 150; t < 900; t += 5) r += `,${t}:!privgonav=0:${off}`; return r; };
 async function open(browser, name, room, off) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
   const page = await ctx.newPage();
@@ -82,7 +82,10 @@ async function open(browser, name, room, off) {
   u.searchParams.set("advertise", "off");
   u.searchParams.set("callsign", name);
   if (room) u.searchParams.set("room", room);
-  u.searchParams.set("env.WCNET_KEYSCRIPT", route + together(off));
+  // (the key script runs its items in order: sorted by time, as scripts/privrun.sh does)
+  const items = (route + together(off)).split(",").filter(Boolean).map((it, i) => [parseFloat(it), i, it]);
+  items.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  u.searchParams.set("env.WCNET_KEYSCRIPT", items.map((x) => x[2]).join(","));
   u.searchParams.set("env.WCNET_KEYSCRIPT_FROM", "boot");
   u.searchParams.set("env.WCNET_LOG", "2");
   if (scenario === "reseat") u.searchParams.set("claimms", String(claimMs));
@@ -108,7 +111,7 @@ const shot = async (p, file) => {
   await p.page.screenshot({ path: path.join(shotDir, file), clip: box });
 };
 const target = async (p, seat) => {
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 12; i++) {    // (T steps through every ship near: an encounter's pirates first, often)
     await p.page.focus("#canvas");
     await p.page.keyboard.press("t");
     await sleep(1500);
@@ -157,8 +160,8 @@ if (scenario === "reseat") {
   const slept = Date.now();
   console.log(`${stamp()} ALPHA's computer asleep for ${asleep} s (${pids.length} processes stopped)`);
   for (const pid of pids) { try { process.kill(pid, "SIGSTOP"); } catch (e) { /* gone */ } }
-  // (ALPHA's last word to the server was up to 25 s before: its seat claimable CLAIM_MS after that)
-  await sleep(claimMs + 8000);
+  // (ALPHA's last word to the server was up to 25 s before: its seat claimable CLAIM_MS after that at the latest)
+  await sleep(claimMs + 30000);
   const charlie = await open(browserB, "CHARLIE", code, 3800);
   await charlie.page.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 120000 });
   check("CHARLIE took ALPHA's silent seat in the full room", await waitLog(charlie, /room \S+ was full: seat 1, silent/, 5000), found(charlie, /was full|lobby:/));
@@ -167,7 +170,7 @@ if (scenario === "reseat") {
   await bravo.page.close({ runBeforeUnload: false });
   await bravo.ctx.close();
   console.log(`${stamp()} BRAVO left (seat 2 free)`);
-  await sleep(Math.max(0, asleep * 1000 - (Date.now() - slept)));
+  await sleep(Math.max(5000, asleep * 1000 - (Date.now() - slept)));
   for (const pid of pids) { try { process.kill(pid, "SIGCONT"); } catch (e) { /* gone */ } }
   const woke = Date.now();
   console.log(`${stamp()} ALPHA's computer awake`);
@@ -180,7 +183,7 @@ if (scenario === "reseat") {
   check("CHARLIE sees ALPHA's ship", await waitLog(charlie, /Privateer: ALPHA's \w+ is in your space/, 60000, woke), found(charlie, /is in your space/, woke));
   check("ALPHA takes CHARLIE, the lowest seat, for the decider", await waitLog(alpha, /Privateer: pilot 1 decides the nav points/, 30000, woke), found(alpha, /decides/, woke));
   check("ALPHA never back at the menu", !alpha.logs.some(([at, l]) => at >= slept && /session closed|PRCD\.EXE ended|The game left the room/.test(l)), found(alpha, /session closed|PRCD\.EXE ended|left the room/, slept));
-  check("ALPHA and CHARLIE side by side off Achilles", await waitLog(alpha, /put in nav sphere 1/, 240000, woke) && await waitLog(charlie, /put in nav sphere 1/, 240000, woke));
+  check("ALPHA and CHARLIE side by side off the jump point", await waitLog(alpha, /put in nav sphere 0/, 240000, woke) && await waitLog(charlie, /put in nav sphere 0/, 240000, woke));
   await sleep(5000);
   await pictures(alpha, 2, charlie, 1, "reseat-after");
   for (const p of [alpha, charlie]) {
@@ -218,7 +221,7 @@ check("ALPHA decides again, BRAVO's table heard", await waitLog(alpha, /Privatee
 check("BRAVO takes ALPHA for the decider again", await waitLog(bravo, /Privateer: pilot 1 decides the nav points/, 30000, woke), found(bravo, /pilot 1 decides/, woke));
 const menu = await alpha.page.evaluate(() => document.getElementById("canvas").offsetParent !== null);
 check("ALPHA never back at the menu: its game still on the page", menu && !alpha.logs.some(([at, l]) => at >= slept && /session closed|PRCD\.EXE ended|The game left the room/.test(l)), found(alpha, /session closed|PRCD\.EXE ended|left the room/, slept));
-check("ALPHA and BRAVO side by side off Achilles", await waitLog(alpha, /put in nav sphere 1/, 240000, woke) && await waitLog(bravo, /put in nav sphere 1/, 240000, woke));
+check("ALPHA and BRAVO side by side off the jump point", await waitLog(alpha, /put in nav sphere 0/, 240000, woke) && await waitLog(bravo, /put in nav sphere 0/, 240000, woke));
 await sleep(5000);
 await pictures(alpha, 1, bravo, 2, "sleep-3-after");
 for (const p of [alpha, bravo]) {
