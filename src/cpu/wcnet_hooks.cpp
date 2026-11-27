@@ -2664,7 +2664,7 @@ bool wc_net_key_filter(int kbdKey, bool pressed) {
         if (pressed) priv_hires_flip();     // (Privateer: ` flips the high-resolution picture; the game has no use for it)
         return true;
     }
-    if (kbdKey == KBD_grave && is_wc1() && wch_key(pressed)) {
+    if (kbdKey == KBD_grave && (is_wc1() || is_wc2()) && wch_key(pressed)) {
         return true;    // (Wing Commander 1: ` flips the 640 x 400 picture once the page's box allows it, wcnet_wch.cpp; else the game's key)
     }
     if (kbdKey == KBD_grave && arm_found()) {

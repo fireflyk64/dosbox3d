@@ -45,6 +45,8 @@ async function open(name, callsign, before) {
   page.on("pageerror", (e) => console.log(`[${name}] PAGE ERROR: ${e.message}`));
   const u = new URL(pageUrl);
   for (const [k, v] of Object.entries({ room, server: lobbyUrl, callsign, firstname: "Chris", "env.WCNET_LOG": "2" })) u.searchParams.set(k, v);
+  // (HIRES=1: the High resolution (2x) box ticked, as remembered -- src/cpu/wcnet_wch.cpp)
+  if (process.env.HIRES === "1") await page.addInitScript(() => { try { localStorage.setItem("wc:wcHires", "1"); } catch (e) { /* fresh */ } });
   await page.goto(u.toString());
   const hiddenBefore = await page.$eval("#firstnameLabel", (el) => el.hidden);
   await page.setInputFiles("#gamefile", process.env.GAME_FILE);
@@ -94,6 +96,19 @@ check("the wingman's page started with the host's", await wing.evaluate(() => !!
 await shot(host, "host-barracks");
 const [hf, wf] = await Promise.all([fly(host, "host"), fly(wing, "wing")]);
 check("both reached the cockpit", hf && wf, [hf, wf]);
+if (process.env.HIRES === "1") {
+  // 640 x 400 (WC2's drivers: its SUPERTM.DRV is WC1's, its TM.DRV a build of its own; the places from their tables)
+  for (const [name, page] of [["host", host], ["wing", wing]]) {
+    await sleep(4);
+    const lv = await page.evaluate(() => [window.DOSBox._wc_web_wc_hires(-1), window.DOSBox._wc_web_wc_hires(-2)]);
+    await sleep(2);
+    const m2 = await page.evaluate(() => window.DOSBox._wc_web_wc_hires(-2));
+    const canvas = await page.evaluate(() => { const c = document.querySelector("canvas#canvas") || document.querySelector("canvas"); return [c.width, c.height]; });
+    check(`${name}: the box shown and ticked, WC2 at 640 x 400 (level 2)`, !(await page.$eval("#wcHiresLabel", (el) => el.hidden)) && lv[0] === 2 && canvas[0] === 640 && canvas[1] === 400, [lv[0], canvas]);
+    check(`${name}: WC2's gunsight drawn as line art`, m2 > lv[1], [lv[1], m2]);
+    await shot(page, `wc2-hires-${name}`);
+  }
+}
 check("the game has the page's first name and callsign", has("host", `WCFIRSTNAME: the game's "FIRSTNAME" is now "Chris"`) && has("wing", `WCCALLSIGN: the game's "CALLSIGN" is now "WINGMAN"`),
       logs.host.filter((l) => l.includes("the game's")));
 await sleep(12);

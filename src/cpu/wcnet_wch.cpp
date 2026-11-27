@@ -74,22 +74,28 @@ enum {
 enum Drv { TM, ST };
 enum Op { OP_SHAPE, OP_TURN, OP_LINE, OP_RECT, OP_FILL, OP_CLEAR, OP_COPY, OP_PRESENT, OP_GLYPH };
 
-// A place in a driver's code (the VGA entry's offsets, WC.EXE's GAMEDAT): `framed`, past the routine's own
-// `push bp / mov bp,sp` and its shape pointer's resolving (EMS: [bp+0C] then holds the real pointer), its arguments
-// at [bp+6]; else the routine's first instruction, its arguments at [sp+4].  `code`: the bytes there, checked.
-struct Place { Drv drv; Bit16u ip; Op op; bool framed; Bit8u code[3]; };
+// A place in a driver's code, found from the driver's own table of entries (a word per routine at its start, the
+// game's loader copies them into its slots: WC.EXE seg098:0043, WC2.EXE ovr204:003F): the entry plus `delta`.
+// `framed`: past the routine's own `push bp / mov bp,sp` and its shape pointer's resolving (EMS: [bp+0C] then holds
+// the real pointer), its arguments at [bp+6]; else the routine's first instruction, its arguments at [sp+4].
+// `code`: the bytes there, checked.  WC2's SUPERTM.DRV's VGA entry is WC1's byte for byte; its TM.DRV is WC1's with
+// the routines it never calls (the triangles, the dissolve, the silhouette) taken out, the rest moved up (SHAPE
+// 0E87, LINE 1CE8, RECT 1B6C, FILLRECT 1AC8, CLEAR 1930, COPY 1990, GLYPH 2BFB against WC1's 0E86, 3A12, 3896,
+// 37F2, 192F, 198F, 4925).
+struct Place { Drv drv; Bit8u slot, delta; Op op; bool framed; Bit8u code[3]; };
 const Place kPlaces[] = {
-    { TM, 0x0EBB, OP_SHAPE,   true,  { 0xFC, 0x0E, 0x07 } },     // SHAPE (rec, x, y, shapes far, index): the dust, the gunsight, the pointer
-    { ST, 0x161E, OP_TURN,    true,  { 0x8C, 0xC8, 0x8E } },     // TURNSCALE (... index, degrees, scale, flags): every ship, bolt, missile
-    { TM, 0x3A12, OP_LINE,    false, { 0x55, 0x8B, 0xEC } },     // LINE (rec, x0, y0, x1, y1, colour): the target's brackets
-    { TM, 0x3896, OP_RECT,    false, { 0x55, 0x8B, 0xEC } },     // RECT (rec, x0, y0, x1, y1, colour): the locked target's box
-    { TM, 0x37F2, OP_FILL,    false, { 0x55, 0x8B, 0xEC } },     // FILLRECT (rec, x0, y0, x1, y1, colour)
-    { TM, 0x192F, OP_CLEAR,   false, { 0x55, 0x8B, 0xEC } },     // CLEAR (rec, colour)
-    { TM, 0x198F, OP_COPY,    false, { 0x55, 0x8B, 0xEC } },     // COPY (src rec, dst rec): the outside views' way to the screen
-    { ST, 0x7454, OP_PRESENT, false, { 0x55, 0x8B, 0xEC } },     // SPANCOPY (src rec, dst rec, span list near): the cockpit views'
-    { TM, 0x4925, OP_GLYPH,   false, { 0x2E, 0x83, 0x3E } },     // GLYPH (registers): every letter of every text
+    { TM, 0x0E, 0x35, OP_SHAPE,   true,  { 0xFC, 0x0E, 0x07 } },     // SHAPE (rec, x, y, shapes far, index): the dust, the gunsight, the pointer
+    { ST, 0x02, 0x35, OP_TURN,    true,  { 0x8C, 0xC8, 0x8E } },     // TURNSCALE (... index, degrees, scale, flags): every ship, bolt, missile
+    { TM, 0x1E, 0x00, OP_LINE,    false, { 0x55, 0x8B, 0xEC } },     // LINE (rec, x0, y0, x1, y1, colour): the target's brackets
+    { TM, 0x26, 0x00, OP_RECT,    false, { 0x55, 0x8B, 0xEC } },     // RECT (rec, x0, y0, x1, y1, colour): the locked target's box
+    { TM, 0x24, 0x00, OP_FILL,    false, { 0x55, 0x8B, 0xEC } },     // FILLRECT (rec, x0, y0, x1, y1, colour)
+    { TM, 0x18, 0x00, OP_CLEAR,   false, { 0x55, 0x8B, 0xEC } },     // CLEAR (rec, colour)
+    { TM, 0x16, 0x00, OP_COPY,    false, { 0x55, 0x8B, 0xEC } },     // COPY (src rec, dst rec): the outside views' way to the screen
+    { ST, 0x08, 0x00, OP_PRESENT, false, { 0x55, 0x8B, 0xEC } },     // SPANCOPY (src rec, dst rec, span list near): the cockpit views'
+    { TM, 0x02, 0x00, OP_GLYPH,   false, { 0x2E, 0x83, 0x3E } },     // GLYPH (registers): every letter of every text
 };
 enum { kPlaceCount = sizeof(kPlaces) / sizeof(kPlaces[0]) };
+Bit16u g_placeIp[kPlaceCount];      // where each is in the drivers loaded (0: not watched)
 
 struct Target { Bit16u seg, rowTable; int x0, y0, x1, y1; };
 
@@ -134,8 +140,8 @@ void read_env() {
 }
 
 bool usable() {
-    return is_wc1() && (g_build == BUILD_WC1 || g_build == BUILD_SM2) && DS && ds::known(ds::tmDriverSeg) && ds::known(ds::superTmDriverSeg) &&
-           ds::known(ds::flightBuffer);
+    return ((is_wc1() && (g_build == BUILD_WC1 || g_build == BUILD_SM2)) || (is_wc2() && g_build == BUILD_WC2)) && DS &&
+           ds::known(ds::tmDriverSeg) && ds::known(ds::superTmDriverSeg) && ds::known(ds::flightBuffer);
 }
 
 // The game's memory as a real-mode program reaches it: 0 for anywhere else.
@@ -1124,7 +1130,7 @@ void letters_compose(const Bit8u *low, bool show) {
 // ---- the VDUs' ship pictures at the top level: wireframes -----------------------------------------------------------
 //
 // The VDUs' ships (the weapons display's own ship and its missiles, the target display's hull and shields) are SHAPEs
-// on the VDUs' records on the screen (leftVdu, commVdu): line art of one game pixel.  At the top level they are drawn
+// on the VDUs' records on the screen (leftVdu, rightVdu): line art of one game pixel.  At the top level they are drawn
 // as Privateer's target display's are (wcnet_wire.cpp: lines one fine pixel wide between the pixels' middles, rings
 // round, solid parts the game's blocks, drawn exactly symmetric where the art is).  The shapes drawn on one VDU one
 // after another are gathered into one picture of the VDU (a ship comes in parts, the missiles over it), made when
@@ -1228,7 +1234,7 @@ void art_flush() {
 }
 
 bool vdu_record(Bit16u rec) {
-    return (ds::known(ds::leftVdu) && rec == ds::leftVdu) || (ds::known(ds::commVdu) && rec == ds::commVdu);
+    return (ds::known(ds::leftVdu) && rec == ds::leftVdu) || (ds::known(ds::rightVdu) && rec == ds::rightVdu);
 }
 
 // A SHAPE on a VDU's record: gathered into the VDU's picture (true), or the record not one the screen holds row under
@@ -1424,7 +1430,9 @@ void call(const Place &p) {
         if (!s) break;
         // (the cockpit's markers, dseg cockpitMarkers: 0 the gunsight at the view's middle, 1 the lock cross -- the
         // reticle, as Privateer's: one-pixel line art, its circles fitted, drawn half and mirrored)
-        const bool marker = markers((Bit16u)arg16(3), (Bit16u)arg16(4)) && (arg16(5) == 0 || arg16(5) == 1);
+        // (WC2's: 0 the gunsight, 4 the same a pixel right, 1 the lock cross; 5 is the pointer, seg005:331D)
+        const int index = arg16(5);
+        const bool marker = markers((Bit16u)arg16(3), (Bit16u)arg16(4)) && (index == 0 || index == 1 || (is_wc2() && index == 4));
         if (marker) shape_lines(t, *s, arg16(1), arg16(2));
         else shape_blocks(t, *s, arg16(1), arg16(2));
         break;
@@ -1550,7 +1558,7 @@ void wch_set(int level) {
 
 bool wch_key(bool pressed) {
     read_env();
-    if (g_allowed <= 0 || !is_wc1()) return false;      // (not allowed: the key is the game's, as it always was)
+    if (g_allowed <= 0 || !(is_wc1() || is_wc2())) return false;   // (not allowed: the key is the game's, as it always was)
     if (pressed) {
         g_level = (g_level + 2) % 3;            // (all, then the space alone, then the game's own, then all)
         wclog(1, "Wing Commander: the high-resolution picture %s (the ` key)", level_name(g_level));
@@ -1580,13 +1588,30 @@ void wch_watch(void (*watch)(Bit16u ip)) {
     if (g_allowed <= 0 || !usable()) return;
     const Bit16u tm = dsw(ds::tmDriverSeg), st = dsw(ds::superTmDriverSeg);
     if (!tm || !st) return;                         // (not loaded yet: nothing to watch)
+    // (the drivers are loaded at the start of their segments: the loader keeps a far pointer, its offset first)
+    if (dsw((Bit16u)(ds::tmDriverSeg - 2)) || dsw((Bit16u)(ds::superTmDriverSeg - 2))) return;
+    int watched = 0;
     for (int i = 0; i < kPlaceCount; i++) {
-        g_onlyOurs[kPlaces[i].ip] = !wc_net_watch[kPlaces[i].ip];
-        watch_at(kPlaces[i].drv == TM ? tm : st, kPlaces[i].ip);
+        const Place &p = kPlaces[i];
+        const Bit16u seg = p.drv == TM ? tm : st;
+        const Bit16u ip = (Bit16u)(rd16p(PhysMake(seg, p.slot)) + p.delta);
+        g_placeIp[i] = 0;
+        bool known = ip >= 0x10;
+        for (int k = 0; k < 3 && known; k++) known = rd8p(PhysMake(seg, (Bit16u)(ip + k))) == p.code[k];
+        if (!known) {
+            wclog(1, "Wing Commander: the high-resolution picture's place %d (%s +%02X) not as known at %04X: left alone", i,
+                  p.drv == TM ? "TM.DRV" : "SUPERTM.DRV", p.slot, ip);
+            continue;
+        }
+        g_placeIp[i] = ip;
+        g_onlyOurs[ip] = g_onlyOurs[ip] || !wc_net_watch[ip];
+        watch_at(seg, ip);
+        watched++;
     }
     g_watchedTm = tm;
     g_watchedSt = st;
-    wclog(1, "Wing Commander: the high-resolution picture's places watched (TM.DRV at %04X, SUPERTM.DRV at %04X)", tm, st);
+    wclog(1, "Wing Commander: the high-resolution picture's places watched (TM.DRV at %04X, SUPERTM.DRV at %04X): %d of %d",
+          tm, st, watched, (int)kPlaceCount);
 }
 
 bool wch_hook(Bit32u ip) {
@@ -1594,9 +1619,9 @@ bool wch_hook(Bit32u ip) {
     const Bit16u code = SegValue(cs);
     for (int i = 0; i < kPlaceCount; i++) {
         const Place &p = kPlaces[i];
-        if (p.ip != ip || code != (p.drv == TM ? g_watchedTm : g_watchedSt)) continue;
+        if (!g_placeIp[i] || g_placeIp[i] != ip || code != (p.drv == TM ? g_watchedTm : g_watchedSt)) continue;
         if (!g_override) return true;
-        const PhysPt at = SegPhys(cs) + p.ip;
+        const PhysPt at = SegPhys(cs) + ip;
         for (int k = 0; k < 3; k++) {
             if (rd8p(at + k) != p.code[k]) return true;      // (not the driver as we know it)
         }

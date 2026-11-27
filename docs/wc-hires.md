@@ -2,7 +2,7 @@
 
 `src/cpu/wcnet_wch.cpp`: the flight drawn again at twice the game's resolution, each game pixel a block of 2 x 2,
 from the game's own drawing calls: Privateer's high-resolution picture (`wcnet_priv_hires.cpp`, docs/privateer.md)
-brought back to the game its library grew from.  WC.EXE and SM2.EXE.
+brought back to the game its library grew from.  WC.EXE, SM2.EXE and WC2.EXE.
 
 ## The rules (the user, 2026-11-27)
 
@@ -53,7 +53,7 @@ other labels are the cockpit's picture, not text.
 ## The VDUs' ships (level 2)
 
 The weapons display's own ship (and its missiles over it) and the target display's hull and shields are SHAPEs on
-the VDUs' records on the screen (`leftVdu`, `commVdu`; found with `WCHIRESOPS=1`), line art of one game pixel, as
+the VDUs' records on the screen (`leftVdu`, `rightVdu`; found with `WCHIRESOPS=1`), line art of one game pixel, as
 Privateer's target display.  The shapes drawn on one VDU one after another are gathered into one picture and drawn
 by Privateer's wireframe maker (`wcnet_wire.cpp`, a copy of `wcnet_priv_hires.cpp`'s `wire_make` without Privateer's
 hand-made parts, so that Privateer's approved ships cannot move with a change here): lines one fine pixel wide
@@ -64,9 +64,14 @@ than 45% of its box (the comm display's face) stays the game's.  Letters and pic
 
 ## WC2
 
-WC2's `GAMEDAT\SUPERTM.DRV` VGA entry is byte for byte WC1's (TURNSCALE ST 161E, SPANCOPY ST 7454); its `TM.DRV` is
-another build (entries stored, flag E0, not LZW): SHAPE at 0EBC, FILLRECT 1AC8, RECT 1B6C, GLYPH 2BFB by WC1's
-signatures.  Not hooked yet.
+WC2's `GAMEDAT\SUPERTM.DRV` VGA entry is byte for byte WC1's; its `TM.DRV` is WC1's with the routines it never calls
+(the triangles, the dissolve, the silhouette) taken out and the rest moved up (entries stored raw, flag E0, not LZW).
+So the places come from each driver's own table of entries (the words at its start, which the loaders copy into the
+game's slots: WC.EXE seg098:0043, WC2.EXE ovr204:003F), the same code for both games.  WC2.EXE's data: TM.DRV's
+segment A838, SUPERTM.DRV's DEC4, the flight's buffer BD34 (its present seg001:0401 is WC1's seg001:05DB), the
+space's colour 8A91, the markers BD66 (0 the gunsight, 4 the same a pixel right, 1 the lock cross; 5 the pointer),
+EMS's frame A913 and last handle A919 (seg089:0043), the VDUs B458 / B46C (seg005:0C1B).  Its cockpit font is WC1's:
+the user's letters fit it.  SO1 and SO2 not mapped yet (scripts/wcport.py).
 
 ## Speed
 
