@@ -69,7 +69,7 @@ VDU_Y = 96                              # (low: the user, "shove the cockpit dow
                                         # Otherwise it looks a bit \" close\"")
 VDU_LX, VDU_RX = -5, 231                # (the outer rims run off the screen's edges: cramped)
 BOX = (74, 105, 34, 10)                 # the Centurion's small readout frame (its fuel gauge's), rim 2
-BLOCK = (89, 122, 142, 66)              # the middle housing between the VDUs: the VDU's frame again, made wider
+BLOCK = (89, 122, 142, 60)              # the middle housing between the VDUs: the VDU's frame again, made wider
 DARK = (120, 150)                       # a pixel of the frame's dark face
 
 def bezel(dx, dy, w, h):
@@ -108,9 +108,11 @@ copy(C, 231, 104, 89, 96, 231, 104)
 # 3. the two VDUs
 strips(put, C, *VDU, VDU_LX, VDU_Y, drop_cols=VDU_DROP)
 strips(put, C, *VDU, VDU_RX, VDU_Y, drop_cols=VDU_DROP)
-# 4. the middle housing on a dark plate
+# 4. the middle housing; under it the dark where the legs go, and the Orion's console between them (the user: "The
+#    center needs a place to put your legs. Before it had the dark regions")
 bx, by, bw, bh = BLOCK
-fill(C, *DARK, bx, by, bw, 200 - by)
+fill(C, 100, 198, bx, by, bw, 200 - by)
+copy(O, 122, 141, 76, 200 - by - bh, 122, by + bh)
 bezel(bx, by, bw, bh)
 clear(bx + 10, by + 10, bw - 20, bh - 20)
 # 5. its three bays: the bars, the scope, the shields; a rib of the frame's rim between them
