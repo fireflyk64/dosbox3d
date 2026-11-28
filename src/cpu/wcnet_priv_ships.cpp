@@ -45,7 +45,8 @@ namespace {
 const PrivAddedShip kShips[] = {
     // id  name        appearance   type        cockpit    hull  scene ship  hold  more
     { 1,  "Stiletto", "STILETTO",  "STILTYPE", "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } },
-      { 0x2C, 0x2F, 0x3E, 0 } },      // (the game's own Stiletto: the generators of engine upgrade 2, shield generator 2's 200)
+      { 0x2C, 0x2F, 0x3E, 0 },        // (the game's own Stiletto: the generators of engine upgrade 2, shield generator 2's 200)
+      500000, "credits" },            // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
 };
 const int kShipCount = (int)(sizeof(kShips) / sizeof(kShips[0]));
 
@@ -53,6 +54,16 @@ int g_ship = 0;             // the added ship the player owns (its id; 0: one of
 int g_gameRows = 4;         // APPRCOCK.IFF's rows of the game's own hulls: the added ships' follow
 int g_hullHeld = -1;        // the hull byte's own value while it is hidden from the hold's routines (-1: not)
 int g_shipEnv = -1;         // WCPRIVSHIP=<name>: the player's ship is that one whatever the game says (a rig's)
+// A sale of the dealer's routine while it runs (ovr286:0CC1 to its end)
+struct Sale {
+    bool active, accepted, renamed;
+    int ship;               // the added ship sold (its id; 0: one of the game's four)
+    int owner;              // the added ship owned when it began
+    int prices;             // the price routine's calls so far: the old ship's, the new one's, and after an Accept again
+    Bit8u kept[4][9];       // the dealer's own conversations' names, written over meanwhile
+    Sale() : active(false), accepted(false), renamed(false), ship(0), owner(0), prices(0) {}
+};
+Sale g_sale;
 
 const PrivAddedShip *ship_by_id(int id) {
     for (int i = 0; i < kShipCount; i++) if (kShips[i].id == id) return &kShips[i];
@@ -179,6 +190,71 @@ bool skeleton_with_marks(const PrivAddedShip &ship, const std::vector<Bit8u> &ap
 
 // ---- The TRE as the game reads it -----------------------------------------------------------------------------------
 
+// OPTIONS\GAMEFLOW.IFF: every room's sprites with what a click on each does (EFCT: pairs of a command and its
+// number, run by ovr281:11C3).  Command 0x00 plays conversation n of the file's own list (FORM CONV, DATA: names of
+// 8 bytes), 0x29 changes the tune, 0x1E n is the dealer's sale of hull n (ovr286:0CC1).  An added ship is offered
+// after its conversation (Admiral Terrell's "credits", which the game plays once the campaign is won, every time
+// he is talked to): a sale of (the ship's id * 16 + its hull) follows it, which priv_ships_hook takes for that
+// ship's.  WCPRIVSALE=<ship> (a rig's) makes every dealer's Centurion that ship instead.
+bool gameflow_chunks(const Bit8u *d, size_t n, const std::map<int, int> &after, int rigSale, std::vector<Bit8u> *out, int *edits) {
+    size_t off = 0;
+    while (off + 8 <= n) {
+        const Bit32u size = get32be(d + off + 4);
+        if (size > n - off - 8) return false;
+        const Bit8u *body = d + off + 8;
+        out->insert(out->end(), d + off, d + off + 4);
+        const size_t sizeAt = out->size();
+        put32be(*out, 0);
+        if (!memcmp(d + off, "FORM", 4)) {
+            if (size < 4) return false;
+            out->insert(out->end(), body, body + 4);
+            if (!gameflow_chunks(body + 4, size - 4, after, rigSale, out, edits)) return false;
+        } else if (!memcmp(d + off, "EFCT", 4) && !(size & 1)) {
+            for (Bit32u i = 0; i < size; i += 2) {
+                Bit8u op = body[i], arg = body[i + 1];
+                if (op == 0x1E && rigSale && arg == (rigSale & 15)) { arg = (Bit8u)rigSale; (*edits)++; }
+                out->push_back(op); out->push_back(arg);
+                if (op != 0x00 || !after.count(arg)) continue;
+                while (i + 2 < size && body[i + 2] == 0x29) { i += 2; out->push_back(body[i]); out->push_back(body[i + 1]); }
+                out->push_back(0x1E); out->push_back((Bit8u)after.find(arg)->second);
+                (*edits)++;
+            }
+        } else {
+            out->insert(out->end(), body, body + size);
+        }
+        const Bit32u now = (Bit32u)(out->size() - sizeAt - 4);
+        (*out)[sizeAt] = (Bit8u)(now >> 24); (*out)[sizeAt + 1] = (Bit8u)(now >> 16); (*out)[sizeAt + 2] = (Bit8u)(now >> 8); (*out)[sizeAt + 3] = (Bit8u)now;
+        if (now & 1) out->push_back(0);
+        off += 8 + size + (size & 1);
+    }
+    return off == n || off == n + 1;
+}
+
+bool gameflow_with_sales(const std::vector<Bit8u> &in, std::vector<Bit8u> *out) {
+    static const char mark[] = "CONVDATA";
+    size_t at = 0;
+    for (; at + 12 <= in.size(); at++) if (!memcmp(&in[at], mark, 8)) break;
+    if (at + 12 > in.size()) return false;
+    const Bit32u size = get32be(&in[at + 8]);
+    if (size > in.size() - at - 12) return false;
+    std::map<int, int> after;
+    int rigSale = 0;
+    const char *rig = getenv("WCPRIVSALE");
+    for (int i = 0; i < kShipCount; i++) {
+        if (rig && !strcasecmp(rig, kShips[i].name)) rigSale = kShips[i].id * 16 + kShips[i].hull;
+        if (!kShips[i].soldAfter) continue;
+        for (Bit32u k = 0; k + 8 <= size && k / 8 < 256; k += 8) {
+            if (!strncmp((const char *)&in[at + 12 + k], kShips[i].soldAfter, 8)) after[(int)(k / 8)] = kShips[i].id * 16 + kShips[i].hull;
+        }
+    }
+    if (after.empty() && !rigSale) return false;
+    int edits = 0;
+    out->clear();
+    if (!gameflow_chunks(&in[0], in.size(), after, rigSale, out, &edits) || !edits) return false;
+    wclog(1, "Privateer: added ships: GAMEFLOW.IFF given %d sale%s", edits, edits == 1 ? "" : "s");
+    return true;
+}
+
 enum { kTreEntry = 74, kTreName = 65 };
 
 struct TreAdded {
@@ -297,6 +373,21 @@ void tre_build() {
     }
 
     if (skelChanged) tre_add(tre_name("APPEARNC", "SKELETON.IFF"), skel);
+    // the sales: the conversations, and the rooms' script that runs them (neither there: the ships are flown all the
+    // same, from a saved game)
+    {
+        std::vector<std::pair<std::string, std::vector<Bit8u> > > convs;
+        bool all = true;
+        for (int i = 0; i < kShipCount && all; i++) {
+            if (kShips[i].price && !priv_ship_convs(kShips[i], real_file, &convs)) all = false;
+        }
+        if (all && real_file(tre_name("OPTIONS", "GAMEFLOW.IFF"), &in) && gameflow_with_sales(in, &out)) {
+            for (size_t i = 0; i < convs.size(); i++) tre_add(tre_name("CONV", convs[i].first.c_str()), convs[i].second);
+            tre_add(tre_name("OPTIONS", "GAMEFLOW.IFF"), out);
+        } else {
+            wclog(1, "Privateer: added ships: the sales could not be made from %s: no ship is offered", t.file.c_str());
+        }
+    }
 
     // the directory: the real entries (a replaced file's pointed at ours), the new ones, sorted by name
     std::vector<std::vector<Bit8u> > dir;
@@ -472,7 +563,64 @@ void hold_end() {
     g_hullHeld = -1;
 }
 
+// The sale.  The dealer's routine ovr286:0CC1(room, hull) does all of it: "you fly one already" if the hull is the
+// player's, else the old ship's and its extras' value against the price (ovr286:0C4F, by the hull), the offer's
+// conversation with its Accept and Reject -- or "too poor", or "your cargo will not fit" (ovr269:179F) -- and, accepted,
+// the hull byte, the extras sold, the credits, and the new ship made (stub273:0025).  The rooms' script calls it for an
+// added ship with (id * 16 + hull): here the argument is made the hull, the four conversations' names (DGROUP:08F8
+// "buyfight", 0911 "cargo", 0917 "toopoor", 091F "samefght", the Centurion's) are written over with the ship's own
+// until the routine's end, the price is the ship's, and "the same" means the same SHIP: a Centurion's owner is sold a
+// Stiletto, a Stiletto's owner a Centurion (its value is its price, as the game values its own).
+const Bit16u kSaleNames[4] = { 0x08F8, 0x0911, 0x0917, 0x091F };
+const char *const kSaleOwn[4] = { "buyfight", "cargo", "toopoor", "samefght" };
+
+void sale_begin() {
+    const PhysPt stack = SegPhys(ss) + reg_sp;
+    const Bit8u arg = mem_readb(stack + 6);
+    const PrivAddedShip *owner = priv_added_ship();
+    g_sale = Sale();
+    g_sale.active = true;
+    g_sale.owner = owner && g_ship == owner->id ? owner->id : 0;
+    if (!(arg & 0xF0)) return;
+    const PrivAddedShip *s = g_tre.on ? ship_by_id(arg >> 4) : 0;
+    bool ok = s != 0;
+    for (int k = 0; k < 4 && ok; k++) {
+        for (size_t i = 0; i <= strlen(kSaleOwn[k]); i++) if (priv_r8((Bit16u)(kSaleNames[k] + i)) != (Bit8u)kSaleOwn[k][i]) ok = false;
+    }
+    if (!ok) {
+        // (not a ship of ours, or another program's data: the routine is told the hull owned, and says so)
+        wclog(1, "Privateer: added ships: a sale of %u could not be made", arg);
+        mem_writeb(stack + 6, priv_r8(kHullByte));
+        g_sale.ship = g_sale.owner;
+        return;
+    }
+    char names[4][9];
+    priv_ship_sale_names(*s, names);
+    for (int k = 0; k < 4; k++) {
+        for (int i = 0; i < 9; i++) g_sale.kept[k][i] = priv_r8((Bit16u)(kSaleNames[k] + i));
+        for (size_t i = 0; i <= strlen(names[k]); i++) priv_w8((Bit16u)(kSaleNames[k] + i), (Bit8u)names[k][i]);
+    }
+    g_sale.renamed = true;
+    g_sale.ship = s->id;
+    mem_writeb(stack + 6, (Bit8u)s->hull);
+    wclog(1, "Privateer: added ships: the %s is offered (%ld credits)", s->name, s->price);
+}
+
+void sale_end() {
+    if (g_sale.renamed) {
+        for (int k = 0; k < 4; k++) for (size_t i = 0; i <= strlen(kSaleOwn[k]); i++) priv_w8((Bit16u)(kSaleNames[k] + i), g_sale.kept[k][i]);
+    }
+    g_sale = Sale();
+}
+
 }   // namespace
+
+void priv_ship_sale_names(const PrivAddedShip &ship, char names[4][9]) {
+    snprintf(names[0], 9, "buyshp%d", ship.id % 100);       // (for "buyfight")
+    snprintf(names[1], 9, "crgo%d", ship.id % 10);          // ("cargo": five letters)
+    snprintf(names[2], 9, "poorsh%d", ship.id % 10);        // ("toopoor": seven)
+    snprintf(names[3], 9, "samesh%d", ship.id % 100);       // ("samefght")
+}
 
 // The saved game's word.  A saved game's first record begins with the hull as a word, and the game writes the high
 // byte 0 and reads only the low one (ovr262:0000 and 0040): that byte is the added ship's id.  The game without this
@@ -530,10 +678,47 @@ bool priv_ships_hook(Bit16u ip, Bit16u codeSeg, Bit16u loadSeg) {
     case kShipsHoldSize: {
         static const Bit8u code[] = { 0x8B, 0xC2, 0x5E, 0x5D, 0xCB };
         if (!code_is(code, sizeof(code))) return false;
-        const PrivAddedShip *s = priv_added_ship();
+        // (a sale asks what the ship it sells holds, before it is anybody's)
+        const PrivAddedShip *s = g_sale.active && !g_sale.accepted ? ship_by_id(g_sale.ship) : priv_added_ship();
         if (s && mem_readb(SegPhys(ss) + reg_bp + 8) == s->hull) {
             reg_dx = (Bit16u)(s->hold + (mem_readb(SegPhys(ds) + (Bit16u)(reg_si + 0x28)) ? s->holdMore : 0));
         }
+        return true;
+    }
+    case kShipsSaleEntry: {
+        static const Bit8u code[] = { 0x55, 0x8B, 0xEC, 0x81, 0xEC, 0x86, 0x00, 0x56, 0x57, 0x8B, 0x76, 0x06, 0xC7, 0x46, 0xFE, 0x00, 0x00 };
+        if (!code_is(code, sizeof(code))) return false;
+        sale_begin();
+        return true;
+    }
+    case kShipsSaleSame: {
+        // (cmp al,[bp+8] / jnz +3 / jmp ...: the same hull is "you fly one already")
+        static const Bit8u code[] = { 0x3A, 0x46, 0x08, 0x75, 0x03, 0xE9 };
+        if (!g_sale.active || !code_is(code, sizeof(code))) return false;
+        if (reg_al == mem_readb(SegPhys(ss) + reg_bp + 8) && g_sale.owner != g_sale.ship) reg_al = 0xFF;    // (the same hull, another ship)
+        return true;
+    }
+    case kShipsSalePrice: {
+        static const Bit8u code[] = { 0x66, 0x8B, 0x46, 0xFC, 0x66, 0x0F, 0xA4, 0xC2, 0x10, 0xC9, 0xCB };
+        if (!g_sale.active || !code_is(code, sizeof(code))) return false;
+        const PrivAddedShip *s = ship_by_id((++g_sale.prices & 1) ? g_sale.owner : g_sale.ship);
+        if (s && mem_readb(SegPhys(ss) + reg_bp + 6) == s->hull) mem_writed(SegPhys(ss) + (Bit16u)(reg_bp - 4), (Bit32u)s->price);
+        return true;
+    }
+    case kShipsSaleAccept: {
+        static const Bit8u code[] = { 0xA0, 0x5E, 0x65, 0x88, 0x46, 0xF0, 0x8A, 0x46, 0x08, 0xA2, 0x5E, 0x65 };
+        if (!g_sale.active || !code_is(code, sizeof(code))) return false;
+        const PrivAddedShip *s = ship_by_id(g_sale.ship);
+        g_sale.accepted = true;
+        hold_end();
+        g_ship = s ? s->id : 0;
+        wclog(1, "Privateer: added ships: bought, %s%s", s ? "a " : "one of the game's own ships", s ? s->name : "");
+        return true;
+    }
+    case kShipsSaleEnd: {
+        static const Bit8u code[] = { 0x5F, 0x5E, 0xC9, 0xCB };
+        if (!g_sale.active || !code_is(code, sizeof(code))) return false;
+        sale_end();
         return true;
     }
     case kShipsHoldPlainEnd:

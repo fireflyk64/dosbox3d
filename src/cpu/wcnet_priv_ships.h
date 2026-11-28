@@ -6,6 +6,7 @@
 
 #include <string>
 #include <vector>
+#include <utility>
 #include "dosbox.h"
 
 namespace wc {
@@ -27,6 +28,10 @@ struct PrivAddedShip {
     // What the dealers do not sell it beyond what they do not sell its hull (LIMITS.IFF's list of item numbers, the
     // equipment list's: 0x2C the tail turret, 0x2F-0x31 shield generators 3-5, 0x3E-0x40 engine upgrades 3-5); 0 ends.
     Bit8u notSold[8];
+    // Its sale (wcnet_priv_convs.cpp): the price, and the conversation of OPTIONS\GAMEFLOW.IFF's list after which it
+    // is offered ("credits": Admiral Terrell's, once the campaign is won; 0: not sold anywhere yet)
+    long price;
+    const char *soldAfter;
 };
 
 // The ship the player owns, if an added one (0: one of the game's four).
@@ -47,7 +52,12 @@ enum {
     kShipsHoldRead = 0x0BD2,        // ovr269:0BD2(hold, size, hull): the expansion told from a ship file's size
     kShipsHoldSize = 0x178F,        // ovr269:178F: the end of ovr269:173B(base ship, hull), the size for the ship's file in DX
     kShipsHoldPlainEnd = 0x0B7E,    // their ends when the hull is none of the four
-    kShipsHoldMoreEnd = 0x0BC7
+    kShipsHoldMoreEnd = 0x0BC7,
+    kShipsSaleEntry = 0x0CC1,       // ovr286:0CC1(room, hull): the dealer's sale of a ship
+    kShipsSaleSame = 0x0CE2,        // ovr286:0CE2: its "is that the hull you own?" (AL the hull byte, against the argument)
+    kShipsSalePrice = 0x0CAC,       // ovr286:0CAC: the end of ovr286:0C4F(hull), a hull's price ([BP-4])
+    kShipsSaleAccept = 0x1018,      // ovr286:1018: the offer accepted (the hull byte written next)
+    kShipsSaleEnd = 0x1194          // ovr286:1194: the sale's end
 };
 bool priv_ships_hook(Bit16u ip, Bit16u codeSeg, Bit16u loadSeg);
 
@@ -57,6 +67,11 @@ typedef bool (*PrivTreFile)(const std::string &name, std::vector<Bit8u> *out);
 bool priv_ship_cockpit(const PrivAddedShip &ship, PrivTreFile file, std::vector<Bit8u> *iff, std::vector<Bit8u> *pak);
 // Its appearance given what a player's ship needs (the weapons display's picture); false: good as it is.
 bool priv_ship_appearance(const PrivAddedShip &ship, PrivTreFile file, std::vector<Bit8u> *iff);
+// The conversations of its sale (wcnet_priv_convs.cpp): each file's name in DATA\CONV and its bytes.
+bool priv_ship_convs(const PrivAddedShip &ship, PrivTreFile file, std::vector<std::pair<std::string, std::vector<Bit8u> > > *files);
+// Their names, in the place of the dealer's own for a Centurion: "buyfight", "cargo", "toopoor", "samefght" (and no
+// longer than those: they are written over them while the sale runs).
+void priv_ship_sale_names(const PrivAddedShip &ship, char names[4][9]);
 
 }
 

@@ -2275,6 +2275,7 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kTableSeek);
     watch(kShipsRecordLoad); watch(kShipsRecordStored); watch(kShipsHoldSet);
     watch(kShipsHoldPlain); watch(kShipsHoldMore); watch(kShipsHoldRead); watch(kShipsHoldSize); watch(kShipsHoldPlainEnd); watch(kShipsHoldMoreEnd);
+    watch(kShipsSaleEntry); watch(kShipsSaleSame); watch(kShipsSalePrice); watch(kShipsSaleAccept); watch(kShipsSaleEnd);
     const std::vector<WatchPlace> &w = watch_places();
     for (size_t i = 0; i < w.size(); i++) {
         watch(w[i].off);
