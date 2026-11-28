@@ -2256,6 +2256,11 @@ scene's palette; each is a file the ship's owner reads in the place of the game'
   cargo's ("And...my cargo?" / "Then think fast." / "Now if you would leave me alone...").  Too poor ("You don't
   have three hundred thousand") was heard from the cut alone: at this price any ship's trade-in but a Tarsus's
   covers it.
+- *The lead-in* ("Can we lead in with the insubordinate but excellent pilot line.  It's a fun way to introduce a
+  ship"): the offer opens with his "You're an insubordinate smart ass...and one of the best pilots I've ever seen."
+- *Righteous Fire* (tested): its "Load an old Privateer ship?" takes a saved game with a Stiletto as a Stiletto (on
+  the pad, in flight, its cockpit) and one with flag 0x41 set as any other; no error of the game's.  No ship is
+  SOLD in Righteous Fire (RF.TRE has not the conversations the offers are cut from: "no ship is offered").
 - *The Stiletto's speeds* are two numbers in the box under the hoop's top ("just 2 numbers would be fine"): SSPD's
   and ASPD's words ("SET ", "KPS ") made empty, the box open -- the HUD's texts and the DIAL's pictures are drawn
   UNDER the cockpit's picture, so a readout shows only where the picture has no pixel.  The autopilot's light is

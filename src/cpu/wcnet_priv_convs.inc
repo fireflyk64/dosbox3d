@@ -25,6 +25,9 @@
 #define L_BEST { T("normal", "It's the best ship in the fleet."), { { "S7MBC3", 10, 0, 622, 0 }, W_SHIP(20), { "S7MBC1", 29, 1310, 1410, 0 }, { "S7MBC3", 4, 900, 1300, 0 }, NONE } }
 
 const Line kStilettoOffer[] = {
+    // (the lead-in: the user, "Can we lead in with the insubordinate but excellent pilot line.  It's a fun way to
+    // introduce a ship.  He wants burrows to be better off but he's nervous about it")
+    { T("normal", "You're an insubordinate smart ass...and one of the best pilots I've ever seen."), { { "S7MBC4", 3, 0, 0, 0 }, NONE } },
     { P("normal", "What exactly do you want from me?"), { { "S7MBC1", 6, 200, 0, 0 }, NONE } },                    // (after "Then")
     L_IHAVE,
     L_BEST,
