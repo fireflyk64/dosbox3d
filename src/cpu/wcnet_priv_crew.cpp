@@ -18,6 +18,7 @@
 #include <math.h>
 #include <algorithm>
 #include <vector>
+#include <deque>
 
 namespace wc {
 
@@ -79,9 +80,11 @@ struct PilotNow {
     Bit32s m[9], armor[4], shield[4];
     bool damage, destroyed;
     Bit32s energy;              // the guns' pool as its last state said (x 256; -1 not told: an older pilot's build)
+    Bit32u clockMs;             // the stamp of its last state (its clock), and when we had it (ours); 0 not told
+    double clockAt;
     bool energyNew;             // ... not yet put in our copy
     PilotNow() : known(false), flying(false), systemId(0), base(-1), baseSystem(-1), state(false), at(-1e9), damage(false), destroyed(false),
-                 energy(-1), energyNew(false) {}
+                 energy(-1), energyNew(false), clockMs(0), clockAt(-1e9) {}
 } g_pilotNow;
 // (the pilot's side) where we are: the base we are at or launched from, the systems flown through since.
 struct OwnWay {
@@ -104,6 +107,9 @@ struct Flight {
     bool tractorPressed;        // ... pressed since the last frame
     bool tractorButton;         // the launcher's button held (the control record's bit 2: a stick's or the mouse's)
     double tractorToldAt;       // (the notice of a turret without the tractor, once in a while)
+    std::vector<Bit16u> ownBolts;   // our bolts at the last frame (a new one is a volley's)
+    std::deque<PrivVolleyData> volleys; // our last volleys, as our game made them (told to the pilot's game)
+    bool volleyNew;             // ... one since the last report: reported at once
 } g_flight;
 // The gunners' turrets as their games tell them (the pilot's side).
 struct TurretNow {
@@ -114,6 +120,7 @@ struct TurretNow {
     bool counted;
     bool tractor;               // its tractor beam held, on the pod of ours tractorId
     Bit32u tractorId;
+    std::deque<PrivVolleyData> volleys; // its volleys as its game made them (by seq; at: by our clock)
 } g_turrets[3];
 // (the pilot's side) a crew member's beam on a pod of ours, and our pods as the last frame had them: one gone is told to
 // the crew -- aboard (the hold's units up) or lost -- whoever's beam it was
@@ -226,6 +233,10 @@ void priv_file_opening(const char *fullname, Bit8u drive, Bit8u flags) {
         g_flight.seated = false;
         g_flight.shots = 0;
         g_flight.bolts = 0;
+        g_flight.ownBolts.clear();
+        g_flight.volleys.clear();
+        g_flight.volleyNew = false;
+        for (int k = 0; k < 3; k++) g_turrets[k].volleys.clear();
         g_flight.tractorKey = g_flight.tractorButton = g_flight.tractorPressed = false;
         for (int k = 0; k < 3; k++) g_turrets[k].counted = false;
         if (g_role == 1) {
@@ -539,13 +550,33 @@ void gunner_frame(double now) {
               st, seat, priv_view(), priv_player_target());
     }
     {
-        // our volleys, counted by our bolts appearing (the pilot's game shows one for each)
-        Bit16u shooters[64];
-        const int nb = priv_scene_bolt_shooters(shooters, 64);
-        int mine = 0;
-        for (int i = 0; i < nb; i++) mine += shooters[i] == ship;
-        if (mine > f.bolts) f.shots++;
-        f.bolts = mine;
+        // our volleys, counted by our bolts appearing (the pilot's game shows one for each, put on these: the user,
+        // 2026-11-27: "Can the firing command include xyz and facing from the guest otherwise the blasts might be lagged")
+        Bit16u mine[64];
+        const int nb = priv_scene_bolts_by(ship, mine, 64);
+        PrivVolleyData v;
+        v.n = 0;
+        for (int i = 0; i < nb; i++) {
+            if (std::find(f.ownBolts.begin(), f.ownBolts.end(), mine[i]) != f.ownBolts.end() || v.n >= 4) continue;
+            Bit32s pos[3], vel[3];
+            priv_bolt_motion(mine[i], pos, vel);
+            for (int k = 0; k < 3; k++) { v.bolt[v.n][k] = pos[k]; v.bolt[v.n][3 + k] = vel[k]; }
+            v.n++;
+        }
+        if (v.n) {
+            f.shots++;
+            const PilotNow &pn = g_pilotNow;
+            v.seq = f.shots;
+            v.at = now;
+            v.stateMs = pn.clockMs;
+            v.heldMs = pn.clockMs ? (Bit32u)std::max(0.0, now - pn.clockAt) : 0;
+            if (!pn.clockMs) v.n = 0;       // (an older pilot's build: no stamp to age them by -- its own way)
+            f.volleys.push_back(v);
+            while (f.volleys.size() > 4) f.volleys.pop_front();
+            f.volleyNew = true;
+        }
+        f.ownBolts.assign(mine, mine + nb);
+        f.bolts = nb;
     }
     PilotNow &p = g_pilotNow;
     if (rig || !p.known) return;
@@ -624,7 +655,11 @@ void pilot_frame(double now) {
         if (now - t.at > 400 || now < t.at) continue;
         if (priv_view() != 3 + k) priv_turret_set(k, t.yaw, t.pitch, t.m);      // (not while the pilot sits in it)
         if (t.shots - t.shown > 3) t.shown = t.shots - 3;                       // (a burst of reports lost: no catching up)
-        if (t.shots != t.shown && priv_fire_station(k)) {
+        const PrivVolleyData *v = NULL;
+        for (size_t j = 0; j < t.volleys.size() && !v; j++) {
+            if (t.volleys[j].seq == t.shown + 1) v = &t.volleys[j];
+        }
+        if (t.shots != t.shown && priv_fire_station(k, v)) {
             t.shown++;
             g_turretTurn = k % 2;
         }
@@ -748,6 +783,45 @@ bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9
     *tractorId = *tractor ? priv_session_pilot_pod_id(priv_player_target()) : 0;
     if (*tractor && !*tractorId) *tractor = false;
     return true;
+}
+
+bool priv_crew_volley_new() {
+    return g_role == 2 && g_flight.volleyNew;
+}
+
+int priv_crew_recent_volleys(PrivVolleyData out[], int cap, double maxAgeMs) {
+    g_flight.volleyNew = false;
+    int n = 0;
+    const double now = PIC_FullIndex();
+    for (size_t i = 0; i < g_flight.volleys.size() && n < cap; i++) {
+        if (now - g_flight.volleys[i].at <= maxAgeMs && g_flight.volleys[i].n > 0) out[n++] = g_flight.volleys[i];
+    }
+    return n;
+}
+
+void priv_crew_pilot_clock(Bit32u ms) {
+    if (g_role != 2) return;
+    g_pilotNow.clockMs = ms;
+    g_pilotNow.clockAt = PIC_FullIndex();
+}
+
+// (the pilot's side) a gunner's volley: kept by its number until shown; when it was made, by our clock, is our stamp
+// it echoed and the time it held it, less half of what is left -- the way back (the way there taken as long)
+void priv_crew_take_volley(int turret, const PrivVolleyData &v) {
+    if (g_role != 1 || turret < 1 || turret > 2 || v.n <= 0) return;
+    TurretNow &t = g_turrets[turret];
+    for (size_t i = 0; i < t.volleys.size(); i++) {
+        if (t.volleys[i].seq == v.seq) return;
+    }
+    const double now = PIC_FullIndex();
+    const double trip = (double)(Bit32u)((Bit32u)now - v.stateMs - v.heldMs);     // (our clock's ms, wrapping)
+    const double oneWay = trip < 0 || trip > 2000 ? 0 : trip / 2;
+    PrivVolleyData k = v;
+    k.at = now - oneWay;
+    t.volleys.push_back(k);
+    while (t.volleys.size() > 8) t.volleys.pop_front();
+    static unsigned told;
+    if (told++ % 60 == 0) wclog(1, "Privateer: crew: turret %d's volley %u: %d bolts, the link's way %.0f ms (the round trip %.0f)", turret, v.seq, v.n, oneWay, trip);
 }
 
 void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire, unsigned shots, bool tractor, Bit32u tractorId) {

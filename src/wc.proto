@@ -710,6 +710,15 @@ message PrivTurret {
     optional uint32 shots = 7;          // its volleys so far this flight (the pilot's game shows one for each)
     optional bool tractor = 8;          // its tractor beam held (B, or the launcher's button, in a turret with the ship's tractor)
     optional uint32 tractor_id = 9;     // ... on that cargo pod of the pilot's game (its id there: the target in the gunner's)
+    repeated PrivVolley volleys = 10;   // its last volleys (those of the last 250 ms: a lost word's are in the next)
+}
+// A gunner's volley as its own game made it (its bolts decide what they hit): the pilot's game puts its copies of the
+// bolts on them, aged by half the round trip -- the pilot's state's stamp back, less the time the gunner held it.
+message PrivVolley {
+    optional uint32 seq = 1;            // the volley's number this flight (PrivTurret's shots when it was made)
+    optional uint32 state_ms = 2;       // the stamp of the pilot's last state the gunner had when it fired (PrivState.ms)
+    optional uint32 held_ms = 3;        // ... how long the gunner had had it then
+    repeated sint32 bolts = 4 [packed = true];  // per bolt: its place x, y, z and velocity x, y, z (world units, per second)
 }
 // A crew member's key for the pilot's ship (reliable): what is not flying or shooting but still the ship's business --
 // 1 the shield level (the game's S key: fewer shields up, more energy for the guns, and back).
@@ -766,6 +775,7 @@ message PrivState {
     optional sint32 target_seat = 15;   // the pilot its targeting system is on (the seat; -1 none, or no pilot)
     optional bool afterburner = 16;     // its afterburner lit (the control record's +0x1E bit 0, Tab: docs/privateer.md section 39)
     optional sint32 energy = 17;        // (a crew's pilot) the guns' energy now (x 256): the crew's copies of the ship draw on it
+    optional uint32 ms = 18;            // (a crew's pilot) its clock when sent (ms): echoed in a gunner's volleys
 }
 message NetworkMessage {
     optional Connect connect = 1;

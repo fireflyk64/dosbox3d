@@ -3242,6 +3242,36 @@ int priv_scene_bolt_shooters(Bit16u out[], int cap) {
     return k;
 }
 
+// Our bolts (a shooter's): its id in each bolt, the laser's +0x25, the other kind's +0x4C.
+int priv_scene_bolts_by(Bit16u shooter, Bit16u out[], int cap) {
+    Bit16u a[64];
+    int k = 0;
+    const int n1 = scene_objects(a, 64, 0x2DE8);
+    for (int i = 0; i < n1 && k < cap; i++) if (priv_r16((Bit16u)(a[i] + 0x25)) == shooter) out[k++] = a[i];
+    const int n2 = scene_objects(a, 64, 0x2F22);
+    for (int i = 0; i < n2 && k < cap; i++) if (priv_r16((Bit16u)(a[i] + 0x4C)) == shooter) out[k++] = a[i];
+    return k;
+}
+
+// A bolt's place (+0x14, as a ship's) and velocity: its motion record (the near pointer just before its vtable: the
+// vtable's +0xA0 -> seg029:01C1 writes it) +4, three int32 in world units a second (measured: a neutron bolt 181,760,
+// 710 m/s, its place moving as much).
+void priv_bolt_motion(Bit16u bolt, Bit32s pos[3], Bit32s vel[3]) {
+    const Bit16u mo = priv_r16((Bit16u)(bolt - 2));
+    for (int i = 0; i < 3; i++) {
+        pos[i] = (Bit32s)priv_r32((Bit16u)(bolt + kShipPos + 4 * i));
+        vel[i] = mo ? (Bit32s)priv_r32((Bit16u)(mo + 4 + 4 * i)) : 0;
+    }
+}
+
+void priv_bolt_set(Bit16u bolt, const Bit32s pos[3], const Bit32s vel[3]) {
+    const Bit16u mo = priv_r16((Bit16u)(bolt - 2));
+    for (int i = 0; i < 3; i++) {
+        mem_writed(ds_at((Bit16u)(bolt + kShipPos + 4 * i)), (Bit32u)pos[i]);
+        if (mo) mem_writed(ds_at((Bit16u)(mo + 4 + 4 * i)), (Bit32u)vel[i]);
+    }
+}
+
 // Bolts retired, the game's own way.  A bolt's update (the laser's seg090:02EC, the other's seg091:0C27; the vtable's
 // +0x24) adds the frame's time to its age and keeps it while the age is within its type's life AND its alive byte (the
 // allocation's +0x22: our pointer's +0x20, where a ship has its own) is set; the game clears that byte itself when the
@@ -4062,6 +4092,7 @@ int priv_guns_seat(Bit16u ship, int station) {
 namespace {
 struct StationShot {
     int station;
+    PrivVolleyData given;           // the gunner's own bolts of this volley (n 0: none told -- ours fly as made)
     Bit8u seat, view;
     Bit8u on[16];
     Bit16u energy[16];
@@ -4124,9 +4155,26 @@ void station_shot_done(int tag, Bit16u ax, Bit16u dx) {
         if (std::find(now, now + nn, g_copyBolts[i]) == now + nn) g_copyBolts.erase(g_copyBolts.begin() + i); else i++;
     }
     int made = 0;
+    static double offSum;
+    static unsigned offN;
     for (int i = 0; i < nn; i++) {
         if (std::find(s.before, s.before + s.nBefore, now[i]) == s.before + s.nBefore && g_copyBolts.size() < 64) {
             g_copyBolts.push_back(now[i]);
+            if (made < s.given.n) {
+                // put on the gunner's bolt where it is by now (its place then, flown on for the volley's age here)
+                const double age = std::min(1.0, std::max(0.0, (PIC_FullIndex() - s.given.at) / 1000.0));
+                const Bit32s *g = s.given.bolt[made];
+                Bit32s at[3], vel[3] = { g[3], g[4], g[5] }, was[3], wasVel[3];
+                for (int k = 0; k < 3; k++) at[k] = (Bit32s)(g[k] + g[3 + k] * age);
+                priv_bolt_motion(now[i], was, wasVel);
+                priv_bolt_set(now[i], at, vel);
+                const double dx = was[0] - at[0], dy = was[1] - at[1], dz = was[2] - at[2];
+                offSum += sqrt(dx * dx + dy * dy + dz * dz) / 256.0;
+                if (++offN % 40 == 1) {
+                    wclog(1, "Privateer: crew: turret %d's bolt put on the gunner's (its volley %u, %.0f ms old): %.0f m from where ours was made (%.0f m on average)",
+                          s.station, s.given.seq, age * 1000.0, sqrt(dx * dx + dy * dy + dz * dz) / 256.0, offSum / offN);
+                }
+            }
             made++;
             if (g_boltWays.size() < 16) {
                 BoltWay b;
@@ -4181,7 +4229,7 @@ static void copy_bolts_frame() {
     }
 }
 
-bool priv_fire_station(int station) {
+bool priv_fire_station(int station, const PrivVolleyData *v) {
     const Bit16u ship = priv_r16(kPlayerShip);
     if (!ship || !priv_ship_is_alive(ship) || station < 1 || station > 2 || g_calls.size() >= 8) return false;
     const Bit16u off = priv_r16((Bit16u)(ship + kShipWeapons)), seg = priv_r16((Bit16u)(ship + kShipWeapons + 2));
@@ -4200,8 +4248,10 @@ bool priv_fire_station(int station) {
     c.before = station_shot_before;
     c.done = station_shot_done;
     c.tag = ship;
+    if (!queue_call(c)) return false;
     g_stationShot.station = station;
-    return queue_call(c);
+    if (v) g_stationShot.given = *v; else g_stationShot.given.n = 0;
+    return true;
 }
 
 // A crew member's tractor beam in the pilot's game (the user, 2026-11-27: "ensure in privateer turret mode that tractor

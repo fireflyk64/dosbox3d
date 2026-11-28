@@ -260,7 +260,22 @@ void priv_turret_set(int k, Bit32s yaw, Bit32s pitch, const Bit32s m[9]);
 int priv_guns_seat(Bit16u ship, int station);
 // The player's ship's guns of that seat fired once by the game's own routine at the next frame (a gunner's shot shown in
 // the pilot's game: no energy taken, its bolts harmless here); false: not queued.
-bool priv_fire_station(int station);
+// A gunner's volley as its own game made it (wc.proto PrivVolley): up to 4 bolts, each place x y z, velocity x y z.
+struct PrivVolleyData {
+    unsigned seq;
+    Bit32u stateMs, heldMs;
+    int n;
+    Bit32s bolt[4][6];
+    double at;                  // (the gunner's) when made; (the pilot's) when made by our clock, as near as the link says
+};
+bool priv_fire_station(int station, const PrivVolleyData *v = NULL);
+int priv_scene_bolts_by(Bit16u shooter, Bit16u out[], int cap);
+void priv_bolt_motion(Bit16u bolt, Bit32s pos[3], Bit32s vel[3]);
+void priv_bolt_set(Bit16u bolt, const Bit32s pos[3], const Bit32s vel[3]);
+bool priv_crew_volley_new();
+int priv_crew_recent_volleys(PrivVolleyData out[], int cap, double maxAgeMs);
+void priv_crew_take_volley(int turret, const PrivVolleyData &v);
+void priv_crew_pilot_clock(Bit32u ms);
 // The ship's tractor beam: the station it is worked from (0 the pilot's seat, 1 and 2 the turrets'; -1 none), and the
 // game's launcher routine run for it from that turret's seat on that target (a crew member's beam in the pilot's game)
 int priv_ship_tractor_station(Bit16u ship);

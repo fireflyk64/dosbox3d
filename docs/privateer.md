@@ -1569,6 +1569,18 @@ nose).  Measured on two machines (a copied bolt's travel 3 frames on, less the s
 (0.00, 1.00, 0.00) -- the nose; after, (0.00, -1.00, 0.00) with the turret at rest and (0.43, -0.24, -0.87) with it
 turned, as the gunner aimed.
 
+**The gunner's bolts themselves** (the user, 2026-11-27: "Can the firing command include xyz and facing from the guest
+otherwise the blasts might be lagged?").  The gunner's game decides what its shots hit, so the pilot's copies are put
+on its bolts: a new bolt of the gunner's (its shooter our ship: the laser's +0x25, the other kind's +0x4C) is a volley,
+told at once in `PrivTurret.volleys` (each bolt's place, +0x14, and velocity -- its motion record, the near pointer
+just before its vtable, +4: three int32, world units a second; a neutron bolt 181,760, 710 m/s), and again in the
+reports of the next 250 ms (a lost word's).  The pilot's game makes its copy as before (its sound, its flash) and then
+puts each bolt on the gunner's, flown on for the volley's age: the pilot stamps its states (`PrivState.ms`, its
+clock), a volley echoes the last stamp and how long the gunner had held it, and what is left of the pilot's clock
+since is the round trip, half of it the way back.  Measured, two machines, the pilot turning at speed while the gunner
+fired and turned the turret: the pilot's own bolts had been made 75 m on average from the gunner's (88-90 m at
+times), the volleys 40 ms old here (the link 18-27 ms).
+
 **The rig:** `scripts/privtests/crew.sh` (the host loads a saved game, the guests register new pilots in Troy and
 launch after it; `PLAYERS=3 SAVE=<a Galaxy's>` for two gunners; `GUNNER_AT=30 PILOT_AT=75` the early launch).  Aids:
 `!privguns` (every gun's station and state, the turrets), `!privtail=<m>:<s>` (the last spawned ship kept straight
