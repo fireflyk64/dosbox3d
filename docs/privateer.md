@@ -1553,7 +1553,14 @@ ship destroyed in the pilot's game by the gunner's neutron guns (62 a hit).
 (`PrivTurret`, 15 a second: `shots` counted by its own bolts appearing); the pilot's game turns that turret of its own
 ship and, for every volley, calls the game's gun routine with the weapons' seat that turret's for the call, its guns
 on, ready and free (`priv_fire_station`: the gunner's game took the energy from its copy).  Those bolts are pictures
-(`priv_copy_bolt`: their hits do nothing); both turrets of the Galaxy in turn.
+(`priv_copy_bolt`: their hits do nothing); both turrets of the Galaxy in turn.  The bolts' way is the view's, not the
+seat's: the player's bolt (seg057:0318) asks the ship's controller for its seat (ship vtable +0x4C -> the controller's
++0x18, seg038:0000: view 4 seat 1, view 5 seat 2, else 0) and flies along the ship (0) or that turret's attitude
+(0x143D / 0x143F +4); so for the call the view (ds:143C) is the turret's too, put back after it (the user, 2026-11-27:
+"The guest sees it fire backwards host forward" -- the pilot's cockpit view had sent the tail turret's bolts along the
+nose).  Measured on two machines (a copied bolt's travel 3 frames on, less the ship's, on the ship's axes): before,
+(0.00, 1.00, 0.00) -- the nose; after, (0.00, -1.00, 0.00) with the turret at rest and (0.43, -0.24, -0.87) with it
+turned, as the gunner aimed.
 
 **The rig:** `scripts/privtests/crew.sh` (the host loads a saved game, the guests register new pilots in Troy and
 launch after it; `PLAYERS=3 SAVE=<a Galaxy's>` for two gunners; `GUNNER_AT=30 PILOT_AT=75` the early launch).  Aids:

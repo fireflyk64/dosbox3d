@@ -168,6 +168,9 @@ bool g_tracing;
 double g_traceEndMs;
 std::string g_traceName;
 std::map<Bit32u, unsigned> g_trace;
+std::map<Bit32u, unsigned> g_traceFirst;    // (each place's first run, in order: the 4th column)
+unsigned g_traceSeq;
+bool g_traceToFlightEnd;                    // (!privtrace=^<name>:<s>: ended too when the flight ends -- a landing's last frames)
 
 Bit16u g_watch, g_watchLast;     // (with the trace: "!privwatchctl=<offset>:<seconds>" logs who changes a word of the
 Bit32u g_watchPrev;             // last spawned ship's controller)
@@ -182,8 +185,9 @@ void trace_step(double now) {
         }
         g_watchPrev = here;
     }
-    g_trace[here]++;
-    if (now < g_traceEndMs) {
+    unsigned &count = g_trace[here];
+    if (!count++) g_traceFirst[here] = g_traceSeq++;
+    if (now < g_traceEndMs && !(g_traceToFlightEnd && !priv_in_flight())) {
         wc_net_countdown = 0;   // (the next instruction comes here too)
         return;
     }
@@ -194,12 +198,14 @@ void trace_step(double now) {
     FILE *f = fopen(path.c_str(), "w");
     if (f) {
         for (std::map<Bit32u, unsigned>::const_iterator it = g_trace.begin(); it != g_trace.end(); ++it) {
-            fprintf(f, "%04x:%04x %u\n", it->first >> 16, it->first & 0xffff, it->second);
+            fprintf(f, "%04x:%04x %u %u\n", it->first >> 16, it->first & 0xffff, it->second, g_traceFirst[it->first]);
         }
         fclose(f);
     }
     wclog(1, "Privateer: code trace of %u places to %s (load segment %04X)", (unsigned)g_trace.size(), path.c_str(), g_privLoadSeg);
     g_trace.clear();
+    g_traceFirst.clear();
+    g_traceSeq = 0;
 }
 
 PhysPt ds_at(Bit16u off) { return ((PhysPt)g_ds << 4) + off; }
@@ -1961,8 +1967,10 @@ static void ship_dump_frame() {
 }
 // !privguns: our ship's guns (group, station, switched on, the time since its shot, its delay, its energy), the seat the
 // weapons are fired from, the view, and the turrets
+static void copy_bolts_frame();
 static void guns_dump_frame() {
     target_pod_frame();
+    copy_bolts_frame();
     if (!g_gunsDump) return;
     g_gunsDump = false;
     const double t = PIC_FullIndex() / 1000.0;
@@ -2354,6 +2362,8 @@ bool priv_script_item(const std::string &item, double t) {
     if (item.compare(0, 11, "!privtrace=") == 0 && g_found) {
         // !privtrace=<name>:<seconds>
         std::string spec = item.substr(11);
+        g_traceToFlightEnd = !spec.empty() && spec[0] == '^';
+        if (g_traceToFlightEnd) spec = spec.substr(1);
         size_t colon = spec.find(':');
         g_traceName = spec.substr(0, colon);
         g_traceEndMs = PIC_FullIndex() + 1000.0 * (colon == std::string::npos ? 1.0 : atof(spec.c_str() + colon + 1));
@@ -4025,16 +4035,25 @@ int priv_guns_seat(Bit16u ship, int station) {
 // game every frame from the view).  For the call the seat is the turret's, that turret's guns are on and cost nothing
 // (the gunner's own game has taken their energy from its copy of the ship); afterwards everything is as it was, and the
 // bolts the call made are remembered: they are pictures here (the gunner's game decides what its shots hit).
+// The bolt's way is not the seat's but the view's: the player's bolt (seg057:0318) asks the ship's controller for its
+// seat (ship vtable +0x4C -> the controller's +0x18, seg038:0000: the view 4 seat 1, 5 seat 2, else 0) and flies along
+// the ship (0) or that turret's attitude (0x143D / 0x143F +4).  So for the call the view is the turret's too (the user,
+// 2026-11-27: "The guest sees it fire backwards host forward": the pilot's cockpit view had the tail turret's bolts
+// leave along the nose); the view is back before the frame is drawn.
 namespace {
 struct StationShot {
     int station;
-    Bit8u seat;
+    Bit8u seat, view;
     Bit8u on[16];
     Bit16u energy[16];
     Bit16u before[96];
     int nBefore;
 } g_stationShot;
 std::vector<Bit16u> g_copyBolts;            // (a list has a cap: 64)
+// (a test's measure) a copied bolt's way, 3 frames on: its travel less the ship's, on the ship's three axes (the rows of
+// its attitude; a tail turret's bolt runs against the ship's forward axis)
+struct BoltWay { Bit16u bolt; int station, frames; Bit32s at[3], shipAt[3]; };
+std::vector<BoltWay> g_boltWays;
 int all_bolts(Bit16u out[], int cap) {
     int n = scene_objects(out, cap, kBoltVtable);
     n += scene_objects(out + n, cap - n, kBolt2Vtable);
@@ -4048,6 +4067,8 @@ void station_shot_before(int tag) {
     const int n = ship_guns(ship, guns, 16);
     s.seat = mem_readb(w + kWeaponsSeat);
     mem_writeb(w + kWeaponsSeat, (Bit8u)s.station);
+    s.view = priv_r8(kView);
+    mem_writeb(ds_at(kView), (Bit8u)(3 + s.station));      // (the bolts' way: that turret's attitude)
     for (int i = 0; i < n; i++) {
         s.on[i] = mem_readb(guns[i] + kGunOn);
         s.energy[i] = mem_readw(guns[i] + kGunEnergy);
@@ -4063,6 +4084,7 @@ void station_shot_done(int tag, Bit16u ax, Bit16u dx) {
     (void)ax; (void)dx;
     StationShot &s = g_stationShot;
     const Bit16u ship = (Bit16u)tag;
+    mem_writeb(ds_at(kView), s.view);
     if (!priv_ship_is_alive(ship)) return;
     const PhysPt w = ship_weapons(ship);
     PhysPt guns[16];
@@ -4087,6 +4109,15 @@ void station_shot_done(int tag, Bit16u ax, Bit16u dx) {
         if (std::find(s.before, s.before + s.nBefore, now[i]) == s.before + s.nBefore && g_copyBolts.size() < 64) {
             g_copyBolts.push_back(now[i]);
             made++;
+            if (g_boltWays.size() < 16) {
+                BoltWay b;
+                b.bolt = now[i];
+                b.station = s.station;
+                b.frames = 0;
+                priv_ship_pos(now[i], b.at);
+                priv_ship_pos(ship, b.shipAt);
+                g_boltWays.push_back(b);
+            }
         }
     }
     if (made && station && cost > 0) {
@@ -4103,6 +4134,33 @@ void station_shot_done(int tag, Bit16u ax, Bit16u dx) {
     if (made && bolts % 20 < (unsigned)made) wclog(2, "Privateer: crew: a gunner's turret %d fired here: %u bolts shown so far (%u calls)", s.station, bolts, shots);
 }
 }  // namespace
+
+static void copy_bolts_frame() {
+    static unsigned told;
+    const Bit16u ship = priv_r16(kPlayerShip);
+    for (size_t i = 0; i < g_boltWays.size();) {
+        BoltWay &b = g_boltWays[i];
+        Bit16u now[96];
+        const int nn = all_bolts(now, 96);
+        if (!ship || std::find(now, now + nn, b.bolt) == now + nn) { g_boltWays.erase(g_boltWays.begin() + i); continue; }
+        if (++b.frames < 3) { i++; continue; }
+        Bit32s p[3], sp[3], m[9];
+        priv_ship_pos(b.bolt, p);
+        priv_ship_pos(ship, sp);
+        priv_ship_matrix(ship, m);
+        double d[3], len = 0;
+        for (int k = 0; k < 3; k++) { d[k] = (double)(p[k] - b.at[k]) - (double)(sp[k] - b.shipAt[k]); len += d[k] * d[k]; }
+        len = sqrt(len);
+        if (len > 0 && (told < 4 || told % 25 == 0)) {
+            double a[3];
+            for (int r = 0; r < 3; r++) a[r] = (d[0] * m[3 * r] + d[1] * m[3 * r + 1] + d[2] * m[3 * r + 2]) / 256.0 / len;
+            wclog(1, "Privateer: crew: turret %d's bolt here flies (%.2f, %.2f, %.2f) on the ship's axes (rows of its attitude)",
+                  b.station, a[0], a[1], a[2]);
+        }
+        told++;
+        g_boltWays.erase(g_boltWays.begin() + i);
+    }
+}
 
 bool priv_fire_station(int station) {
     const Bit16u ship = priv_r16(kPlayerShip);
