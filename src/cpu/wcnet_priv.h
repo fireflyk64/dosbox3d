@@ -304,6 +304,7 @@ bool priv_crew_script_item(const std::string &item, double t);
 // 1 the crew's pilot, 2 a gunner in the pilot's turret `turret` (1, 2; more gunners than turrets ride as passengers).
 void priv_crew_role(int role, int turret);
 bool priv_crew_gunner();
+bool priv_crew_hold_landing();
 bool priv_crew_pilot();
 // The pilot's ship as its game wrote it at its last launch (the pilot's side: to send; serial 0 none yet), and taken (a
 // gunner's side: the ship its next flight is flown in).

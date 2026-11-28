@@ -344,6 +344,15 @@ bool priv_crew_script_item(const std::string &item, double t) {
     return false;
 }
 
+// A base's landing zone held for a crew member while the pilot flies (the user, 2026-11-27: "When the host arrived at
+// the pirate nav point with the pirate asteroid base out of auto there were asteroids and the gunner landed
+// immediately" / "Could we disallow landing on the guest until the host is out of flight mode"): a base lands the
+// player's ship that comes within 3,500 m of it (seg106:030F), and our ship goes where the pilot's state says, a link's
+// delay ahead on its speed -- so a pilot just outside the zone could land its crew.  The crew lands when the pilot has.
+bool priv_crew_hold_landing() {
+    return g_role == 2 && g_pilotNow.known && g_pilotNow.flying && !g_pilotNow.destroyed;
+}
+
 bool priv_crew_gunner() { return g_role == 2; }
 bool priv_crew_pilot() { return g_role == 1; }
 

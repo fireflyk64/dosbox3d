@@ -96,6 +96,11 @@ enum {
     kDamageDisplay = 0x0489,        // seg034:0489(0x6803, quadrant, damage): the cockpit's damage display (the player's)
     kDamageDisplayObj = 0x6803,
     kSeg120 = 0x489B,
+    kSeg106 = 0x41AB,
+    kBaseZone = 0x03B6,             // seg106:030F, a base's frame: its distance to the player's ship ([bp-4], world units) under
+                                    // 0xDAC00 (3,500 m) lands the player at once (ovr372:015B); under 0x138800 (5,000 m) the
+                                    // approach (a cleared landing); else 0x0433, both reset
+    kBaseZoneFar = 0x0433,
     kFireGuns = 0x0004,             // seg120:0004(weapons far, n): a ship's guns fired (the weapons' +0xA is the ship)
     kFireLaunchers = 0x03E5,        // seg120:03E5(weapons far, n): the launcher's button -- a missile from the pilot's seat, the
                                     // tractor beam of the seat's own station from a turret's (seg120:05F5)
@@ -2273,6 +2278,19 @@ bool priv_check_hooks(Bit32u ip) {
         }
         return true;
     }
+    if (ip == kBaseZone && codeSeg == (Bit16u)(g_privLoadSeg + kSeg106)) {
+        // a crew member's base: no landing while the pilot flies (its zone as if we were far)
+        if (priv_crew_hold_landing()) {
+            const Bit32s d = (Bit32s)mem_readd(SegPhys(ss) + (Bit16u)(reg_bp - 4));
+            static double toldAt = -1e9;
+            if (d < 0x138800 && PIC_FullIndex() - toldAt > 5000) {
+                toldAt = PIC_FullIndex();
+                wclog(1, "Privateer: crew: a base %d m from us: its landing held (the pilot flies)", d / 256);
+            }
+            reg_eip = kBaseZoneFar;
+        }
+        return true;
+    }
     if (ip == kNpcThink && codeSeg == (Bit16u)(g_privLoadSeg + kSeg042) && !g_heldAi.empty()) {
         const PhysPt sp = SegPhys(ss) + reg_sp;
         const Bit16u self = mem_readw(sp + 4);
@@ -2308,6 +2326,7 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kControlsJoin);
     watch(kControlsEntry);
     watch(kNpcThink);
+    watch(kBaseZone);
     watch(kWingSpawn);
     watch(kGameError);
     watch(kNearMalloc);

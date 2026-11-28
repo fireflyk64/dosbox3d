@@ -1543,7 +1543,14 @@ ship destroyed in the pilot's game by the gunner's neutron guns (62 a hit).
   the gunner arrived some 4 s after the pilot each time).  The same way takes a gunner who launches late after a
   pilot already systems away.  (A jump point's destination is its own: the sphere record's byte written made no
   difference, which is why the launch begins at the pilot's base instead.)
-- **Landing:** the pilot at a base, the gunner's ship is put at the nearest base and the game lands it.
+- **Landing:** the pilot at a base, the gunner's ship is put at the nearest base and the game lands it.  Not before:
+  a base's frame (seg106:030F, the base's vtable +0x24) lands the player's ship within 3,500 m of it at once
+  (`[bp-4] < 0xDAC00`, ovr372:015B, no clearance asked) and runs the approach within 5,000 m; a crew member's copy goes
+  where the pilot's state says, a link's delay ahead on its speed, so a pilot just outside the zone landed its gunner
+  (the user, 2026-11-27, at a pirate asteroid base after the autopilot).  So while the pilot flies, a crew member's
+  bases take the far branch (seg106:03B6 -> 0433: `priv_crew_hold_landing`).  Measured, two machines: the gunner's
+  copy put 3,009 m from Oxford's base (the pilot at 3,600 m) stayed in flight ("its landing held"); the pilot then
+  landed at 3,000 m and the gunner with it.  (The zone's edge, by the rig: 3,000 m landed, 4,000 m did not.)
 - **The pilot's ship destroyed:** the gunner's is too (its game's own death).
 - **Launching before the pilot** (or while the pilot sits at another base): no flight of a gunner's -- the launch
   begins at the pilot's base in the gunner's own ship and is landed there at once ("Your pilot has not launched").
