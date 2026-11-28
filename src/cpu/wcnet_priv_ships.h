@@ -84,6 +84,8 @@ typedef bool (*PrivTreFile)(const std::string &name, std::vector<Bit8u> *out);
 bool priv_ship_cockpit(const PrivAddedShip &ship, PrivTreFile file, std::vector<Bit8u> *iff, std::vector<Bit8u> *pak);
 // Its appearance given what a player's ship needs (the weapons display's picture); false: good as it is.
 bool priv_ship_appearance(const PrivAddedShip &ship, PrivTreFile file, std::vector<Bit8u> *iff);
+// OPTIONS\OPTIONS.IFF (given) with the ship on every base's landing pad in the place of its hull's; false: left.
+bool priv_ship_pads(const PrivAddedShip &ship, PrivTreFile file, const std::vector<Bit8u> &options, std::vector<Bit8u> *out);
 // MIDGAMES\TAKEOFFS.PAK or LANDINGS.PAK (given) with the ship flying in the place of its scene ship; false: left.
 bool priv_ship_scene(const PrivAddedShip &ship, PrivTreFile file, const std::vector<Bit8u> &pak, bool landing, std::vector<Bit8u> *out);
 // OPTIONS\SHIPART.IFF (given) with the ship's picture in its hull's upgrade bay; false: left as it is.

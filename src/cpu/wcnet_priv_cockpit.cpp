@@ -759,4 +759,118 @@ bool priv_ship_scene(const PrivAddedShip &ship, PrivTreFile file, const std::vec
     return true;
 }
 
+// The ship on the landing pads.  OPTIONS\OPTIONS.IFF: FORM OPTS { TABL: an offset per record; the records: a
+// length and a FORM SCEN -- a room's regions, FORM BACK (PALT: its palette's number in OPTPALS.PAK; the pictures of
+// OPTSHPS.PAK it is made of) and, a pad's, FORM SHIP { INFO: a hull per picture; SHAP: a pack, the player's ship
+// standing on that pad, per hull } }.  The added ship's: the view it has in the upgrade bay, as wide as its hull's
+// ship is on that pad and standing where that stands, in the nearest of the colours that picture uses.
+bool pad_ship(const PrivAddedShip &ship, const std::vector<int> &src, int sw, int sh, const Bit8u *fly, const Bytes &pals, Chunk *scene) {
+    Chunk *back = scene->find("BACK"), *shipForm = scene->find("SHIP");
+    const Chunk *palt = back ? back->find("PALT") : 0;
+    Chunk *info = shipForm ? shipForm->find("INFO") : 0, *shap = shipForm ? shipForm->find("SHAP") : 0;
+    std::vector<size_t> po, offs;
+    if (!palt || palt->data.empty() || !info || !shap || !pack_offsets(pals, &po) || !pack_offsets(shap->data, &offs)) return false;
+    const size_t pn = palt->data[0];
+    if (pn >= po.size() || po[pn] + 4 + 768 > pals.size()) return false;
+    const Bit8u *pal = &pals[po[pn] + 4];
+    size_t which = offs.size();
+    for (size_t i = 0; i < info->data.size() && i < offs.size(); i++) if (info->data[i] == ship.hull) which = i;
+    Shape own;
+    if (which == offs.size() || !shape_decode(shap->data, offs[which], &own) || own.pix.empty()) return false;
+    bool used[256] = { false };
+    int x0 = own.pix[0].x, x1 = x0, y1 = own.pix[0].y;
+    for (size_t i = 0; i < own.pix.size(); i++) {
+        const Pixel &p = own.pix[i];
+        used[p.c] = true;
+        if (p.x < x0) x0 = p.x;
+        if (p.x > x1) x1 = p.x;
+        if (p.y > y1) y1 = p.y;
+    }
+    used[0] = false;
+    int nearest[256];
+    for (int c0 = 0; c0 < 256; c0++) {
+        const int R = fly[3 * c0], G = fly[3 * c0 + 1], B = fly[3 * c0 + 2];
+        long best = -1;
+        nearest[c0] = 1;
+        for (int c = 1; c < 256; c++) {
+            if (!used[c]) continue;
+            const long dd = (long)(pal[3 * c] - R) * (pal[3 * c] - R) + (long)(pal[3 * c + 1] - G) * (pal[3 * c + 1] - G) + (long)(pal[3 * c + 2] - B) * (pal[3 * c + 2] - B);
+            if (best < 0 || dd < best) { best = dd; nearest[c0] = c; }
+        }
+    }
+    // A pad's own touch, by its palette's number: Perry Naval Base's (0x1F) -- the user: "Both ships should be a
+    // tiny bit smaller and more centered at Perry" (the hull's ship stands at the hatch's right edge there).
+    double size = 1.0;
+    int moveX = 0, moveY = 0;
+    if (pn == 0x1F) { size = 0.86; moveX = -16; moveY = -7; }
+    const int dw = (int)((x1 - x0 + 1) * size + 0.5);
+    const double scale = (double)dw / sw;
+    const int dh = (int)(sh * scale + 0.5) > 0 ? (int)(sh * scale + 0.5) : 1;
+    x0 += (x1 - x0 + 1 - dw) / 2 + moveX;
+    y1 += moveY;
+    std::vector<int> canvas(dw * dh, kNone);
+    for (int y = 0; y < dh; y++) {
+        for (int x = 0; x < dw; x++) {
+            const int sx = (int)((x + 0.5) / scale), sy = (int)((y + 0.5) / scale);
+            if (sx < sw && sy < sh && src[sy * sw + sx] != kNone) canvas[y * dw + x] = nearest[src[sy * sw + sx]];
+        }
+    }
+    // the pack again: the other hulls' pictures as they are
+    std::vector<Bytes> shapes;
+    for (size_t i = 0; i < offs.size(); i++) {
+        const size_t end = i + 1 < offs.size() ? offs[i + 1] : shap->data.size();
+        if (offs[i] > end) return false;
+        shapes.push_back(Bytes(shap->data.begin() + offs[i], shap->data.begin() + end));
+    }
+    shapes[which].clear();
+    shape_encode(canvas, dw, dh, -x0, -(y1 - dh + 1), own.ext, &shapes[which]);
+    Bytes pack;
+    Bit32u total = 4 + 4 * (Bit32u)shapes.size(), place = total;
+    for (size_t i = 0; i < shapes.size(); i++) total += (Bit32u)shapes[i].size();
+    add32(pack, total);
+    for (size_t i = 0; i < shapes.size(); i++) { add32(pack, place | (le32(&shap->data[4 + 4 * i]) & 0xFF000000u)); place += (Bit32u)shapes[i].size(); }
+    for (size_t i = 0; i < shapes.size(); i++) pack.insert(pack.end(), shapes[i].begin(), shapes[i].end());
+    shap->data = pack;
+    return true;
+}
+
+bool priv_ship_pads(const PrivAddedShip &ship, PrivTreFile file, const std::vector<Bit8u> &options, std::vector<Bit8u> *out) {
+    const Bytes &d = options;
+    Bytes space, pals;
+    if (ship.bayView < 0 || d.size() < 24 || memcmp(&d[0], "FORM", 4) || memcmp(&d[8], "OPTSTABL", 8)) return false;
+    const Bit32u rows = be32(&d[16]) / 4;
+    if (20 + rows * 4 > d.size() || !file("..\\..\\DATA\\PALETTE\\SPACE.PAL", &space) || space.size() < 4 + 768 || !file("..\\..\\DATA\\OPTIONS\\OPTPALS.PAK", &pals)) return false;
+    std::vector<int> src;
+    int sw, sh;
+    if (!appearance_view(file, ship.appearance, ship.bayView, ship.bayMirror != 0, &src, &sw, &sh)) return false;
+    Bytes body;
+    std::vector<Bit32u> table;
+    int pads = 0;
+    for (Bit32u r = 0; r < rows; r++) {
+        const Bit32u at = le32(&d[20 + 4 * r]);
+        if (at == 0) { table.push_back(0); continue; }
+        if (at + 4 > d.size()) return false;
+        const Bit32u len = le32(&d[at]);
+        if (len > d.size() - at - 4) return false;
+        std::vector<Chunk> top;
+        Bytes record;
+        if (iff_parse(d, at + 4, at + 4 + len, &top) && top.size() == 1 && top[0].form && pad_ship(ship, src, sw, sh, &space[4], pals, &top[0])) {
+            iff_build(top[0], &record);
+            pads++;
+        } else {
+            record.assign(d.begin() + at + 4, d.begin() + at + 4 + len);
+        }
+        table.push_back(20 + rows * 4 + (Bit32u)body.size());
+        add32(body, (Bit32u)record.size());
+        body.insert(body.end(), record.begin(), record.end());
+    }
+    if (!pads) return false;
+    out->assign(d.begin(), d.begin() + 20);
+    for (Bit32u r = 0; r < rows; r++) add32(*out, table[r]);
+    out->insert(out->end(), body.begin(), body.end());
+    const Bit32u total = (Bit32u)out->size() - 8;
+    (*out)[4] = (Bit8u)(total >> 24); (*out)[5] = (Bit8u)(total >> 16); (*out)[6] = (Bit8u)(total >> 8); (*out)[7] = (Bit8u)total;
+    return true;
+}
+
 }

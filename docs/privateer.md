@@ -1959,8 +1959,7 @@ no turret obviuosly. Think extensibly since we may want a place to insert the de
 on a branch in case it causes instability or people don't like it".
 
 **Done in this step:** a saved game's pilot flies a Stiletto, alone or in a room; its cockpit is made at run time.
-**Not yet:** the ships' pictures in the upgrade bay, on the pad and in the launch and landing scenes (those show the
-Centurion), a cockpit of the Demon's own (see "Open" below).  Nothing is merged or
+**Not yet:** a cockpit of the Demon's own (see "Open" below).  Nothing is merged or
 deployed.
 
 Code: `src/cpu/wcnet_priv_ships.cpp` (the table `kShips`, the TRE, the hooks), `src/cpu/wcnet_priv_cockpit.cpp` and
@@ -2129,10 +2128,25 @@ chances on my own." / "No big deal."  Tested with a saved game set at base 0x36 
 0.50; the bar 0.93, 0.67; the bartender 0.88, 0.50; the Accept taken once the prompt is up -- the rumour's length
 varies): heard as written, 189,187 credits and a Centurion -> 277,712 and a Demon.
 
+**The ships' pictures** (the user: "want size to fill the screen mostly", then "Both ships should be a tiny bit
+smaller and more centered at Perry").  The only art of these ships is their appearance's 37 flight views (VSHP: a
+pack a view, in the flight's palette; the Stiletto's 126 x 101 at most), so every picture is one of those, redrawn
+at run time (`wcnet_priv_cockpit.cpp`) in the nearest of the colours the hull's own picture uses there, by that
+scene's palette; each is a file the ship's owner reads in the place of the game's (one entry, a content per ship).
+- *The upgrade bay* (`priv_ship_bay`): `OPTIONS\SHIPART.IFF`, FORM <hull> / FORM APPR / SHAP.  View 10 turned left
+  to right, twice the size the pixel-art way (a corner takes its two neighbours' colour where they agree: edges stay
+  edges); the palette is OPTPALS.PAK's 18th (the bay scene's PALT).  The guns' pictures (drawn where the hull's ship
+  has its mounts) are emptied: a mounted gun is not drawn.
+- *The landing pads* (`priv_ship_pads`): `OPTIONS\OPTIONS.IFF` is a table of offsets and a record a scene (a length
+  and FORM SCEN: regions, FORM BACK with PALT -- the scene's palette's number in OPTPALS.PAK --, and on the ten pads
+  FORM SHIP: INFO a hull per picture, SHAP a pack of the ship standing there).  The same view, as wide as the hull's
+  ship and standing where it stands; at Perry (palette 0x1F) 0.86 of that and 16 left, 7 up, on the hatch.  The file
+  is written again whole (the records move, the table with them).
+- *The takeoff and landing scenes* (`priv_ship_scene`): `MIDGAMES\TAKEOFFS.PAK` / `LANDINGS.PAK`: the palette, a
+  small picture, and per scene ship (SHIP2CHR's number; entries 2-5) 30 frames of it flying past.  View 12 (turned
+  over for the landing), as wide as the hull's ship in each frame.
+
 **Open.**
-- The ships' pictures: the upgrade bay (SHIPART.IFF's FORM APPR per hull, and the guns' pictures per mount), the
-  pad, the launch and landing scenes (MIDGAMES\TAKEOFFS / LANDINGS: FORM MOVI).  The appearances' own 37 views
-  (126 x 101 at most for the Stiletto) are the only art of these ships.
 - The Demon's own cockpit (~/demon_cp has the places); what its dealers sell it (the Stiletto's list for now).
 - A crew's room with an added ship as the pilot's ship (the gunner's game would fly it as a Centurion: unguarded).
 - The weapons picture sits a little low over the display's text.

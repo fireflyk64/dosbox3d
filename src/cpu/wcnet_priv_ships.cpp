@@ -492,6 +492,7 @@ void tre_build() {
         if (real_file(tre_name("OPTIONS", "SHIPART.IFF"), &in) && priv_ship_bay(kShips[i], real_file, in, &pak)) tre_add(tre_name("OPTIONS", "SHIPART.IFF"), in, kShips[i].id, &pak);
         if (real_file(tre_name("MIDGAMES", "TAKEOFFS.PAK"), &in) && priv_ship_scene(kShips[i], real_file, in, false, &pak)) tre_add(tre_name("MIDGAMES", "TAKEOFFS.PAK"), in, kShips[i].id, &pak);
         if (real_file(tre_name("MIDGAMES", "LANDINGS.PAK"), &in) && priv_ship_scene(kShips[i], real_file, in, true, &pak)) tre_add(tre_name("MIDGAMES", "LANDINGS.PAK"), in, kShips[i].id, &pak);
+        if (real_file(tre_name("OPTIONS", "OPTIONS.IFF"), &in) && priv_ship_pads(kShips[i], real_file, in, &pak)) tre_add(tre_name("OPTIONS", "OPTIONS.IFF"), in, kShips[i].id, &pak);
         if (skel.empty()) real_file(tre_name("APPEARNC", "SKELETON.IFF"), &skel);
         if (!skel.empty() && skeleton_with_marks(kShips[i], out, &skel)) skelChanged = true;
     }
