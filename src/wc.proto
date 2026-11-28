@@ -683,6 +683,11 @@ message PrivPodTaken {
     optional uint32 player = 1;
     optional uint32 owner = 2;
     optional uint32 id = 3;
+    // (a crew's pilot to its crew: its pod gone from its scene -- tractored aboard, the units it brought, the hold's units
+    // and size after; or lost, units 0)
+    optional uint32 units = 4;
+    optional uint32 hold = 5;
+    optional uint32 room = 6;
 }
 // A crew's room: the pilot's ship as its game wrote it at its launch (PLAYTYPE.IFF, an IFF FORM REAL) and the hull it
 // is flown as (0 Tarsus, 1 Orion, 2 Centurion, 3 Galaxy): a gunner's flight is flown in it (reliable; at every launch
@@ -703,6 +708,17 @@ message PrivTurret {
     repeated sint32 m = 5 [packed = true];
     optional bool fire = 6;
     optional uint32 shots = 7;          // its volleys so far this flight (the pilot's game shows one for each)
+    optional bool tractor = 8;          // its tractor beam held (B, or the launcher's button, in a turret with the ship's tractor)
+    optional uint32 tractor_id = 9;     // ... on that cargo pod of the pilot's game (its id there: the target in the gunner's)
+    repeated PrivVolley volleys = 10;   // its last volleys (those of the last 250 ms: a lost word's are in the next)
+}
+// A gunner's volley as its own game made it (its bolts decide what they hit): the pilot's game puts its copies of the
+// bolts on them, aged by half the round trip -- the pilot's state's stamp back, less the time the gunner held it.
+message PrivVolley {
+    optional uint32 seq = 1;            // the volley's number this flight (PrivTurret's shots when it was made)
+    optional uint32 state_ms = 2;       // the stamp of the pilot's last state the gunner had when it fired (PrivState.ms)
+    optional uint32 held_ms = 3;        // ... how long the gunner had had it then
+    repeated sint32 bolts = 4 [packed = true];  // per bolt: its place x, y, z and velocity x, y, z (world units, per second)
 }
 // A crew member's key for the pilot's ship (reliable): what is not flying or shooting but still the ship's business --
 // 1 the shield level (the game's S key: fewer shields up, more energy for the guns, and back).
@@ -758,9 +774,11 @@ message PrivState {
     repeated sint32 shield = 14 [packed = true];    // the four quadrants' shields (the damage model's int32 at +0x31 + 6q)
     optional sint32 target_seat = 15;   // the pilot its targeting system is on (the seat; -1 none, or no pilot)
     optional bool afterburner = 16;     // its afterburner lit (the control record's +0x1E bit 0, Tab: docs/privateer.md section 39)
+    optional sint32 energy = 17;        // (a crew's pilot) the guns' energy now (x 256): the crew's copies of the ship draw on it
+    optional uint32 ms = 18;            // (a crew's pilot) its clock when sent (ms): echoed in a gunner's volleys
     // An added ship (docs/privateer.md section 42: 1 the Stiletto).  `appearance` then names the hull it is flown on
     // (FIGHTER), which is what a game without the added ships shows; a game with them shows the ship itself.
-    optional uint32 added_ship = 17;
+    optional uint32 added_ship = 19;
 }
 message NetworkMessage {
     optional Connect connect = 1;

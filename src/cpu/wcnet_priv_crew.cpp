@@ -16,7 +16,9 @@
 #include "mem.h"
 #include "keyboard.h"
 #include <math.h>
+#include <algorithm>
 #include <vector>
+#include <deque>
 
 namespace wc {
 
@@ -77,7 +79,12 @@ struct PilotNow {
     double pos[3], vel[3];
     Bit32s m[9], armor[4], shield[4];
     bool damage, destroyed;
-    PilotNow() : known(false), flying(false), systemId(0), base(-1), baseSystem(-1), state(false), at(-1e9), damage(false), destroyed(false) {}
+    Bit32s energy;              // the guns' pool as its last state said (x 256; -1 not told: an older pilot's build)
+    Bit32u clockMs;             // the stamp of its last state (its clock), and when we had it (ours); 0 not told
+    double clockAt;
+    bool energyNew;             // ... not yet put in our copy
+    PilotNow() : known(false), flying(false), systemId(0), base(-1), baseSystem(-1), state(false), at(-1e9), damage(false), destroyed(false),
+                 energy(-1), energyNew(false), clockMs(0), clockAt(-1e9) {}
 } g_pilotNow;
 // (the pilot's side) where we are: the base we are at or launched from, the systems flown through since.
 struct OwnWay {
@@ -96,6 +103,13 @@ struct Flight {
     int seat;                   // the turret we man on this ship (1, 2), 0 none: a passenger
     int bolts;                  // our own bolts in the scene at the last frame
     unsigned shots;             // our turret's volleys this flight
+    bool tractorKey;            // B held (the crew's tractor key: Enter is the crew's power key)
+    bool tractorPressed;        // ... pressed since the last frame
+    bool tractorButton;         // the launcher's button held (the control record's bit 2: a stick's or the mouse's)
+    double tractorToldAt;       // (the notice of a turret without the tractor, once in a while)
+    std::vector<Bit16u> ownBolts;   // our bolts at the last frame (a new one is a volley's)
+    std::deque<PrivVolleyData> volleys; // our last volleys, as our game made them (told to the pilot's game)
+    bool volleyNew;             // ... one since the last report: reported at once
 } g_flight;
 // The gunners' turrets as their games tell them (the pilot's side).
 struct TurretNow {
@@ -104,7 +118,15 @@ struct TurretNow {
     bool fire;
     unsigned shots, shown;      // its volleys as it counts them, and those shown here
     bool counted;
+    bool tractor;               // its tractor beam held, on the pod of ours tractorId
+    Bit32u tractorId;
+    std::deque<PrivVolleyData> volleys; // its volleys as its game made them (by seq; at: by our clock)
 } g_turrets[3];
+// (the pilot's side) a crew member's beam on a pod of ours, and our pods as the last frame had them: one gone is told to
+// the crew -- aboard (the hold's units up) or lost -- whoever's beam it was
+struct Tractoring { Bit16u pod; double at; int seat; } g_tractoring = { 0, -1e9, 0 };
+std::vector<Bit16u> g_podsWere;
+int g_holdWas = -1;
 int g_turretTurn;
 
 bool read_whole(Bit8u drive, const char *fullname, std::vector<Bit8u> &out) {
@@ -211,6 +233,11 @@ void priv_file_opening(const char *fullname, Bit8u drive, Bit8u flags) {
         g_flight.seated = false;
         g_flight.shots = 0;
         g_flight.bolts = 0;
+        g_flight.ownBolts.clear();
+        g_flight.volleys.clear();
+        g_flight.volleyNew = false;
+        for (int k = 0; k < 3; k++) g_turrets[k].volleys.clear();
+        g_flight.tractorKey = g_flight.tractorButton = g_flight.tractorPressed = false;
         for (int k = 0; k < 3; k++) g_turrets[k].counted = false;
         if (g_role == 1) {
             // (the pilot's: our ship as the game has just written it, for the gunners' flights)
@@ -328,6 +355,15 @@ bool priv_crew_script_item(const std::string &item, double t) {
     return false;
 }
 
+// A base's landing zone held for a crew member while the pilot flies (the user, 2026-11-27: "When the host arrived at
+// the pirate nav point with the pirate asteroid base out of auto there were asteroids and the gunner landed
+// immediately" / "Could we disallow landing on the guest until the host is out of flight mode"): a base lands the
+// player's ship that comes within 3,500 m of it (seg106:030F), and our ship goes where the pilot's state says, a link's
+// delay ahead on its speed -- so a pilot just outside the zone could land its crew.  The crew lands when the pilot has.
+bool priv_crew_hold_landing() {
+    return g_role == 2 && g_pilotNow.known && g_pilotNow.flying && !g_pilotNow.destroyed;
+}
+
 bool priv_crew_gunner() { return g_role == 2; }
 bool priv_crew_pilot() { return g_role == 1; }
 
@@ -386,9 +422,13 @@ void priv_crew_own_way(int *base, int *baseSystem, std::vector<int> *path) {
 }
 
 void priv_crew_pilot_state(const std::string &system, const double pos[3], const double vel[3], const Bit32s m[9], const Bit32s armor[4],
-                           const Bit32s shield[4], bool damage, bool destroyed) {
+                           const Bit32s shield[4], bool damage, bool destroyed, Bit32s energy) {
     if (g_role != 2) return;
     PilotNow &p = g_pilotNow;
+    if (energy >= 0) {
+        p.energy = energy;
+        p.energyNew = true;
+    }
     if (destroyed) {
         p.destroyed = true;
         p.state = false;
@@ -494,16 +534,51 @@ void gunner_frame(double now) {
         priv_tap_key(seat == 1 ? KBD_f5 : KBD_f6);
     }
     if (seat && priv_view() == 3 + seat) f.seated = true;
-    {
-        // our volleys, counted by our bolts appearing (the pilot's game shows one for each)
-        Bit16u shooters[64];
-        const int nb = priv_scene_bolt_shooters(shooters, 64);
-        int mine = 0;
-        for (int i = 0; i < nb; i++) mine += shooters[i] == ship;
-        if (mine > f.bolts) f.shots++;
-        f.bolts = mine;
+    if (f.tractorPressed) {
+        // (B pressed where the beam cannot work: why, once in a while)
+        f.tractorPressed = false;
+        const int st = priv_ship_tractor_station(ship);
+        const char *why = st < 0 ? "This ship has no tractor beam" : !seat ? "A passenger has no tractor beam" :
+                          st != seat ? (st == 0 ? "The tractor beam is the pilot's on this ship" : "The tractor beam is in the other turret") :
+                          priv_view() != 3 + seat ? "The tractor beam works from your turret's view" :
+                          !priv_session_pilot_pod_id(priv_player_target()) ? "Target a cargo pod (T) for the tractor beam" : NULL;
+        if (why && f.joined && now - f.tractorToldAt > 4000) {
+            f.tractorToldAt = now;
+            priv_session_notice(why);
+        }
+        wclog(1, "Privateer: crew: B: the tractor beam %s (its station %d, our turret %d, view %d, target ds:%04X)", why ? why : "held",
+              st, seat, priv_view(), priv_player_target());
     }
-    const PilotNow &p = g_pilotNow;
+    {
+        // our volleys, counted by our bolts appearing (the pilot's game shows one for each, put on these: the user,
+        // 2026-11-27: "Can the firing command include xyz and facing from the guest otherwise the blasts might be lagged")
+        Bit16u mine[64];
+        const int nb = priv_scene_bolts_by(ship, mine, 64);
+        PrivVolleyData v;
+        v.n = 0;
+        for (int i = 0; i < nb; i++) {
+            if (std::find(f.ownBolts.begin(), f.ownBolts.end(), mine[i]) != f.ownBolts.end() || v.n >= 4) continue;
+            Bit32s pos[3], vel[3];
+            priv_bolt_motion(mine[i], pos, vel);
+            for (int k = 0; k < 3; k++) { v.bolt[v.n][k] = pos[k]; v.bolt[v.n][3 + k] = vel[k]; }
+            v.n++;
+        }
+        if (v.n) {
+            f.shots++;
+            const PilotNow &pn = g_pilotNow;
+            v.seq = f.shots;
+            v.at = now;
+            v.stateMs = pn.clockMs;
+            v.heldMs = pn.clockMs ? (Bit32u)std::max(0.0, now - pn.clockAt) : 0;
+            if (!pn.clockMs) v.n = 0;       // (an older pilot's build: no stamp to age them by -- its own way)
+            f.volleys.push_back(v);
+            while (f.volleys.size() > 4) f.volleys.pop_front();
+            f.volleyNew = true;
+        }
+        f.ownBolts.assign(mine, mine + nb);
+        f.bolts = nb;
+    }
+    PilotNow &p = g_pilotNow;
     if (rig || !p.known) return;
     if (p.destroyed) {
         if (!f.killed && priv_ship_is_alive(ship)) {
@@ -544,6 +619,12 @@ void gunner_frame(double now) {
         priv_ship_set_armor(ship, p.armor);
         priv_ship_set_shields(ship, p.shield);
     }
+    if (p.energyNew) {
+        // the ship's one pool of energy is the pilot's: our copy's is what the pilot's game last said (our turret's
+        // volleys and our beam are paid for there), set as each word comes -- between them our copy draws on it
+        p.energyNew = false;
+        priv_ship_set_energy(p.energy);
+    }
     if (!f.joined) {
         f.joined = true;
         wclog(1, "Privateer: crew: aboard the pilot's ship in %s (%s)", system.c_str(), seat ? "in our turret" : "no turret of ours on it: a passenger");
@@ -551,6 +632,14 @@ void gunner_frame(double now) {
 }
 
 void pilot_frame(double now) {
+    static Bit16u ship;
+    if (priv_player_ship() != ship) {
+        // (a new flight, or a jump's scene: its pods are new)
+        ship = priv_player_ship();
+        g_podsWere.clear();
+        g_holdWas = -1;
+        g_tractoring.pod = 0;
+    }
     // (our way since the launch: the systems' ids as the sphere records have them, far data read here at the frame)
     PrivPlace one[2];
     const int id = priv_places(one, 2) ? one[0].system : 0;
@@ -566,11 +655,55 @@ void pilot_frame(double now) {
         if (now - t.at > 400 || now < t.at) continue;
         if (priv_view() != 3 + k) priv_turret_set(k, t.yaw, t.pitch, t.m);      // (not while the pilot sits in it)
         if (t.shots - t.shown > 3) t.shown = t.shots - 3;                       // (a burst of reports lost: no catching up)
-        if (t.shots != t.shown && priv_fire_station(k)) {
+        const PrivVolleyData *v = NULL;
+        for (size_t j = 0; j < t.volleys.size() && !v; j++) {
+            if (t.volleys[j].seq == t.shown + 1) v = &t.volleys[j];
+        }
+        if (t.shots != t.shown && priv_fire_station(k, v)) {
             t.shown++;
             g_turretTurn = k % 2;
         }
     }
+    for (int k = 1; k <= 2; k++) {
+        // a crew member's tractor beam: the game's own, from that turret, on the pod it targeted (while held)
+        const TurretNow &t = g_turrets[k];
+        if (!t.tractor || !t.tractorId || now - t.at > 400 || now < t.at) continue;
+        const Bit16u pod = (Bit16u)t.tractorId;
+        if (!priv_pod_is(pod) || !priv_scene_has(pod)) continue;
+        if (priv_tractor_station(k, pod)) {
+            if (g_tractoring.pod != pod || now - g_tractoring.at > 2000) {
+                wclog(1, "Privateer: crew: turret %d's tractor beam on our cargo pod ds:%04X", k, pod);
+            }
+            g_tractoring.pod = pod;
+            g_tractoring.at = now;
+            g_tractoring.seat = k;
+        }
+    }
+    // our pods: one gone since the last frame is told to the crew (their copies of it put away at once)
+    Bit16u pods[16];
+    const int np = priv_scene_pods(pods, 16);
+    int used = -1, room = -1;
+    priv_ship_hold(&used, &room);
+    int gained = g_holdWas >= 0 && used > g_holdWas ? used - g_holdWas : 0;
+    std::vector<Bit16u> gone;
+    for (size_t i = 0; i < g_podsWere.size(); i++) {
+        if (std::find(pods, pods + np, g_podsWere[i]) == pods + np) gone.push_back(g_podsWere[i]);
+    }
+    // (the hold's gain is the beam's pod's when it is among them, else the first's)
+    std::vector<Bit16u>::iterator beamed = std::find(gone.begin(), gone.end(), g_tractoring.pod);
+    if (beamed != gone.end()) std::iter_swap(gone.begin(), beamed);
+    for (size_t i = 0; i < gone.size(); i++) {
+        const Bit16u was = gone[i];
+        const int units = gained;
+        gained = 0;
+        priv_session_crew_pod_gone(was, units, used, room);
+        wclog(1, "Privateer: crew: our cargo pod ds:%04X is gone%s: %s (the hold %d of %d)", was,
+              g_tractoring.pod == was && now - g_tractoring.at < 3000 ? (" (turret " + std::to_string(g_tractoring.seat) + "'s beam on it)").c_str() : "",
+              units ? (std::to_string(units) + " units aboard").c_str() : "nothing aboard", used, room);
+        if (g_tractoring.pod == was) g_tractoring.pod = 0;
+    }
+    g_podsWere.assign(pods, pods + np);
+    g_holdWas = used;
 }
 
 }  // namespace
@@ -637,18 +770,65 @@ int priv_crew_system_id() {
     return priv_in_flight() ? g_flight.systemId : 0;        // (as the last frame read it)
 }
 
-bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9], bool *fire, unsigned *shots) {
+bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9], bool *fire, unsigned *shots, bool *tractor, Bit32u *tractorId) {
     if (g_role != 2 || !priv_in_flight() || g_ownFlight || !g_flight.joined) return false;
     if (g_flight.seat < 1 || !priv_turret(g_flight.seat, yaw, pitch, m)) return false;
     *turret = g_flight.seat;
-    *fire = g_flight.firing && priv_view() == 3 + g_flight.seat;
+    const bool seated = priv_view() == 3 + g_flight.seat;
+    *fire = g_flight.firing && seated;
     *shots = g_flight.shots;
+    // the beam held from our turret's seat, when the ship's tractor is that turret's (the game's own rule, seg120:061F),
+    // on the pilot's pod we target (a copy of it here: its id in the pilot's game)
+    *tractor = (g_flight.tractorKey || g_flight.tractorButton) && seated && priv_ship_tractor_station(priv_player_ship()) == g_flight.seat;
+    *tractorId = *tractor ? priv_session_pilot_pod_id(priv_player_target()) : 0;
+    if (*tractor && !*tractorId) *tractor = false;
     return true;
 }
 
-void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire, unsigned shots) {
+bool priv_crew_volley_new() {
+    return g_role == 2 && g_flight.volleyNew;
+}
+
+int priv_crew_recent_volleys(PrivVolleyData out[], int cap, double maxAgeMs) {
+    g_flight.volleyNew = false;
+    int n = 0;
+    const double now = PIC_FullIndex();
+    for (size_t i = 0; i < g_flight.volleys.size() && n < cap; i++) {
+        if (now - g_flight.volleys[i].at <= maxAgeMs && g_flight.volleys[i].n > 0) out[n++] = g_flight.volleys[i];
+    }
+    return n;
+}
+
+void priv_crew_pilot_clock(Bit32u ms) {
+    if (g_role != 2) return;
+    g_pilotNow.clockMs = ms;
+    g_pilotNow.clockAt = PIC_FullIndex();
+}
+
+// (the pilot's side) a gunner's volley: kept by its number until shown; when it was made, by our clock, is our stamp
+// it echoed and the time it held it, less half of what is left -- the way back (the way there taken as long)
+void priv_crew_take_volley(int turret, const PrivVolleyData &v) {
+    if (g_role != 1 || turret < 1 || turret > 2 || v.n <= 0) return;
+    TurretNow &t = g_turrets[turret];
+    for (size_t i = 0; i < t.volleys.size(); i++) {
+        if (t.volleys[i].seq == v.seq) return;
+    }
+    const double now = PIC_FullIndex();
+    const double trip = (double)(Bit32u)((Bit32u)now - v.stateMs - v.heldMs);     // (our clock's ms, wrapping)
+    const double oneWay = trip < 0 || trip > 2000 ? 0 : trip / 2;
+    PrivVolleyData k = v;
+    k.at = now - oneWay;
+    t.volleys.push_back(k);
+    while (t.volleys.size() > 8) t.volleys.pop_front();
+    static unsigned told;
+    if (told++ % 60 == 0) wclog(1, "Privateer: crew: turret %d's volley %u: %d bolts, the link's way %.0f ms (the round trip %.0f)", turret, v.seq, v.n, oneWay, trip);
+}
+
+void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire, unsigned shots, bool tractor, Bit32u tractorId) {
     if (g_role != 1 || turret < 1 || turret > 2) return;
     TurretNow &t = g_turrets[turret];
+    t.tractor = tractor;
+    t.tractorId = tractorId;
     t.at = PIC_FullIndex();
     t.yaw = yaw;
     t.pitch = pitch;
@@ -660,6 +840,13 @@ void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[
 }
 
 bool priv_crew_key(int kbdKey, bool pressed) {
+    if (kbdKey == KBD_b && g_role == 2 && priv_in_flight() && !g_ownFlight && !priv_tapping()) {
+        // The crew's tractor beam, held (the game's own is the launcher's button, Enter, from the turret that has it --
+        // Enter is the crew's power key): the pilot's game fires it on the pod we target (priv_crew_turret_report)
+        g_flight.tractorKey = pressed;
+        if (pressed) g_flight.tractorPressed = true;      // (looked at in the frame: the ship's weapons are far data)
+        return true;
+    }
     if (!pressed || priv_tapping() || !priv_in_flight() || g_ownFlight || (g_role != 2 && !rig_gunner())) return false;
     if (g_role == 2 && g_flight.joined && (kbdKey == KBD_s || kbdKey == KBD_enter || kbdKey == KBD_tab)) {
         // The crew's hand on the ship's power (the user, 2026-11-25: the game's shield level from a crew seat "is too
@@ -690,6 +877,7 @@ void priv_crew_controls(Bit32u rec) {
     if (g_ownFlight || (g_role != 2 && !rig_gunner())) return;
     const Bit8u b = mem_readb(rec + 0x1E);
     g_flight.firing = (b & 0x04) != 0;
+    g_flight.tractorButton = (b & 0x02) != 0 && g_flight.seat && priv_view() == 3 + g_flight.seat;   // (a turret's: its beam alone)
     if (b & 0x02) mem_writeb(rec + 0x1E, (Bit8u)(b & ~0x02));       // (no missile is a gunner's to launch)
 }
 

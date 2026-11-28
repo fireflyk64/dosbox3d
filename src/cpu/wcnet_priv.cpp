@@ -97,7 +97,14 @@ enum {
     kDamageDisplay = 0x0489,        // seg034:0489(0x6803, quadrant, damage): the cockpit's damage display (the player's)
     kDamageDisplayObj = 0x6803,
     kSeg120 = 0x489B,
+    kSeg106 = 0x41AB,
+    kBaseZone = 0x03B6,             // seg106:030F, a base's frame: its distance to the player's ship ([bp-4], world units) under
+                                    // 0xDAC00 (3,500 m) lands the player at once (ovr372:015B); under 0x138800 (5,000 m) the
+                                    // approach (a cleared landing); else 0x0433, both reset
+    kBaseZoneFar = 0x0433,
     kFireGuns = 0x0004,             // seg120:0004(weapons far, n): a ship's guns fired (the weapons' +0xA is the ship)
+    kFireLaunchers = 0x03E5,        // seg120:03E5(weapons far, n): the launcher's button -- a missile from the pilot's seat, the
+                                    // tractor beam of the seat's own station from a turret's (seg120:05F5)
     kControlFire = 0x1E,            // the control record's fire bits: 4 the guns, 2 the launcher, 1 the afterburner (Tab)
     kShipWeapons = 0x4E,            // a ship's weapons record (far; seg120:0004's first argument)
     kSeg125 = 0x4B2B,
@@ -107,6 +114,7 @@ enum {
     kTurretYaw = 0x34,              //   at +0x3C..+0x48), +0x4C its turn rate, +0x4E it is there (ovr394:0295 turns it from
     kTurretPitch = 0x38,            //   the control record while its view is on)
     kTurretThere = 0x4E,
+    kShipCargo = 0x5E,              // a ship's cargo system (far): +0x24 the hold's size, +0x28 the units in it (priv_ship_hold)
     kShipEnergy = 0x52,             // a ship's energy object (far): +0xA the guns' pool's size (points), +0xC the pool now (x 256)
     kEnergyVtable = 0x19FA,
     kWeaponsSeat = 0x3F,            // the weapons record's seat: the station whose guns fire (seg125:024B, from the view)
@@ -168,6 +176,9 @@ bool g_tracing;
 double g_traceEndMs;
 std::string g_traceName;
 std::map<Bit32u, unsigned> g_trace;
+std::map<Bit32u, unsigned> g_traceFirst;    // (each place's first run, in order: the 4th column)
+unsigned g_traceSeq;
+bool g_traceToFlightEnd;                    // (!privtrace=^<name>:<s>: ended too when the flight ends -- a landing's last frames)
 
 Bit16u g_watch, g_watchLast;     // (with the trace: "!privwatchctl=<offset>:<seconds>" logs who changes a word of the
 Bit32u g_watchPrev;             // last spawned ship's controller)
@@ -182,8 +193,9 @@ void trace_step(double now) {
         }
         g_watchPrev = here;
     }
-    g_trace[here]++;
-    if (now < g_traceEndMs) {
+    unsigned &count = g_trace[here];
+    if (!count++) g_traceFirst[here] = g_traceSeq++;
+    if (now < g_traceEndMs && !(g_traceToFlightEnd && !priv_in_flight())) {
         wc_net_countdown = 0;   // (the next instruction comes here too)
         return;
     }
@@ -194,12 +206,14 @@ void trace_step(double now) {
     FILE *f = fopen(path.c_str(), "w");
     if (f) {
         for (std::map<Bit32u, unsigned>::const_iterator it = g_trace.begin(); it != g_trace.end(); ++it) {
-            fprintf(f, "%04x:%04x %u\n", it->first >> 16, it->first & 0xffff, it->second);
+            fprintf(f, "%04x:%04x %u %u\n", it->first >> 16, it->first & 0xffff, it->second, g_traceFirst[it->first]);
         }
         fclose(f);
     }
     wclog(1, "Privateer: code trace of %u places to %s (load segment %04X)", (unsigned)g_trace.size(), path.c_str(), g_privLoadSeg);
     g_trace.clear();
+    g_traceFirst.clear();
+    g_traceSeq = 0;
 }
 
 PhysPt ds_at(Bit16u off) { return ((PhysPt)g_ds << 4) + off; }
@@ -1838,11 +1852,11 @@ static PhysPt ship_weapons(Bit16u ship) {
     const Bit16u woff = priv_r16((Bit16u)(ship + kShipWeapons)), wseg = priv_r16((Bit16u)(ship + kShipWeapons + 2));
     return wseg ? ((PhysPt)wseg << 4) + woff : 0;
 }
-static int ship_guns(Bit16u ship, PhysPt out[], int cap) {
+static int weapons_list(Bit16u ship, int list, PhysPt out[], int cap) {
     const PhysPt w = ship_weapons(ship);
     if (!w) return 0;
     Bit16u noff = 0, nseg = 0;
-    if (mem_readw_checked(w + 0xE + 2, &noff) || mem_readw_checked(w + 0xE + 4, &nseg)) return 0;
+    if (mem_readw_checked(w + list + 2, &noff) || mem_readw_checked(w + list + 4, &nseg)) return 0;
     int n = 0;
     for (int k = 0; nseg && k < 16 && n < cap; k++) {
         const PhysPt node = ((PhysPt)nseg << 4) + noff;
@@ -1853,6 +1867,12 @@ static int ship_guns(Bit16u ship, PhysPt out[], int cap) {
     }
     return n;
 }
+static int ship_guns(Bit16u ship, PhysPt out[], int cap) { return weapons_list(ship, 0xE, out, cap); }
+// A ship's launchers (the weapons record's list at +0x18, seg120:05F5's walk): +6 the kind (0x32 a missile launcher,
+// 0x33 a torpedo's, 0x34 the tractor beam), +8 the station it is worked from (seg120:061F: a turret's seat finds the
+// tractor of its own station).  The record's +0x2C is the pilot's chosen launcher's node (W), +0x30 the missile's.
+enum { kLauncherTractor = 0x34 };
+static int ship_launchers(Bit16u ship, PhysPt out[], int cap) { return weapons_list(ship, 0x18, out, cap); }
 // A gun's description (measured 2026-11-27, !privguns=all: the new pilot's Tarsus has one LASER at mount 2, the
 // others' copy of it -- the stock TARSTYPE -- two MASS at mounts 2 and 3, the user's "2 mass drivers"): +0 its bolt's
 // speed (int32, the world's units: a laser's 1,400 m/s), +4 870 in every gun, +8 its name (8), +0x11 its bolt's
@@ -1902,6 +1922,23 @@ int priv_ship_set_guns(Bit16u ship, const std::vector<std::string> &want) {
     return set;
 }
 
+int g_targetPodTaps;                // (!privtargetpod: T pressed until the target is a pod, so many times at most)
+double g_targetPodAt;
+static void target_pod_frame() {
+    if (!g_targetPodTaps) return;
+    Bit16u pods[16];
+    const int n = priv_scene_pods(pods, 16);
+    const Bit16u t = priv_player_target();
+    if (std::find(pods, pods + n, t) != pods + n) {
+        wclog(1, "Privateer: !privtargetpod: the target is pod ds:%04X", t);
+        g_targetPodTaps = 0;
+        return;
+    }
+    if (PIC_FullIndex() - g_targetPodAt < 300 || priv_tapping()) return;
+    g_targetPodAt = PIC_FullIndex();
+    g_targetPodTaps--;
+    priv_tap_key(KBD_t);
+}
 bool g_gunsDump, g_gunsAll;
 bool g_shipDump;
 // !privshipdump: our ship's object (0x90 bytes) and what each far pointer in it points at (0x80 bytes), a rig's diff
@@ -1938,7 +1975,10 @@ static void ship_dump_frame() {
 }
 // !privguns: our ship's guns (group, station, switched on, the time since its shot, its delay, its energy), the seat the
 // weapons are fired from, the view, and the turrets
+static void copy_bolts_frame();
 static void guns_dump_frame() {
+    target_pod_frame();
+    copy_bolts_frame();
     if (!g_gunsDump) return;
     g_gunsDump = false;
     const double t = PIC_FullIndex() / 1000.0;
@@ -1955,6 +1995,19 @@ static void guns_dump_frame() {
               mem_readb(guns[i] + 0x20), mem_readb(guns[i] + 0x22), mem_readb(guns[i] + 0x35), (int)mem_readd(guns[i] + 0x2F), (int)mem_readd(guns[i] + 0x2B),
               (Bit16s)mem_readw(guns[i] + 0x33));
     }
+    if (ship && priv_r16((Bit16u)(ship + 0x5C))) {
+        const PhysPt ts = ((PhysPt)priv_r16((Bit16u)(ship + 0x5C)) << 4) + priv_r16((Bit16u)(ship + 0x5A));
+        char hex[3 * 0x30 + 1];
+        for (int j = 0; j < 0x30; j++) snprintf(hex + 3 * j, 4, "%02X ", mem_readb(ts + j));
+        wclog(1, "Privateer: guns %.1f:   targeting at %05X: %s", t, ts, hex);
+    }
+    PhysPt ln[8];
+    const int nl = ship ? ship_launchers(ship, ln, 8) : 0;
+    for (int i = 0; i < nl; i++) {
+        char hex[3 * 0x40 + 1];
+        for (int j = 0; j < 0x40; j++) snprintf(hex + 3 * j, 4, "%02X ", mem_readb(ln[i] + j));
+        wclog(1, "Privateer: guns %.1f:   launcher %d kind %02X station %d at %05X: %s", t, i, mem_readb(ln[i] + 6), mem_readb(ln[i] + 8), ln[i], hex);
+    }
     for (int k = 0; k < 2; k++) {
         const Bit16u tu = priv_r16((Bit16u)(0x143D + 2 * k));
         if (!tu) continue;
@@ -1962,8 +2015,15 @@ static void guns_dump_frame() {
         for (int j = 0; j < 0x50; j++) snprintf(hex + 3 * j, 4, "%02X ", priv_r8((Bit16u)(tu + j)));
         wclog(1, "Privateer: guns %.1f:   turret %d ds:%04X: %s", t, k + 1, tu, hex);
     }
-    Bit16u bolts[64];
-    wclog(1, "Privateer: guns %.1f:   %d bolts in the scene", t, priv_scene_bolt_shooters(bolts, 64));
+    Bit16u bolts[64], pods[16];
+    Bit32s emax = 0;
+    const Bit32s energy = priv_ship_energy(&emax);
+    const int np = priv_scene_pods(pods, 16);
+    int used = -1, room = -1;
+    priv_ship_hold(&used, &room);
+    wclog(1, "Privateer: guns %.1f:   %d bolts in the scene; target ds:%04X; energy %d of %d (x 256); hold %d of %d units; %d pods%s", t,
+          priv_scene_bolt_shooters(bolts, 64), priv_player_target(), energy, emax, used, room, np,
+          np ? (" (the first ds:" + std::to_string(pods[0]) + ")").c_str() : "");
     if (g_gunsAll) {
         // (!privguns=all: every ship's in the scene, each gun's name, mount, group and its first 0x40 bytes)
         g_gunsAll = false;
@@ -2228,6 +2288,19 @@ bool priv_check_hooks(Bit32u ip) {
         }
         return true;
     }
+    if (ip == kBaseZone && codeSeg == (Bit16u)(g_privLoadSeg + kSeg106)) {
+        // a crew member's base: no landing while the pilot flies (its zone as if we were far)
+        if (priv_crew_hold_landing()) {
+            const Bit32s d = (Bit32s)mem_readd(SegPhys(ss) + (Bit16u)(reg_bp - 4));
+            static double toldAt = -1e9;
+            if (d < 0x138800 && PIC_FullIndex() - toldAt > 5000) {
+                toldAt = PIC_FullIndex();
+                wclog(1, "Privateer: crew: a base %d m from us: its landing held (the pilot flies)", d / 256);
+            }
+            reg_eip = kBaseZoneFar;
+        }
+        return true;
+    }
     if (ip == kNpcThink && codeSeg == (Bit16u)(g_privLoadSeg + kSeg042) && !g_heldAi.empty()) {
         const PhysPt sp = SegPhys(ss) + reg_sp;
         const Bit16u self = mem_readw(sp + 4);
@@ -2263,6 +2336,7 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kControlsJoin);
     watch(kControlsEntry);
     watch(kNpcThink);
+    watch(kBaseZone);
     watch(kWingSpawn);
     watch(kGameError);
     watch(kNearMalloc);
@@ -2322,6 +2396,8 @@ bool priv_script_item(const std::string &item, double t) {
     if (item.compare(0, 11, "!privtrace=") == 0 && g_found) {
         // !privtrace=<name>:<seconds>
         std::string spec = item.substr(11);
+        g_traceToFlightEnd = !spec.empty() && spec[0] == '^';
+        if (g_traceToFlightEnd) spec = spec.substr(1);
         size_t colon = spec.find(':');
         g_traceName = spec.substr(0, colon);
         g_traceEndMs = PIC_FullIndex() + 1000.0 * (colon == std::string::npos ? 1.0 : atof(spec.c_str() + colon + 1));
@@ -2452,6 +2528,26 @@ bool priv_script_item(const std::string &item, double t) {
         if (priv_ship_is_alive(ship)) priv_hold_ai(priv_ship_controller(ship), true);
         return true;
     }
+    if (item == "!privtargetpod" && g_found) {
+        // !privtargetpod: the nearest cargo pod targeted (a rig's stand-in for T pressed until the target is the pod)
+        Bit16u pods[16];
+        const int n = priv_scene_pods(pods, 16);
+        Bit32s pos[3];
+        priv_player_pos(pos);
+        Bit16u best = 0;
+        double bestD = 1e18;
+        for (int i = 0; i < n; i++) {
+            Bit32s p[3];
+            priv_ship_pos(pods[i], p);
+            const double d = sqrt((double)(p[0] - pos[0]) * (p[0] - pos[0]) + (double)(p[1] - pos[1]) * (p[1] - pos[1]) + (double)(p[2] - pos[2]) * (p[2] - pos[2]));
+            if (d < bestD && d < 60000.0 * 256) { bestD = d; best = pods[i]; }
+        }
+        // (the target written, and T pressed at the frames after until it is a pod: a turret's view keeps its own choice)
+        if (best) priv_player_set_target(best);
+        g_targetPodTaps = best ? 16 : 0;
+        wclog(1, "key script %.1fs: !privtargetpod: %s", t, best ? ("pod ds:" + std::to_string(best) + " at " + std::to_string((int)(bestD / 256)) + " m targeted").c_str() : "no pod near");
+        return true;
+    }
     if (item.compare(0, 9, "!privaim=") == 0 && g_found) {
         // !privaim=<metres>:<variant>: our ship put that far from the nearest cargo pod, turned to face it (a test aid:
         // the variant says which of the matrix's rows or columns is "forward", 0..5, until the convention is known)
@@ -2473,6 +2569,8 @@ bool priv_script_item(const std::string &item, double t) {
             wclog(1, "key script %.1fs: !privaim: no pod in the scene", t);
             return true;
         }
+        const size_t ifAt = item.find(":if");      // (!privaim=...:if<m>: only when the pod is farther than that)
+        if (ifAt != std::string::npos && bestD / 256 < atof(item.c_str() + ifAt + 3)) return true;
         Bit32s p[3];
         priv_ship_pos(best, p);
         double f[3] = { (double)(p[0] - pos[0]), (double)(p[1] - pos[1]), (double)(p[2] - pos[2]) };
@@ -2486,6 +2584,12 @@ bool priv_script_item(const std::string &item, double t) {
         const double rl = sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
         for (int i = 0; i < 3; i++) r[i] /= rl;
         u[0] = f[1] * r[2] - f[2] * r[1]; u[1] = f[2] * r[0] - f[0] * r[2]; u[2] = f[0] * r[1] - f[1] * r[0];
+        // (!privaim=<m>:<variant>:b -- the ship placed as before, the pod behind it: turned about, for a tail turret)
+        Bit32s at[3];
+        for (int i = 0; i < 3; i++) at[i] = (Bit32s)(p[i] - f[i] * metres * 256.0);
+        if (item.find(":b") != std::string::npos) {
+            for (int i = 0; i < 3; i++) { f[i] = -f[i]; r[i] = -r[i]; }
+        }
         // the three axes in the order the variant says, as rows (variants 0-2) or columns (3-5)
         const double *axes[3];
         switch (variant % 3) {
@@ -2500,10 +2604,11 @@ bool priv_script_item(const std::string &item, double t) {
                 if (variant < 3) m[3 * i + j] = (Bit32s)(v * 256); else m[3 * j + i] = (Bit32s)(v * 256);
             }
         }
-        Bit32s at[3];
-        for (int i = 0; i < 3; i++) at[i] = (Bit32s)(p[i] - f[i] * metres * 256.0);
         priv_ship_set(priv_player_ship(), at, m);
-        wclog(1, "key script %.1fs: !privaim: at %d m from pod ds:%04X (was %d m), variant %d", t, metres, best, (int)(bestD / 256), variant);
+        const bool target = item.find(":t") != std::string::npos;      // (!privaim=<m>:<variant>:t: the pod targeted too)
+        if (target) priv_player_set_target(best);
+        wclog(1, "key script %.1fs: !privaim: at %d m from pod ds:%04X (was %d m), variant %d%s", t, metres, best, (int)(bestD / 256), variant,
+              target ? ", targeted" : "");
         return true;
     }
     if (item.compare(0, 12, "!privspheres") == 0 && g_found) {
@@ -3150,6 +3255,36 @@ int priv_scene_bolt_shooters(Bit16u out[], int cap) {
     const int n2 = scene_objects(a, 64, 0x2F22);
     for (int i = 0; i < n2 && k < cap; i++) out[k++] = priv_r16((Bit16u)(a[i] + 0x4C));
     return k;
+}
+
+// Our bolts (a shooter's): its id in each bolt, the laser's +0x25, the other kind's +0x4C.
+int priv_scene_bolts_by(Bit16u shooter, Bit16u out[], int cap) {
+    Bit16u a[64];
+    int k = 0;
+    const int n1 = scene_objects(a, 64, 0x2DE8);
+    for (int i = 0; i < n1 && k < cap; i++) if (priv_r16((Bit16u)(a[i] + 0x25)) == shooter) out[k++] = a[i];
+    const int n2 = scene_objects(a, 64, 0x2F22);
+    for (int i = 0; i < n2 && k < cap; i++) if (priv_r16((Bit16u)(a[i] + 0x4C)) == shooter) out[k++] = a[i];
+    return k;
+}
+
+// A bolt's place (+0x14, as a ship's) and velocity: its motion record (the near pointer just before its vtable: the
+// vtable's +0xA0 -> seg029:01C1 writes it) +4, three int32 in world units a second (measured: a neutron bolt 181,760,
+// 710 m/s, its place moving as much).
+void priv_bolt_motion(Bit16u bolt, Bit32s pos[3], Bit32s vel[3]) {
+    const Bit16u mo = priv_r16((Bit16u)(bolt - 2));
+    for (int i = 0; i < 3; i++) {
+        pos[i] = (Bit32s)priv_r32((Bit16u)(bolt + kShipPos + 4 * i));
+        vel[i] = mo ? (Bit32s)priv_r32((Bit16u)(mo + 4 + 4 * i)) : 0;
+    }
+}
+
+void priv_bolt_set(Bit16u bolt, const Bit32s pos[3], const Bit32s vel[3]) {
+    const Bit16u mo = priv_r16((Bit16u)(bolt - 2));
+    for (int i = 0; i < 3; i++) {
+        mem_writed(ds_at((Bit16u)(bolt + kShipPos + 4 * i)), (Bit32u)pos[i]);
+        if (mo) mem_writed(ds_at((Bit16u)(mo + 4 + 4 * i)), (Bit32u)vel[i]);
+    }
 }
 
 // Bolts retired, the game's own way.  A bolt's update (the laser's seg090:02EC, the other's seg091:0C27; the vtable's
@@ -3859,6 +3994,15 @@ Bit16u priv_player_target() {
     return t;
 }
 
+bool priv_player_set_target(Bit16u target) {
+    const Bit16u own = priv_r16(kPlayerShip);
+    if (!g_found || !own) return false;
+    const Bit16u off = priv_r16((Bit16u)(own + 0x5A)), seg = priv_r16((Bit16u)(own + 0x5C));
+    if (!seg) return false;
+    mem_writew(((PhysPt)seg << 4) + (Bit16u)(off + 0xC), target);
+    return true;
+}
+
 Bit16u priv_player_ship() {
     return priv_in_flight() ? priv_r16(kPlayerShip) : 0;
 }
@@ -3955,16 +4099,26 @@ int priv_guns_seat(Bit16u ship, int station) {
 // game every frame from the view).  For the call the seat is the turret's, that turret's guns are on and cost nothing
 // (the gunner's own game has taken their energy from its copy of the ship); afterwards everything is as it was, and the
 // bolts the call made are remembered: they are pictures here (the gunner's game decides what its shots hit).
+// The bolt's way is not the seat's but the view's: the player's bolt (seg057:0318) asks the ship's controller for its
+// seat (ship vtable +0x4C -> the controller's +0x18, seg038:0000: the view 4 seat 1, 5 seat 2, else 0) and flies along
+// the ship (0) or that turret's attitude (0x143D / 0x143F +4).  So for the call the view is the turret's too (the user,
+// 2026-11-27: "The guest sees it fire backwards host forward": the pilot's cockpit view had the tail turret's bolts
+// leave along the nose); the view is back before the frame is drawn.
 namespace {
 struct StationShot {
     int station;
-    Bit8u seat;
+    PrivVolleyData given;           // the gunner's own bolts of this volley (n 0: none told -- ours fly as made)
+    Bit8u seat, view;
     Bit8u on[16];
     Bit16u energy[16];
     Bit16u before[96];
     int nBefore;
 } g_stationShot;
 std::vector<Bit16u> g_copyBolts;            // (a list has a cap: 64)
+// (a test's measure) a copied bolt's way, 3 frames on: its travel less the ship's, on the ship's three axes (the rows of
+// its attitude; a tail turret's bolt runs against the ship's forward axis)
+struct BoltWay { Bit16u bolt; int station, frames; Bit32s at[3], shipAt[3]; };
+std::vector<BoltWay> g_boltWays;
 int all_bolts(Bit16u out[], int cap) {
     int n = scene_objects(out, cap, kBoltVtable);
     n += scene_objects(out + n, cap - n, kBolt2Vtable);
@@ -3978,6 +4132,8 @@ void station_shot_before(int tag) {
     const int n = ship_guns(ship, guns, 16);
     s.seat = mem_readb(w + kWeaponsSeat);
     mem_writeb(w + kWeaponsSeat, (Bit8u)s.station);
+    s.view = priv_r8(kView);
+    mem_writeb(ds_at(kView), (Bit8u)(3 + s.station));      // (the bolts' way: that turret's attitude)
     for (int i = 0; i < n; i++) {
         s.on[i] = mem_readb(guns[i] + kGunOn);
         s.energy[i] = mem_readw(guns[i] + kGunEnergy);
@@ -3993,14 +4149,20 @@ void station_shot_done(int tag, Bit16u ax, Bit16u dx) {
     (void)ax; (void)dx;
     StationShot &s = g_stationShot;
     const Bit16u ship = (Bit16u)tag;
+    mem_writeb(ds_at(kView), s.view);
     if (!priv_ship_is_alive(ship)) return;
     const PhysPt w = ship_weapons(ship);
     PhysPt guns[16];
     const int n = ship_guns(ship, guns, 16);
     mem_writeb(w + kWeaponsSeat, s.seat);
+    int cost = 0, station = 0;
     for (int i = 0; i < n; i++) {
         mem_writeb(guns[i] + kGunOn, s.on[i]);
         mem_writew(guns[i] + kGunEnergy, s.energy[i]);
+        if (mem_readb(guns[i] + kGunStation) == s.station) {
+            cost += (Bit16s)s.energy[i];
+            station++;
+        }
     }
     Bit16u now[96];
     const int nn = all_bolts(now, 96);
@@ -4008,11 +4170,45 @@ void station_shot_done(int tag, Bit16u ax, Bit16u dx) {
         if (std::find(now, now + nn, g_copyBolts[i]) == now + nn) g_copyBolts.erase(g_copyBolts.begin() + i); else i++;
     }
     int made = 0;
+    static double offSum;
+    static unsigned offN;
     for (int i = 0; i < nn; i++) {
         if (std::find(s.before, s.before + s.nBefore, now[i]) == s.before + s.nBefore && g_copyBolts.size() < 64) {
             g_copyBolts.push_back(now[i]);
+            if (made < s.given.n) {
+                // put on the gunner's bolt where it is by now (its place then, flown on for the volley's age here)
+                const double age = std::min(1.0, std::max(0.0, (PIC_FullIndex() - s.given.at) / 1000.0));
+                const Bit32s *g = s.given.bolt[made];
+                Bit32s at[3], vel[3] = { g[3], g[4], g[5] }, was[3], wasVel[3];
+                for (int k = 0; k < 3; k++) at[k] = (Bit32s)(g[k] + g[3 + k] * age);
+                priv_bolt_motion(now[i], was, wasVel);
+                priv_bolt_set(now[i], at, vel);
+                const double dx = was[0] - at[0], dy = was[1] - at[1], dz = was[2] - at[2];
+                offSum += sqrt(dx * dx + dy * dy + dz * dz) / 256.0;
+                if (++offN % 40 == 1) {
+                    wclog(1, "Privateer: crew: turret %d's bolt put on the gunner's (its volley %u, %.0f ms old): %.0f m from where ours was made (%.0f m on average)",
+                          s.station, s.given.seq, age * 1000.0, sqrt(dx * dx + dy * dy + dz * dz) / 256.0, offSum / offN);
+                }
+            }
             made++;
+            if (g_boltWays.size() < 16) {
+                BoltWay b;
+                b.bolt = now[i];
+                b.station = s.station;
+                b.frames = 0;
+                priv_ship_pos(now[i], b.at);
+                priv_ship_pos(ship, b.shipAt);
+                g_boltWays.push_back(b);
+            }
         }
+    }
+    if (made && station && cost > 0) {
+        // The turret's guns draw on the ship's one pool, as the game's own turret does (seg120:0004: a gun's +0x33 x 256
+        // from the energy object's +0xC): the call was free so that the bolts always show (the gunner's game, its copy
+        // drawing on the pilot's pool as told, decided the shot), the volley's energy taken here after it, never below 0.
+        const Bit32s want = (Bit32s)((Bit64s)cost * (made < station ? made : station) / station) << 8;
+        const Bit32s e = priv_ship_energy(NULL);
+        if (e >= 0) priv_ship_set_energy(e > want ? e - want : 0);
     }
     static unsigned shots, bolts;
     shots++;
@@ -4021,7 +4217,34 @@ void station_shot_done(int tag, Bit16u ax, Bit16u dx) {
 }
 }  // namespace
 
-bool priv_fire_station(int station) {
+static void copy_bolts_frame() {
+    static unsigned told;
+    const Bit16u ship = priv_r16(kPlayerShip);
+    for (size_t i = 0; i < g_boltWays.size();) {
+        BoltWay &b = g_boltWays[i];
+        Bit16u now[96];
+        const int nn = all_bolts(now, 96);
+        if (!ship || std::find(now, now + nn, b.bolt) == now + nn) { g_boltWays.erase(g_boltWays.begin() + i); continue; }
+        if (++b.frames < 3) { i++; continue; }
+        Bit32s p[3], sp[3], m[9];
+        priv_ship_pos(b.bolt, p);
+        priv_ship_pos(ship, sp);
+        priv_ship_matrix(ship, m);
+        double d[3], len = 0;
+        for (int k = 0; k < 3; k++) { d[k] = (double)(p[k] - b.at[k]) - (double)(sp[k] - b.shipAt[k]); len += d[k] * d[k]; }
+        len = sqrt(len);
+        if (len > 0 && (told < 4 || told % 25 == 0)) {
+            double a[3];
+            for (int r = 0; r < 3; r++) a[r] = (d[0] * m[3 * r] + d[1] * m[3 * r + 1] + d[2] * m[3 * r + 2]) / 256.0 / len;
+            wclog(1, "Privateer: crew: turret %d's bolt here flies (%.2f, %.2f, %.2f) on the ship's axes (rows of its attitude)",
+                  b.station, a[0], a[1], a[2]);
+        }
+        told++;
+        g_boltWays.erase(g_boltWays.begin() + i);
+    }
+}
+
+bool priv_fire_station(int station, const PrivVolleyData *v) {
     const Bit16u ship = priv_r16(kPlayerShip);
     if (!ship || !priv_ship_is_alive(ship) || station < 1 || station > 2 || g_calls.size() >= 8) return false;
     const Bit16u off = priv_r16((Bit16u)(ship + kShipWeapons)), seg = priv_r16((Bit16u)(ship + kShipWeapons + 2));
@@ -4040,7 +4263,78 @@ bool priv_fire_station(int station) {
     c.before = station_shot_before;
     c.done = station_shot_done;
     c.tag = ship;
+    if (!queue_call(c)) return false;
     g_stationShot.station = station;
+    if (v) g_stationShot.given = *v; else g_stationShot.given.n = 0;
+    return true;
+}
+
+// A crew member's tractor beam in the pilot's game (the user, 2026-11-27: "ensure in privateer turret mode that tractor
+// works with cargo adding it to main inventory and power use is linked").  The game's launcher routine (seg120:03E5,
+// what the button does each frame it is held) fires, from a turret's seat, the tractor whose station is that seat
+// (seg120:05F5..0669: the Centurion's sits in its tail turret, station 1), on the ship's target (ovr393:024C: the
+// targeting system's, +0xC; a beam object, BEAMTYPE "TRACTOR", made every other frame, the launcher's +0x2E its
+// toggle).  For the call the weapons' seat is the gunner's turret and the target the pod the gunner targeted in its own
+// game; afterwards both are as they were.  So the beam is the game's own on the real ship: the pod drawn in where the
+// pilot's game has it, its cargo into the pilot's hold by the game, the beam's energy from the pilot's pool (measured
+// alone in the tail turret: 200 of 33,280 a pull, the 40-unit pod aboard within 2 s).
+namespace {
+struct TractorCall { int station; Bit16u target; Bit8u seat; Bit16u targetWas; } g_tractorCall;
+PhysPt ship_targeting(Bit16u ship) {
+    const Bit16u off = priv_r16((Bit16u)(ship + 0x5A)), seg = priv_r16((Bit16u)(ship + 0x5C));
+    return seg ? ((PhysPt)seg << 4) + off : 0;
+}
+void tractor_before(int tag) {
+    TractorCall &c = g_tractorCall;
+    const Bit16u ship = (Bit16u)tag;
+    const PhysPt w = ship_weapons(ship), ts = ship_targeting(ship);
+    c.seat = mem_readb(w + kWeaponsSeat);
+    mem_writeb(w + kWeaponsSeat, (Bit8u)c.station);
+    c.targetWas = ts ? mem_readw(ts + 0xC) : 0;
+    if (ts) mem_writew(ts + 0xC, c.target);
+}
+void tractor_done(int tag, Bit16u ax, Bit16u dx) {
+    (void)ax; (void)dx;
+    TractorCall &c = g_tractorCall;
+    const Bit16u ship = (Bit16u)tag;
+    if (!priv_ship_is_alive(ship)) return;
+    const PhysPt w = ship_weapons(ship), ts = ship_targeting(ship);
+    mem_writeb(w + kWeaponsSeat, c.seat);
+    if (ts && mem_readw(ts + 0xC) == c.target) mem_writew(ts + 0xC, c.targetWas);     // (the pilot's own target back)
+}
+}  // namespace
+
+int priv_ship_tractor_station(Bit16u ship) {
+    PhysPt ln[8];
+    const int n = ship ? ship_launchers(ship, ln, 8) : 0;
+    for (int i = 0; i < n; i++) {
+        if (mem_readb(ln[i] + 6) == kLauncherTractor) return mem_readb(ln[i] + 8);
+    }
+    return -1;
+}
+
+bool priv_tractor_station(int station, Bit16u target) {
+    const Bit16u ship = priv_r16(kPlayerShip);
+    if (!ship || !priv_ship_is_alive(ship) || station < 1 || station > 2 || !target || g_calls.size() >= 8) return false;
+    if (priv_ship_tractor_station(ship) != station || !ship_targeting(ship)) return false;
+    const Bit16u off = priv_r16((Bit16u)(ship + kShipWeapons)), seg = priv_r16((Bit16u)(ship + kShipWeapons + 2));
+    if (!seg) return false;
+    for (size_t i = 0; i < g_calls.size(); i++) {
+        if (g_calls[i].before == tractor_before) return false;          // (one a frame, as the button's)
+    }
+    PrivCall c;
+    c.para = kSeg120;
+    c.off = kFireLaunchers;
+    c.args.push_back(off);
+    c.args.push_back(seg);
+    c.args.push_back(kScene);
+    c.guardObj = ship;
+    c.guardVtable = kShipVtable;
+    c.before = tractor_before;
+    c.done = tractor_done;
+    c.tag = ship;
+    g_tractorCall.station = station;
+    g_tractorCall.target = target;
     return queue_call(c);
 }
 
@@ -4119,6 +4413,34 @@ int priv_ship_power(int kind, int points) {
     for (int q = 0; q < 4; q++) mem_writed(model + kModelShield + 6 * q, (Bit32u)sh[q]);
     if (kind != 1) mem_writed(e + 0xC, (Bit32u)energy);
     return moved >> 8;
+}
+
+// The ship's hold (the cargo system, far at the ship's +0x5E, "CARGO" at its +0x17; measured on the user's Centurion: its
+// +0x20 the credits, +0x24 the hold's size in units, +0x28 the units in it -- 50 of 50, 0 after X; the records' list at +2)
+bool priv_ship_hold(int *used, int *room) {
+    const Bit16u ship = priv_r16(kPlayerShip);
+    const Bit16u off = ship ? priv_r16((Bit16u)(ship + kShipCargo)) : 0, seg = ship ? priv_r16((Bit16u)(ship + kShipCargo + 2)) : 0;
+    if (!seg) return false;
+    const PhysPt c = ((PhysPt)seg << 4) + off;
+    Bit8u name[5];
+    for (int i = 0; i < 5; i++) if (mem_readb_checked(c + 0x17 + i, &name[i])) return false;
+    if (memcmp(name, "CARGO", 5) != 0) return false;
+    if (used) *used = mem_readw(c + 0x28);
+    if (room) *room = mem_readw(c + 0x24);
+    return true;
+}
+
+bool priv_ship_set_energy(Bit32s v) {
+    const Bit16u ship = priv_r16(kPlayerShip);
+    const Bit16u eoff = ship ? priv_r16((Bit16u)(ship + kShipEnergy)) : 0, eseg = ship ? priv_r16((Bit16u)(ship + kShipEnergy + 2)) : 0;
+    if (!eseg) return false;
+    const PhysPt e = ((PhysPt)eseg << 4) + eoff;
+    Bit16u vt = 0, emax = 0;
+    if (mem_readw_checked(e, &vt) || vt != kEnergyVtable || mem_readw_checked(e + 0xA, &emax)) return false;
+    if (v < 0) v = 0;
+    if (v > ((Bit32s)emax << 8)) v = (Bit32s)emax << 8;
+    mem_writed(e + 0xC, (Bit32u)v);
+    return true;
 }
 
 Bit32s priv_ship_energy(Bit32s *max) {

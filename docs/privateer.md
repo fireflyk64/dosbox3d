@@ -1543,7 +1543,14 @@ ship destroyed in the pilot's game by the gunner's neutron guns (62 a hit).
   the gunner arrived some 4 s after the pilot each time).  The same way takes a gunner who launches late after a
   pilot already systems away.  (A jump point's destination is its own: the sphere record's byte written made no
   difference, which is why the launch begins at the pilot's base instead.)
-- **Landing:** the pilot at a base, the gunner's ship is put at the nearest base and the game lands it.
+- **Landing:** the pilot at a base, the gunner's ship is put at the nearest base and the game lands it.  Not before:
+  a base's frame (seg106:030F, the base's vtable +0x24) lands the player's ship within 3,500 m of it at once
+  (`[bp-4] < 0xDAC00`, ovr372:015B, no clearance asked) and runs the approach within 5,000 m; a crew member's copy goes
+  where the pilot's state says, a link's delay ahead on its speed, so a pilot just outside the zone landed its gunner
+  (the user, 2026-11-27, at a pirate asteroid base after the autopilot).  So while the pilot flies, a crew member's
+  bases take the far branch (seg106:03B6 -> 0433: `priv_crew_hold_landing`).  Measured, two machines: the gunner's
+  copy put 3,009 m from Oxford's base (the pilot at 3,600 m) stayed in flight ("its landing held"); the pilot then
+  landed at 3,000 m and the gunner with it.  (The zone's edge, by the rig: 3,000 m landed, 4,000 m did not.)
 - **The pilot's ship destroyed:** the gunner's is too (its game's own death).
 - **Launching before the pilot** (or while the pilot sits at another base): no flight of a gunner's -- the launch
   begins at the pilot's base in the gunner's own ship and is landed there at once ("Your pilot has not launched").
@@ -1553,7 +1560,26 @@ ship destroyed in the pilot's game by the gunner's neutron guns (62 a hit).
 (`PrivTurret`, 15 a second: `shots` counted by its own bolts appearing); the pilot's game turns that turret of its own
 ship and, for every volley, calls the game's gun routine with the weapons' seat that turret's for the call, its guns
 on, ready and free (`priv_fire_station`: the gunner's game took the energy from its copy).  Those bolts are pictures
-(`priv_copy_bolt`: their hits do nothing); both turrets of the Galaxy in turn.
+(`priv_copy_bolt`: their hits do nothing); both turrets of the Galaxy in turn.  The bolts' way is the view's, not the
+seat's: the player's bolt (seg057:0318) asks the ship's controller for its seat (ship vtable +0x4C -> the controller's
++0x18, seg038:0000: view 4 seat 1, view 5 seat 2, else 0) and flies along the ship (0) or that turret's attitude
+(0x143D / 0x143F +4); so for the call the view (ds:143C) is the turret's too, put back after it (the user, 2026-11-27:
+"The guest sees it fire backwards host forward" -- the pilot's cockpit view had sent the tail turret's bolts along the
+nose).  Measured on two machines (a copied bolt's travel 3 frames on, less the ship's, on the ship's axes): before,
+(0.00, 1.00, 0.00) -- the nose; after, (0.00, -1.00, 0.00) with the turret at rest and (0.43, -0.24, -0.87) with it
+turned, as the gunner aimed.
+
+**The gunner's bolts themselves** (the user, 2026-11-27: "Can the firing command include xyz and facing from the guest
+otherwise the blasts might be lagged?").  The gunner's game decides what its shots hit, so the pilot's copies are put
+on its bolts: a new bolt of the gunner's (its shooter our ship: the laser's +0x25, the other kind's +0x4C) is a volley,
+told at once in `PrivTurret.volleys` (each bolt's place, +0x14, and velocity -- its motion record, the near pointer
+just before its vtable, +4: three int32, world units a second; a neutron bolt 181,760, 710 m/s), and again in the
+reports of the next 250 ms (a lost word's).  The pilot's game makes its copy as before (its sound, its flash) and then
+puts each bolt on the gunner's, flown on for the volley's age: the pilot stamps its states (`PrivState.ms`, its
+clock), a volley echoes the last stamp and how long the gunner had held it, and what is left of the pilot's clock
+since is the round trip, half of it the way back.  Measured, two machines, the pilot turning at speed while the gunner
+fired and turned the turret: the pilot's own bolts had been made 75 m on average from the gunner's (88-90 m at
+times), the volleys 40 ms old here (the link 18-27 ms).
 
 **The rig:** `scripts/privtests/crew.sh` (the host loads a saved game, the guests register new pilots in Troy and
 launch after it; `PLAYERS=3 SAVE=<a Galaxy's>` for two gunners; `GUNNER_AT=30 PILOT_AT=75` the early launch).  Aids:
@@ -1623,13 +1649,49 @@ of the two it is: the game makes it its first, F5), the second rides.
   see a friendly ship." on both, with its face on the gunner's screen; the pilot's own talk with a merchant shown to
   the gunner the same way.  Not carried: a talk with the base (each game's base is its own object), and a line whose
   speaker is not shown in the crew member's game (a militia ship far off).
+- *The tractor beam* (the user, 2026-11-27: "ensure in privateer turret mode that tractor works with cargo adding it to
+  main inventory and power use is linked if that's how it's supposed to be"; "It needs to work end to end on the
+  website so users can select turret mode").  The game's tractor is a launcher (kind 0x34, `BEAMTYPE` "TRACTOR")
+  worked from the station it is mounted at: the user's Centurion has it at mount 6, station 1 -- the tail turret.  The
+  launcher's button (Enter) runs seg120:03E5: from the pilot's seat the launcher picked with W, from a turret's seat
+  (seg120:05F5..0669) the tractor whose station is that seat; it fires on the ship's target (ovr393:024C: the
+  targeting system's +0xC -- in a turret's view the game keeps the turret's own choice, T picking among what that
+  view sees) a beam object every other frame while held.  Measured alone in the tail turret: the pod behind targeted
+  with T and Enter held, the 40-unit pod aboard within 2 s, 200 of the pool's 33,280 taken by the pull.
+  So in a crew the turret's gunner works it.  Enter is the crew's power key, so the crew's tractor key is **B** (or
+  a stick's launcher button), held in the turret's view with a pod targeted (T).  The gunner's game tells it in its
+  `PrivTurret` (`tractor`, and `tractor_id`: the pod's id in the pilot's game, its copy here being the target), and
+  the pilot's game runs seg120:03E5 for it each frame it is held (`priv_tractor_station`): the weapons' seat that
+  turret's and the target that pod for the call, both put back after.  The beam is the game's own on the real ship
+  and the real pod: the pod is drawn in where the pilot's game has it, its cargo goes into the pilot's hold by the
+  game's own capture (the hold's size, the pilot's to keep at the landing), and the pull is paid from the pilot's
+  energy.  The gunner's own game never pulls or claims a pod of the pilot's (its copies are pictures).  A pod of the
+  pilot's gone from its scene is told to the crew (`PrivPodTaken` with `units`, `hold`, `room`): their copy is put
+  away at once, and "Cargo aboard: 40 units into the hold (40 of 50)" shows on their screens.  B where it cannot work
+  says why ("The tractor beam is the pilot's on this ship", "... is in the other turret", "Target a cargo pod (T)").
+  Measured (`scripts/privtests/crew.sh` with `HOSTX`: X, `!privaim=150:1:b` -- the pod put behind -- and
+  `GUESTX`: `!privtargetpod`, `+b`): "turret 1's tractor beam on our cargo pod", the pilot's pool 33,280 -> 33,080,
+  "our cargo pod is gone (turret 1's beam on it): 40 units aboard (the hold 40 of 50)", the gunner's notice; the
+  pilot's own target left as it was.  In two browser pages (`scripts/web-priv-crew.sh`: the lobby's Ships menu set to
+  "one ship, crewed", the guest's B pressed on the page): "turret 1's tractor beam on our cargo pod", 10 units aboard
+  the pilot's hold, "Cargo aboard: 10 units into the hold (10 of 50)" on the gunner's screen, then the landing as
+  before -- CREW OK.  (The pod drifts off at some 40 m/s after X; the beam reaches some 350 m, the launcher's +0xB.)
+- *The ship's energy, one pool* (the same request).  The game's turret guns draw on the ship's one pool, as its forward
+  guns do.  Before, a gunner's volley was free in the pilot's game, and the gunner's copy had a pool of its own.  Now the
+  pilot's game takes each shown volley's energy from its pool, at the game's rate (each gun's +0x33 x 256), never below 0.
+  The call itself stays free, so the bolts always show.  The pilot's `PrivState` carries the pool (`energy`), and
+  the gunner's copy is set to it as each state arrives, so the gunner fires from what the ship has.  Measured: the
+  gunner's Space held 5 s, the pilot's pool 33,280 -> 28,172 -> 24,038 -> ..., the gunner's copy showing the same
+  values as each report came.
 Put to the user, not built: the missiles (select, lock and launch from the second seat), the targeting (T and L for
-the pilot), the tractor beam.
+the pilot).
 
 **Open:** the dealer's gun mounting by a rig (the hardpoint's click); the gunner's picture between the pilot's reports
-(the attitude is not carried on: fine at 28 reports a second on one machine, to be looked at over a real link); a
-gunner's energy is its own copy's (the pilot's is not taken by the turret); the landing fee (50) of a gunner's
-bounce; Righteous Fire flown as a crew (the same program: not yet run).
+(the attitude is not carried on: fine at 28 reports a second on one machine, to be looked at over a real link); the
+gunner's copy of the pool is the pilot's as last told, a link's delay behind (a volley of the gunner's not yet paid
+there is given back by the next report: over a slow link a few more shots than the pool allows, the pilot's pool
+stopping at 0); the landing fee (50) of a gunner's bounce; Righteous Fire
+flown as a crew (the same program: not yet run).
 
 ## 34. Slow frames: the per-frame probe, and what makes a fight's frames slow (2026-11-25)
 

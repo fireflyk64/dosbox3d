@@ -87,6 +87,7 @@ bool priv_in_flight();
 Bit16u priv_player_ship();
 // The ship the player's targeting system is on (0: none).
 Bit16u priv_player_target();
+bool priv_player_set_target(Bit16u target);    // (the targeting system's +0xC written: a rig's aid, and a call's moment)
 // The player's ship's place (world units: 256 to the game's metre; z up), zeros when not flying.
 void priv_player_pos(Bit32s pos[3]);
 // The name of the system the player flies in (the game's own copy, as its displays show it), "" when not flying.
@@ -259,7 +260,26 @@ void priv_turret_set(int k, Bit32s yaw, Bit32s pitch, const Bit32s m[9]);
 int priv_guns_seat(Bit16u ship, int station);
 // The player's ship's guns of that seat fired once by the game's own routine at the next frame (a gunner's shot shown in
 // the pilot's game: no energy taken, its bolts harmless here); false: not queued.
-bool priv_fire_station(int station);
+// A gunner's volley as its own game made it (wc.proto PrivVolley): up to 4 bolts, each place x y z, velocity x y z.
+struct PrivVolleyData {
+    unsigned seq;
+    Bit32u stateMs, heldMs;
+    int n;
+    Bit32s bolt[4][6];
+    double at;                  // (the gunner's) when made; (the pilot's) when made by our clock, as near as the link says
+};
+bool priv_fire_station(int station, const PrivVolleyData *v = NULL);
+int priv_scene_bolts_by(Bit16u shooter, Bit16u out[], int cap);
+void priv_bolt_motion(Bit16u bolt, Bit32s pos[3], Bit32s vel[3]);
+void priv_bolt_set(Bit16u bolt, const Bit32s pos[3], const Bit32s vel[3]);
+bool priv_crew_volley_new();
+int priv_crew_recent_volleys(PrivVolleyData out[], int cap, double maxAgeMs);
+void priv_crew_take_volley(int turret, const PrivVolleyData &v);
+void priv_crew_pilot_clock(Bit32u ms);
+// The ship's tractor beam: the station it is worked from (0 the pilot's seat, 1 and 2 the turrets'; -1 none), and the
+// game's launcher routine run for it from that turret's seat on that target (a crew member's beam in the pilot's game)
+int priv_ship_tractor_station(Bit16u ship);
+bool priv_tractor_station(int station, Bit16u target);
 // The player's ship's power moved between its shields and its guns' energy, none made or lost (both are kept in the
 // same units, 256 to a point: the shields' four quadrants in the damage model, the guns' pool in the ship's energy
 // object).  kind 1: the four quadrants made even (their sum kept); 2: up to `points` from the shields (each quadrant
@@ -268,6 +288,8 @@ bool priv_fire_station(int station);
 int priv_ship_power(int kind, int points);
 // The player's ship's guns' energy now and at most (x 256), -1 not known.
 Bit32s priv_ship_energy(Bit32s *max);
+bool priv_ship_set_energy(Bit32s v);                  // our ship's guns' pool (x 256), kept within its size
+bool priv_ship_hold(int *used, int *room);         // our ship's hold: the units in it and its size (false: no cargo system)
 // Comms.  A ship's comm record (its controller's +8) holds the message the player's comm menu chose for it (+6, 0xFFFF
 // none: its pilot's next think takes it, seg096:03FF, and answers): taken out (-1 none), and put in.  And the line on
 // the comm now (ds:67E4: its speaker, its text as shown, "NAME: text"; false: none).
@@ -304,6 +326,7 @@ bool priv_crew_script_item(const std::string &item, double t);
 // 1 the crew's pilot, 2 a gunner in the pilot's turret `turret` (1, 2; more gunners than turrets ride as passengers).
 void priv_crew_role(int role, int turret);
 bool priv_crew_gunner();
+bool priv_crew_hold_landing();
 bool priv_crew_pilot();
 // The pilot's ship as its game wrote it at its last launch (the pilot's side: to send; serial 0 none yet), and taken (a
 // gunner's side: the ship its next flight is flown in).
@@ -315,12 +338,16 @@ void priv_crew_pilot_presence(bool flying, const std::string &system, int system
 // (the pilot's side) the base we are at or launched from, its system, and the systems flown through since (the launch's first).
 void priv_crew_own_way(int *base, int *baseSystem, std::vector<int> *path);
 void priv_crew_pilot_state(const std::string &system, const double pos[3], const double vel[3], const Bit32s m[9], const Bit32s armor[4],
-                           const Bit32s shield[4], bool damage, bool destroyed);
+                           const Bit32s shield[4], bool damage, bool destroyed, Bit32s energy);
 // Once a frame in flight (before the session's): a gunner's ship put where the pilot's is, its view and guns its turret's.
 void priv_crew_frame();
 // A gunner's turret to tell the pilot (false: nothing to tell now), and told (the pilot's side: seat, turret...).
-bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9], bool *fire, unsigned *shots);
-void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire, unsigned shots);
+bool priv_crew_turret_report(int *turret, Bit32s *yaw, Bit32s *pitch, Bit32s m[9], bool *fire, unsigned *shots, bool *tractor, Bit32u *tractorId);
+void priv_crew_take_turret(int turret, Bit32s yaw, Bit32s pitch, const Bit32s m[9], bool fire, unsigned shots, bool tractor, Bit32u tractorId);
+// (a crew's) the pilot's id of a cargo pod's copy here (0: not one of the pilot's pods), and the pilot's word to its crew
+// of a pod of its own gone -- aboard with those units (the hold's after), or lost
+Bit32u priv_session_pilot_pod_id(Bit16u obj);
+void priv_session_crew_pod_gone(Bit16u pod, int units, int hold, int room);
 // A gunner's keys: true, not the game's (the ship is the pilot's to fly).
 bool priv_crew_key(int kbdKey, bool pressed);
 // A crew member's key for the pilot's ship sent to the pilot (1 the shields evened, 2 shields to guns, 3 guns to shields);

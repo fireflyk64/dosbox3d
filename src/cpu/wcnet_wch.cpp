@@ -72,6 +72,7 @@ enum {
 };
 
 enum Drv { TM, ST };
+enum { kStarSide = 5 };             // a SHAPE no wider or taller than this in the view is a star (the biggest, a cross, 5 x 5)
 enum Op { OP_SHAPE, OP_TURN, OP_LINE, OP_RECT, OP_FILL, OP_CLEAR, OP_COPY, OP_PRESENT, OP_GLYPH };
 
 // A place in a driver's code, found from the driver's own table of entries (a word per routine at its start, the
@@ -694,7 +695,8 @@ void shape_lines(const Target &t, const Shape &s, int x, int y) {
 
 // Scaled and turned as the game's blitters do (mirrored first, then turned clockwise, in the game's pixels), sampled
 // at each fine pixel's middle (Privateer's shape_scaled).
-void shape_scaled(const Target &t, const Shape &s, int x, int y, double sc, int degrees, bool fx, bool fy, bool corner) {
+void shape_scaled(const Target &t, const Shape &s, int x, int y, double sc, int degrees, bool fx, bool fy, bool corner,
+                  bool coarse = false) {
     if (sc <= 0 || sc > 64) return;
     const double w = degrees * 3.141592653589793 / 180.0, c = cos(w), n = sin(w);
     const double mx = fx ? -1 : 1, my = fy ? -1 : 1;
@@ -719,6 +721,26 @@ void shape_scaled(const Target &t, const Shape &s, int x, int y, double sc, int 
     if (Y1 > 2 * (t.y1 + 1)) Y1 = 2 * (t.y1 + 1);
     const Bit32s du = (Bit32s)floor(c * 0.5 * mx / sc * 65536 + 0.5), dv = (Bit32s)floor(-n * 0.5 * my / sc * 65536 + 0.5);
     const Bit16s *src = &s.px[0];
+    if (coarse) {
+        // (the game's own pixels: each sampled once, at its middle, by the same rules, and drawn 2 x 2 -- the space's
+        //  backgrounds, the user: "the nebulas and planets ... should be their ordinary 320x200 selves")
+        const double h = corner ? 0 : 0.5;
+        const Bit32s du1 = 2 * du, dv1 = 2 * dv;
+        for (int yy = Y0 / 2; yy < (Y1 + 1) / 2 && yy <= t.y1; yy++) {
+            const double gx = (X0 / 2) + 0.5 - x - h, gy = yy + 0.5 - y - h;
+            const double fu = corner && fx ? 1 - 1.0 / 65536 : h, fv = corner && fy ? 1 - 1.0 / 65536 : h;
+            const double u0 = (gx * c + gy * n) * mx / sc + fu + s.left, v0 = (-gx * n + gy * c) * my / sc + fv + s.top;
+            if (fabs(u0) > 16000 || fabs(v0) > 16000) continue;
+            Bit32s u = (Bit32s)floor(u0 * 65536), v = (Bit32s)floor(v0 * 65536);
+            for (int xx = X0 / 2; xx < (X1 + 1) / 2 && xx <= t.x1; xx++, u += du1, v += dv1) {
+                const int iu = u >> 16, iv = v >> 16;
+                if ((unsigned)iu >= (unsigned)s.w || (unsigned)iv >= (unsigned)s.h) continue;
+                const int colour = src[iv * s.w + iu];
+                if (colour >= 0 && xx >= t.x0 && yy >= t.y0) block(xx, yy, (Bit8u)colour);
+            }
+        }
+        return;
+    }
     for (int Y = Y0; Y < Y1; Y++) {
         // (corner: a source pixel u covers [x0 + u k, x0 + (u + 1) k), x0 = x - left k, as the game's magnifier places it;
         // else each fine pixel's middle is sampled about the pixel's middle, Privateer's way)
@@ -1496,6 +1518,18 @@ bool shapes_from(Bit16u where, Bit16u off, Bit16u seg) {
 
 bool markers(Bit16u off, Bit16u seg) { return shapes_from(ds::cockpitMarkers, off, seg); }
 
+// The object the game's draw loop is drawing (drawnObject: the slot twice; WC1 seg006:01D6, WC2 seg008:019F) is one of
+// the space's backgrounds by its type (objectType): WC2's 12, its nebulae and planets on the horizon, turned and scaled
+// as ships are.  Drawn as the game's own pixels (shape_scaled's coarse).  (WC1's nebulae and planets are plain SHAPEs,
+// types 2 and 4, the game's pixels already; its turned types 3 and 4 are the carrier's launch bay, seen by a probe.)
+bool background_now() {
+    if (!ds::known(ds::drawnObject) || !ds::known(ds::objectType)) return false;
+    const Bit16u obj = dsw(ds::drawnObject);
+    if (obj > 0x200) return false;
+    const int type = (Bit16s)dsw((Bit16u)(ds::objectType + obj));
+    return is_wc2() && type == 12;
+}
+
 // ---- the calls --------------------------------------------------------------------------------------------------------
 
 void call(const Place &p) {
@@ -1631,8 +1665,36 @@ void call(const Place &p) {
         // (WC2's: 0 the gunsight, 4 the same a pixel right, 1 the lock cross; 5 is the pointer, seg005:331D)
         const int index = arg16(5);
         const bool marker = markers((Bit16u)arg16(3), (Bit16u)arg16(4)) && (index == 0 || index == 1 || (is_wc2() && index == 4));
-        if (marker) shape_lines(t, *s, arg16(1), arg16(2));
-        else shape_blocks(t, *s, arg16(1), arg16(2));
+        if (marker) {
+            shape_lines(t, *s, arg16(1), arg16(2));
+        } else if (g_level == 2 && s->w <= kStarSide && s->h <= kStarSide) {
+            // (a star -- the space's points, glints and crosses, small SHAPEs of the space objects' table, WC1
+            //  08FA:025E -- as one fine pixel at the middle of its own pixel, in its colour there (else its brightest):
+            //  the user, 2026-11-27, "can we also make the stars 1 640x480 pixel instead of 4", "logically every star
+            //  should be 1 pixel no matter the resolution ... Lets try having them all be 1 pixel in the highest mode
+            //  and for the other two modes they can be as they were".  The planets and nebulae, big SHAPEs of the same
+            //  table, are the game's pixels 2 x 2: "the nebulas and planets ... should be their ordinary 320x200 selves")
+            const int ax = arg16(1), ay = arg16(2);
+            const bool inside = s->left >= 0 && s->top >= 0 && s->left < s->w && s->top < s->h;
+            int colour = inside ? s->px[s->top * s->w + s->left] : -1, best = -1;
+            if (colour < 0) {
+                for (size_t i = 0; i < s->px.size(); i++) {
+                    const int c = s->px[i];
+                    if (c < 0) continue;
+                    const int lum = vga.dac.rgb[c].red * 3 + vga.dac.rgb[c].green * 6 + vga.dac.rgb[c].blue;
+                    if (lum > best) { best = lum; colour = c; }
+                }
+            }
+            if (colour >= 0 && ax >= t.x0 && ax <= t.x1 && ay >= t.y0 && ay <= t.y1) plot(t, 2 * ax + 1, 2 * ay + 1, (Bit8u)colour);
+            for (int v = 0; v < s->h; v++) {        // (its other pixels H's too, empty: not filled in as the game's)
+                for (int u = 0; u < s->w; u++) {
+                    const int qx = ax - s->left + u, qy = ay - s->top + v;
+                    if (s->px[v * s->w + u] >= 0 && qx >= t.x0 && qx <= t.x1 && qy >= t.y0 && qy <= t.y1) g_drawn[qy * LW + qx] = 1;
+                }
+            }
+        } else {
+            shape_blocks(t, *s, arg16(1), arg16(2));
+        }
         break;
     }
     case OP_TURN: {
@@ -1654,7 +1716,8 @@ void call(const Place &p) {
             // (magnified: placed as the game's magnifier does, a source pixel from the anchor's corner -- measured against the
             // game's own, 2026-11-27, a close Dralthi at 3x and 5x off by up to 5 game pixels otherwise; shrunk: sampled
             // about the pixels' middles, Privateer's way, which matched the game's better than the corner did)
-            shape_scaled(t, *s, arg16(1), arg16(2), scale / 256.0, degrees, (turn & 0x10) != 0, (turn & 0x20) != 0, scale > 0x100);
+            shape_scaled(t, *s, arg16(1), arg16(2), scale / 256.0, degrees, (turn & 0x10) != 0, (turn & 0x20) != 0, scale > 0x100,
+                         background_now());
         }
         break;
     }

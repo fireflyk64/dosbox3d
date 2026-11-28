@@ -70,6 +70,9 @@ MANUAL = {
     ("so1", "shieldShapes"): (0xB2BE, "two votes only, and moved as its neighbours (B458 -> B354): WC2's - 104"),
     ("so2", "emsFrameSeg"): (0xAAA5, "two votes only, and six below the last handle AAAB as in WC2.EXE: WC2's + 192"),
     ("so2", "shieldShapes"): (0xB554, "two votes only, and moved as its neighbours (B458 -> B5EA): WC2's + 192"),
+    ("sm2", "drawnObject"): (0x3CDF, "one vote only; SM2.EXE seg005:01D2 mov [3CDF],bx; cmp ax,2 is WC.EXE seg006:01D6 mov [3C8F],bx (the draw loop)"),
+    ("so1", "drawnObject"): (0x0BDB, "one vote only; SO1.EXE seg008:019D mov [0BDB],bx; cmp ax,2 is WC2.EXE seg008:019F (the draw loop)"),
+    ("so2", "drawnObject"): (0x0BDF, "one vote only; SO2.EXE seg008:0199 mov [0BDF],bx; cmp ax,2 is WC2.EXE seg008:019F (the draw loop)"),
     ("so1", "joyRaw"): (0xA758, "one vote only, and right after joyRange as in WC2.EXE"),
     ("so2", "joyRaw"): (0xA9EE, "one vote only, and right after joyRange as in WC2.EXE"),
 }
