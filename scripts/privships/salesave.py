@@ -4,8 +4,8 @@
   salesave.py <in.SAV> <out.SAV> terrell|tucks [credits=900000]
 
 terrell: at Perry Naval Base with the campaign won -- the plot's mission is the last entry ("FFFFFFFF") and the
-         rooms' flag 0x0B is set (the Admiral's door opens; talking to him is his "one more thing", the credits,
-         and the Stiletto's offer).  From the pad: the door at the left, then the office (a small spot at 0.54,
+         rooms' flag 0x0B is set (the Admiral's door opens) and 0x41 (his credits have played: talking to him
+         is the Stiletto's offer).  From the pad: the door at the left, then the office (a small spot at 0.54,
          0.57 of the concourse), then the Admiral.
 tucks:   at Tuck's, the pirate base of the Sherwood system: the pad's exit, the bar (the concourse's right, 0.93,
          0.67), the bartender (his rumour, then the Demon's offer).
@@ -27,6 +27,7 @@ def make(sav, where, credits=900000):
         d[offs[0] + 2] = 0x29
         d[offs[1]:offs[1] + 8] = b"FFFFFFFF"
         d[offs[4] + 0x0C + 0x0B] = 1
+        d[offs[4] + 0x0C + 0x41] = 1
     elif where == "tucks":
         d[offs[0] + 2] = 0x36
     else:

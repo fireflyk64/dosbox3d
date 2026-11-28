@@ -160,8 +160,11 @@ void voc_build(const Bytes &pcm, Bytes *out) {
 // ---- The script -----------------------------------------------------------------------------------------------------
 
 // A piece of a line's speech: of conversation `conv`, line `line`, from `from` to `to` milliseconds (to 0: its end),
-// then `gap` milliseconds of quiet.
+// then `gap` milliseconds of quiet.  A gap below 0: no quiet, and the next piece begins that many milliseconds
+// early, the two cross-faded over them -- pieces of one WORD (the user's, 2026-11-28: "Build 'ship' from the
+// opening sh of 'shot,' the short i in 'kick,' and the final p ...").
 struct Piece { const char *conv; int line, from, to, gap; };
+enum { kPieces = 12 };
 enum { kLine = 0, kAsk = 7, kElse = 5, kEnd = 8 };
 enum Who { kTerrell, kPlayer, kDealer, kBarman, kPlayerBar };
 struct Line {
@@ -169,7 +172,7 @@ struct Line {
     Who who;
     const char *mood;
     const char *text;
-    Piece voice[4];             // (a conv of 0 ends them)
+    Piece voice[kPieces];       // (a conv of 0 ends them)
 };
 // Who speaks: the face, the backdrop, the four bytes and the last one, as the game's own lines of that speaker in
 // that place have them (Terrell's in S7MBC4, the player's there, the guild clerk's in MRCHGLD1)
@@ -243,7 +246,8 @@ bool conv_build(const PrivAddedShip &ship, const Line *lines, size_t count, bool
         pfc->push_back(s.tail);
 
         Bytes pcm;
-        for (int k = 0; k < 4 && l.voice[k].conv; k++) {
+        size_t over = 0;                // (samples of the piece before that this one fades in over)
+        for (int k = 0; k < kPieces && l.voice[k].conv; k++) {
             const Piece &p = l.voice[k];
             if (!sources.count(p.conv)) {
                 Bytes v;
@@ -261,15 +265,28 @@ bool conv_build(const PrivAddedShip &ship, const Line *lines, size_t count, bool
             size_t a = (size_t)p.from * kRate / 1000, b = p.to ? (size_t)p.to * kRate / 1000 : all.size();
             if (b > all.size()) b = all.size();
             if (a > b) a = b;
-            // a cut's ends eased over 6 ms (a cut in the middle of a sound would click)
-            const size_t ease = 64, start = pcm.size();
-            pcm.insert(pcm.end(), all.begin() + a, all.begin() + b);
-            const size_t len = b - a;
+            // a cut's ends eased over 6 ms (a cut in the middle of a sound would click), but where two pieces are
+            // cross-faded
+            std::vector<int> seg(b - a);
+            for (size_t i = 0; i < seg.size(); i++) seg[i] = (int)all[a + i] - 128;
+            const size_t ease = 64, len = seg.size();
             for (size_t e = 0; e < ease && e < len / 2; e++) {
-                if (p.from) pcm[start + e] = (Bit8u)(128 + ((int)pcm[start + e] - 128) * (int)e / (int)ease);
-                if (p.to) pcm[start + len - 1 - e] = (Bit8u)(128 + ((int)pcm[start + len - 1 - e] - 128) * (int)e / (int)ease);
+                if (p.from && !over) seg[e] = seg[e] * (int)e / (int)ease;
+                if (p.to && p.gap >= 0) seg[len - 1 - e] = seg[len - 1 - e] * (int)e / (int)ease;
             }
-            pcm.insert(pcm.end(), (size_t)p.gap * kRate / 1000, 128);
+            size_t skip = 0;
+            if (over) {
+                size_t o = over < pcm.size() ? over : pcm.size();
+                if (o > len) o = len;
+                for (size_t e = 0; e < o; e++) {
+                    Bit8u &to = pcm[pcm.size() - o + e];
+                    to = (Bit8u)(128 + (((int)to - 128) * (int)(o - e) + seg[e] * (int)e) / (int)o);
+                }
+                skip = o;
+            }
+            for (size_t i = skip; i < len; i++) pcm.push_back((Bit8u)(128 + seg[i]));
+            if (p.gap > 0) pcm.insert(pcm.end(), (size_t)p.gap * kRate / 1000, 128);
+            over = p.gap < 0 ? (size_t)(-p.gap) * kRate / 1000 : 0;
         }
         if (l.who == kDealer && rasp) voice_rasp(&pcm);
         if (pcm.empty()) pcm.assign(kRate / 10, 128);       // (a line with nothing said: a tenth of a second of quiet)

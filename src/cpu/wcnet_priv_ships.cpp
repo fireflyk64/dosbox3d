@@ -47,7 +47,7 @@ const PrivAddedShip kShips[] = {
     { 1,  "Stiletto", "STILETTO",  "STILTYPE", "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } },
       { { 0, 2 }, { -1, 0 } },
       { 0x2C, 0x2F, 0x3E, 0 },        // (the game's own Stiletto: the generators of engine upgrade 2, shield generator 2's 200)
-      500000, "credits", -1, -1, -1, 16, 1, 34, 10, 12 },    // (the user: "Stiletto needs to be more to the right in the upgrade bay", then "should rotate to camera by one picture so the tip of the nose isn't obscured": view 9, not 10; then "pitched up by one tick": 16, the same turn a ring of views lower)    // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
+      300000, "credits", -1, -1, -1, 16, 1, 34, 10, 12 },    // (the user: "Stiletto needs to be more to the right in the upgrade bay", then "should rotate to camera by one picture so the tip of the nose isn't obscured": view 9, not 10; then "pitched up by one tick": 16, the same turn a ring of views lower)    // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
     // The Demon (the user: "we may want a place to insert the demon as well ... then let's move onto the demon"): the
     // game's own has four guns (mounts 2 and 3 by the nose, 1 and 4 on the wings), two missile launchers (1 and 4)
     // and a torpedo launcher (0), the Stiletto's generators and shields, 650 kps.  Sold by the bartender of Tuck's (the user: "Maybe you can get the demon from a Barman in
@@ -282,9 +282,13 @@ bool type_with_launcher(const PrivAddedShip &ship, std::vector<Bit8u> *type) {
 // OPTIONS\GAMEFLOW.IFF: every room's sprites with what a click on each does (EFCT: pairs of a command and its
 // number, run by ovr281:11C3).  Command 0x00 plays conversation n of the file's own list (FORM CONV, DATA: names of
 // 8 bytes), 0x29 changes the tune, 0x1E n is the dealer's sale of hull n (ovr286:0CC1).  An added ship is offered
-// after its conversation (Admiral Terrell's "credits", which the game plays once the campaign is won, every time
-// he is talked to): a sale of (the ship's id * 16 + its hull) follows it, which priv_ships_hook takes for that
-// ship's.  Or it ends the click on a sprite of one base (the Demon: the bartender of Tuck's, after his rumour).  WCPRIVSALE=<ship> (a rig's) makes every dealer's Centurion that ship instead.
+// by the one whose conversation `soldAfter` is (Admiral Terrell's "credits", which the game plays once the campaign
+// is won, every time he is talked to): that conversation plays once more, and from then on a click on him is the
+// sale of (the ship's id * 16 + its hull), which priv_ships_hook takes for that ship's (the user: "Most people esc
+// through the credits then get an accept reject thing...that will be weird. maybe if you click on him again after
+// the credits played once").  A room flag remembers it (0x09 n: what follows runs with flag n clear; 0x06 n sets
+// it; the flags are in the saved game).  Or it ends the click on a sprite of one base (the Demon: the bartender of Tuck's, after his rumour).  WCPRIVSALE=<ship> (a rig's) makes every dealer's Centurion that ship instead.
+enum { kSaleFlag = 0x40 };              // (+ the ship's id: a room flag no room of the game's uses -- they use 0x00-0x0B of 256, all saved)
 struct FlowEdit {
     std::map<int, int> after;           // a conversation's number -> the sale that follows it
     int rigSale;                        // WCPRIVSALE's sale in the place of every dealer's of that hull (0: none)
@@ -311,14 +315,38 @@ bool gameflow_chunks(const Bit8u *d, size_t n, FlowEdit &e, const char *in, std:
             if (!memcmp(in, "MISS", 4)) e.base = body[0]; else e.sprite = body[0];
             out->insert(out->end(), body, body + size);
         } else if (!memcmp(d + off, "EFCT", 4) && !(size & 1)) {
+            // (a conversation with a sale after it: the run it is in -- the conversations and tunes before it, the
+            // tunes and the plot's step after it -- is played while the sale's room flag is clear, and sets it; with
+            // the flag set the click is the sale alone)
+            Bit32u runFrom = size, runTo = size;
+            int sale = 0;
+            for (Bit32u i = 0; i < size && !sale; i += 2) {
+                if (body[i] != 0x00 || !e.after.count(body[i + 1])) continue;
+                sale = e.after.find(body[i + 1])->second;
+                runFrom = i; runTo = i + 2;
+                while (runFrom >= 2 && (body[runFrom - 2] == 0x00 || body[runFrom - 2] == 0x29)) runFrom -= 2;
+                while (runTo < size && (body[runTo] == 0x29 || body[runTo] == 0x24)) runTo += 2;
+            }
             for (Bit32u i = 0; i < size; i += 2) {
                 Bit8u op = body[i], arg = body[i + 1];
                 if (op == 0x1E && e.rigSale && arg == (e.rigSale & 15)) { arg = (Bit8u)e.rigSale; e.edits++; }
+                if (sale && i == runFrom) { out->push_back(0x09); out->push_back((Bit8u)(kSaleFlag + (sale >> 4))); }
                 out->push_back(op); out->push_back(arg);
-                if (op != 0x00 || !e.after.count(arg)) continue;
-                while (i + 2 < size && body[i + 2] == 0x29) { i += 2; out->push_back(body[i]); out->push_back(body[i + 1]); }
-                out->push_back(0x1E); out->push_back((Bit8u)e.after.find(arg)->second);
+                if (!sale || i + 2 != runTo) continue;
+                out->push_back(0x06); out->push_back((Bit8u)(kSaleFlag + (sale >> 4)));
+                out->push_back(0x1F); out->push_back(0);
+                out->push_back(0x1E); out->push_back((Bit8u)sale);
+                out->push_back(0x20); out->push_back(0);
                 e.edits++;
+                // (the same run again later in this EFCT: the plot's other branch)
+                sale = 0;
+                for (Bit32u k = runTo; k < size && !sale; k += 2) {
+                    if (body[k] != 0x00 || !e.after.count(body[k + 1])) continue;
+                    sale = e.after.find(body[k + 1])->second;
+                    runFrom = k; runTo = k + 2;
+                    while (runFrom >= i + 4 && (body[runFrom - 2] == 0x00 || body[runFrom - 2] == 0x29)) runFrom -= 2;
+                    while (runTo < size && (body[runTo] == 0x29 || body[runTo] == 0x24)) runTo += 2;
+                }
             }
             for (int k = 0; k < kShipCount; k++) {
                 if (kShips[k].soldBase < 0 || kShips[k].soldBase != e.base || e.sprite < kShips[k].soldSprite || e.sprite > kShips[k].soldSpriteLast) continue;
