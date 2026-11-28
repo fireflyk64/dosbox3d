@@ -644,4 +644,119 @@ bool priv_ship_bay(const PrivAddedShip &ship, PrivTreFile file, const std::vecto
     return true;
 }
 
+// A view of an appearance (the n-th pack of VSHP) as a canvas of the flight's colours.
+bool appearance_view(PrivTreFile file, const char *appearance, int n, bool mirror, std::vector<int> *src, int *sw, int *sh) {
+    Bytes app;
+    Chunk aroot;
+    if (!file(std::string("..\\..\\DATA\\APPEARNC\\") + appearance + ".IFF", &app) || !iff_root(app, &aroot)) return false;
+    const Chunk *vshp = path(aroot, "BM3D", "VSHP");
+    if (!vshp) return false;
+    const Bytes &v = vshp->data;
+    size_t at = 0;
+    for (int k = 0; k < n; k++) {
+        if (at + 8 > v.size() || le32(&v[at]) < 8) return false;
+        at += le32(&v[at]);
+    }
+    Shape view;
+    if (at + 8 > v.size() || !shape_decode(v, at + (le32(&v[at + 4]) & 0xFFFFFF), &view) || view.pix.empty()) return false;
+    int x0 = view.pix[0].x, x1 = x0, y0 = view.pix[0].y, y1 = y0;
+    for (size_t i = 0; i < view.pix.size(); i++) {
+        const Pixel &p = view.pix[i];
+        if (p.x < x0) x0 = p.x;
+        if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+    }
+    *sw = x1 - x0 + 1; *sh = y1 - y0 + 1;
+    if (*sw > 400 || *sh > 400) return false;
+    src->assign(*sw * *sh, kNone);
+    for (size_t i = 0; i < view.pix.size(); i++) {
+        const Pixel &p = view.pix[i];
+        (*src)[(p.y - y0) * *sw + (mirror ? x1 - p.x : p.x - x0)] = p.c;
+    }
+    return true;
+}
+
+// The ship in the takeoff and landing scenes.  MIDGAMES\TAKEOFFS.PAK and LANDINGS.PAK: a pack (the offsets' top byte
+// 0xC1) of the scene's palette (4 bytes, then 256 colours), a small picture, and per scene ship (SHIP2CHR.IFF's
+// number, entries 2-5) a pack of 30 shapes: the ship flying past, each frame in one box.  The added ship's frames
+// are made from one view of its appearance, as wide as the hull's ship is in each frame and about the same place,
+// in the nearest of the colours the hull's frames use.
+bool priv_ship_scene(const PrivAddedShip &ship, PrivTreFile file, const std::vector<Bit8u> &pak, bool landing, std::vector<Bit8u> *out) {
+    std::vector<size_t> offs;
+    Bytes space;
+    if (ship.sceneView < 0 || !pack_offsets(pak, &offs) || offs.size() < (size_t)ship.sceneShip + 3 || !file("..\\..\\DATA\\PALETTE\\SPACE.PAL", &space) || space.size() < 4 + 768) return false;
+    const size_t which = 2 + ship.sceneShip;
+    std::vector<Bytes> parts;
+    for (size_t i = 0; i < offs.size(); i++) {
+        const size_t end = i + 1 < offs.size() ? offs[i + 1] : pak.size();
+        if (offs[i] > end || end > pak.size()) return false;
+        parts.push_back(Bytes(pak.begin() + offs[i], pak.begin() + end));
+    }
+    if (parts[0].size() < 4 + 768) return false;
+    const Bit8u *pal = &parts[0][4], *fly = &space[4];
+    std::vector<size_t> frames;
+    if (!pack_offsets(parts[which], &frames) || frames.empty()) return false;
+    std::vector<Shape> own(frames.size());
+    bool used[256] = { false };
+    for (size_t f = 0; f < frames.size(); f++) {
+        if (!shape_decode(parts[which], frames[f], &own[f]) || own[f].pix.empty()) return false;
+        for (size_t i = 0; i < own[f].pix.size(); i++) used[own[f].pix[i].c] = true;
+    }
+    used[0] = false;
+    std::vector<int> src;
+    int sw, sh;
+    if (!appearance_view(file, ship.appearance, ship.sceneView, landing, &src, &sw, &sh)) return false;
+    int nearest[256];
+    for (int c0 = 0; c0 < 256; c0++) {
+        const int R = fly[3 * c0], G = fly[3 * c0 + 1], B = fly[3 * c0 + 2];
+        long best = -1;
+        nearest[c0] = 1;
+        for (int c = 1; c < 256; c++) {
+            if (!used[c]) continue;
+            const long dd = (long)(pal[3 * c] - R) * (pal[3 * c] - R) + (long)(pal[3 * c + 1] - G) * (pal[3 * c + 1] - G) + (long)(pal[3 * c + 2] - B) * (pal[3 * c + 2] - B);
+            if (best < 0 || dd < best) { best = dd; nearest[c0] = c; }
+        }
+    }
+    Bytes shapes;
+    std::vector<Bit32u> at;
+    for (size_t f = 0; f < own.size(); f++) {
+        int x0 = own[f].pix[0].x, x1 = x0, y0 = own[f].pix[0].y, y1 = y0;
+        for (size_t i = 0; i < own[f].pix.size(); i++) {
+            const Pixel &p = own[f].pix[i];
+            if (p.x < x0) x0 = p.x;
+            if (p.x > x1) x1 = p.x;
+            if (p.y < y0) y0 = p.y;
+            if (p.y > y1) y1 = p.y;
+        }
+        const double scale = (double)(x1 - x0 + 1) / sw;
+        const int dw = x1 - x0 + 1, dh = (int)(sh * scale + 0.5) > 0 ? (int)(sh * scale + 0.5) : 1;
+        const int top = (y0 + y1) / 2 - dh / 2;
+        // a canvas about the frame's box, with room above and below it
+        const int cw = dw, ch = dh, ox = -x0, oy = -top;
+        std::vector<int> canvas(cw * ch, kNone);
+        for (int y = 0; y < dh; y++) {
+            for (int x = 0; x < dw; x++) {
+                const int sx = (int)((x + 0.5) / scale), sy = (int)((y + 0.5) / scale);
+                if (sx >= sw || sy >= sh || src[sy * sw + sx] == kNone) continue;
+                canvas[y * cw + x] = nearest[src[sy * sw + sx]];
+            }
+        }
+        at.push_back((Bit32u)shapes.size());
+        shape_encode(canvas, cw, ch, ox, oy, own[f].ext, &shapes);
+    }
+    Bytes anim;
+    add32(anim, (Bit32u)(4 + 4 * at.size() + shapes.size()));
+    for (size_t f = 0; f < at.size(); f++) add32(anim, (Bit32u)(4 + 4 * at.size() + at[f]) | (le32(&parts[which][4 + 4 * f]) & 0xFF000000u));
+    anim.insert(anim.end(), shapes.begin(), shapes.end());
+    parts[which] = anim;
+    out->clear();
+    Bit32u total = 4 + 4 * (Bit32u)parts.size(), place = total;
+    for (size_t i = 0; i < parts.size(); i++) total += (Bit32u)parts[i].size();
+    add32(*out, total);
+    for (size_t i = 0; i < parts.size(); i++) { add32(*out, place | (le32(&pak[4 + 4 * i]) & 0xFF000000u)); place += (Bit32u)parts[i].size(); }
+    for (size_t i = 0; i < parts.size(); i++) out->insert(out->end(), parts[i].begin(), parts[i].end());
+    return true;
+}
+
 }

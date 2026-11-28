@@ -47,7 +47,7 @@ const PrivAddedShip kShips[] = {
     { 1,  "Stiletto", "STILETTO",  "STILTYPE", "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } },
       { { 0, 2 }, { -1, 0 } },
       { 0x2C, 0x2F, 0x3E, 0 },        // (the game's own Stiletto: the generators of engine upgrade 2, shield generator 2's 200)
-      500000, "credits", -1, -1, -1, 10, 1 },    // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
+      500000, "credits", -1, -1, -1, 10, 1, 12 },    // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
     // The Demon (the user: "we may want a place to insert the demon as well ... then let's move onto the demon"): the
     // game's own has four guns (mounts 2 and 3 by the nose, 1 and 4 on the wings), two missile launchers (1 and 4)
     // and a torpedo launcher (0), the Stiletto's generators and shields, 650 kps.  Its cockpit is the Stiletto's until
@@ -57,7 +57,7 @@ const PrivAddedShip kShips[] = {
       { { 2, -6, -10 }, { 3, 6, -10 }, { 1, -18, 0 }, { 4, 18, 0 }, { -1, 0, 0 } },
       { { 1, 2 }, { 4, 3 }, { -1, 0 } },
       { 0x2C, 0x2F, 0x3E, 0 },
-      350000, 0, 0x36, 0xD7, 0xD9, 10, 1 },
+      350000, 0, 0x36, 0xD7, 0xD9, 10, 1, 12 },
 };
 const int kShipCount = (int)(sizeof(kShips) / sizeof(kShips[0]));
 
@@ -490,6 +490,8 @@ void tre_build() {
         if (real_file(tre_name("OPTIONS", "LIMITS.IFF"), &in) && limits_for_ship(kShips[i], in, &pak)) tre_add(tre_name("OPTIONS", "LIMITS.IFF"), in, kShips[i].id, &pak);
         if (real_file(tre_name("TYPES", (std::string(kShips[i].type) + ".IFF").c_str()), &in) && type_with_launcher(kShips[i], &in)) tre_add(tre_name("TYPES", (std::string(kShips[i].type) + ".IFF").c_str()), in);
         if (real_file(tre_name("OPTIONS", "SHIPART.IFF"), &in) && priv_ship_bay(kShips[i], real_file, in, &pak)) tre_add(tre_name("OPTIONS", "SHIPART.IFF"), in, kShips[i].id, &pak);
+        if (real_file(tre_name("MIDGAMES", "TAKEOFFS.PAK"), &in) && priv_ship_scene(kShips[i], real_file, in, false, &pak)) tre_add(tre_name("MIDGAMES", "TAKEOFFS.PAK"), in, kShips[i].id, &pak);
+        if (real_file(tre_name("MIDGAMES", "LANDINGS.PAK"), &in) && priv_ship_scene(kShips[i], real_file, in, true, &pak)) tre_add(tre_name("MIDGAMES", "LANDINGS.PAK"), in, kShips[i].id, &pak);
         if (skel.empty()) real_file(tre_name("APPEARNC", "SKELETON.IFF"), &skel);
         if (!skel.empty() && skeleton_with_marks(kShips[i], out, &skel)) skelChanged = true;
     }
