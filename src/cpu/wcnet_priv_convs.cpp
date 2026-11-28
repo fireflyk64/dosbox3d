@@ -10,7 +10,7 @@
  *  The PFC is a run of records, each begun by a byte:
  *    0  a line: the speaker (9 bytes: a face of OPTIONS\FACES.IFF, "pc" the player, "rand_npc" a face of the room's
  *       people), the mood (9: "normal", "angry", "surprise" ...), the close-up's backdrop (9: OPTIONS\CU.IFF's,
- *       "adoff_1" Terrell at his desk, "adoff_2" the player there, "shpdlr_1" the ship dealer's counter), four bytes
+ *       "adoff_1" Terrell at his desk, "adoff_2" the player there, "mrchcu" the Merchants' Guild's desk), four bytes
  *       (the text's colour, 0, a number that goes with the speaker, 0), the text ended by a zero, and one byte more;
  *    7  the player is asked: Accept or Reject (speaker, backdrop, the four bytes; no text);
  *    5  the end of what follows an Accept (what follows a Reject begins here);
@@ -172,12 +172,14 @@ struct Line {
     Piece voice[4];             // (a conv of 0 ends them)
 };
 // Who speaks: the face, the backdrop, the four bytes and the last one, as the game's own lines of that speaker in
-// that place have them (Terrell's in S7MBC4, the player's there, the dealer's in BUYFIGHT)
+// that place have them (Terrell's in S7MBC4, the player's there, the guild clerk's in MRCHGLD1)
 struct Speaker { const char *face, *place; Bit8u look[4]; Bit8u tail; };
 const Speaker kSpeakers[] = {
     { "terrel", "adoff_1", { 159, 0, 11, 0 }, 200 },
     { "pc", "adoff_2", { 172, 0, 15, 0 }, 160 },
-    { "rand_npc", "shpdlr_1", { 159, 0, 17, 0 }, 224 },
+    // (the ship dealer's own face is "rand_npc", one of the people of a dealer's room: anywhere else it is the
+    // game's error 70C8.  The Merchants' Guild's clerk is a face of his own, with the salesman's voice here.)
+    { "merchguy", "mrchcu", { 159, 0, 20, 0 }, 245 },
 };
 
 #include "wcnet_priv_convs.inc"

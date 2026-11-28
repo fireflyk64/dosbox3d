@@ -32,7 +32,7 @@ const Line kStilettoOffer[] = {
     { P("normal", "Deal me in."), { { "S7MBC1", 30, 2300, 0, 0 }, NONE } },                                           // (after "Running has never been my style, Admiral.")
     { D("You'll find your new ship fueled up and waiting on the landing pad for you."), { { "BUYFIGHT", 11, 0, 0, 0 }, NONE } },
     { D("Your payment will be deducted automatically.  Have a good one!"), { { "BUYFIGHT", 12, 0, 0, 0 }, NONE } },
-    { T("normal", "...I wish you good luck anyway."), { { "S7MBC4", 12, 150, 1550, 0 }, NONE } },
+    { T("normal", "...I wish you good luck anyway."), { { "S7MBC4", 12, 190, 1550, 0 }, NONE } },
     { kElse, kTerrell, 0, 0, { NONE } },
     { P("normal", "I'll take my chances on my own."), { { "S7MBC1", 39, 0, 0, 0 }, NONE } },
     { T("normal", "As I said, I won't force you to do this, $NM..."), { { "S7MBC3", 20, 0, 0, 0 }, NONE } },
