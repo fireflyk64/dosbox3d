@@ -25,6 +25,10 @@ struct PrivAddedShip {
     // appearance's own, SKELETON.IFF's, are a display no player saw: the user, "The two bolt mounts need to be
     // pulled together too so they touch the stiletto wings").  A mount of -1 ends them.
     struct Mark { int mount, x, y; } marks[4];
+    // Its missile launcher's mount as the appearance has it (SKELETON.IFF's, and its type's file) and the number it
+    // is given here: one the hull's upgrade screen can mount a launcher on (the Centurion's are 2 and 3; the game's
+    // Stiletto has its one at 0, which no screen offers)
+    int launcherWas, launcher;
     // What the dealers do not sell it beyond what they do not sell its hull (LIMITS.IFF's list of item numbers, the
     // equipment list's: 0x2C the tail turret, 0x2F-0x31 shield generators 3-5, 0x3E-0x40 engine upgrades 3-5); 0 ends.
     Bit8u notSold[8];
@@ -57,7 +61,10 @@ enum {
     kShipsSaleSame = 0x0CE2,        // ovr286:0CE2: its "is that the hull you own?" (AL the hull byte, against the argument)
     kShipsSalePrice = 0x0CAC,       // ovr286:0CAC: the end of ovr286:0C4F(hull), a hull's price ([BP-4])
     kShipsSaleAccept = 0x1018,      // ovr286:1018: the offer accepted (the hull byte written next)
-    kShipsSaleEnd = 0x1194          // ovr286:1194: the sale's end
+    kShipsSaleEnd = 0x1194,         // ovr286:1194: the sale's end
+    kShipsBayPlace = 0x14BA,        // ovr287:14BA: the upgrade bay's "may what is in hand go on this place?"
+    kShipsBayCount = 0x1F8D,        // ovr287:1F8D: the places counted (ds:09A4), before one is asked for
+    kShipsBayDone = 0x31E7          // ovr287:31E7: back in the purchase (ovr287:3186) from the mounting
 };
 bool priv_ships_hook(Bit16u ip, Bit16u codeSeg, Bit16u loadSeg);
 

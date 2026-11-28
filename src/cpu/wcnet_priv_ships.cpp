@@ -44,7 +44,7 @@ namespace {
 
 const PrivAddedShip kShips[] = {
     // id  name        appearance   type        cockpit    hull  scene ship  hold  more
-    { 1,  "Stiletto", "STILETTO",  "STILTYPE", "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } },
+    { 1,  "Stiletto", "STILETTO",  "STILTYPE", "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } }, 0, 2,
       { 0x2C, 0x2F, 0x3E, 0 },        // (the game's own Stiletto: the generators of engine upgrade 2, shield generator 2's 200)
       500000, "credits" },            // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
 };
@@ -206,6 +206,29 @@ bool skeleton_with_marks(const PrivAddedShip &ship, const std::vector<Bit8u> &ap
             d[i + 19] = (Bit8u)ship.marks[k].y; d[i + 20] = (Bit8u)(ship.marks[k].y >> 8);
             any = true;
         }
+    }
+    // the launcher's mount renumbered (FORM LNCH's own POSG, before FORM GUID)
+    bool launchers = false;
+    for (size_t i = at + 4; i + 9 <= end; i++) {
+        if (!memcmp(&d[i], "LNCH", 4)) launchers = true;
+        if (!memcmp(&d[i], "GUID", 4)) break;
+        if (!launchers || memcmp(&d[i], posg, 8)) continue;
+        if (d[i + 8] == ship.launcherWas && ship.launcher != ship.launcherWas) { d[i + 8] = (Bit8u)ship.launcher; any = true; }
+    }
+    return any;
+}
+
+// TYPES\<type>.IFF, the game's own ship of the appearance: its launchers (FORM WEAP's LNCH: a kind, a mount, two
+// zeros each) on the renumbered mount, as the skeleton now has it.
+bool type_with_launcher(const PrivAddedShip &ship, std::vector<Bit8u> *type) {
+    std::vector<Bit8u> &d = *type;
+    bool any = false;
+    for (size_t i = 12; i + 8 <= d.size(); i++) {
+        if (memcmp(&d[i], "LNCH", 4)) continue;
+        const Bit32u n = get32be(&d[i + 4]);
+        if (n > d.size() - i - 8 || (n & 3)) return false;
+        for (Bit32u k = 0; k < n; k += 4) if (d[i + 8 + k + 1] == ship.launcherWas) { d[i + 8 + k + 1] = (Bit8u)ship.launcher; any = true; }
+        break;
     }
     return any;
 }
@@ -392,6 +415,7 @@ void tre_build() {
         if (priv_ship_appearance(kShips[i], real_file, &out)) tre_add(tre_name("APPEARNC", (std::string(kShips[i].appearance) + ".IFF").c_str()), out);
         else real_file(tre_name("APPEARNC", (std::string(kShips[i].appearance) + ".IFF").c_str()), &out);
         if (real_file(tre_name("OPTIONS", "LIMITS.IFF"), &in) && limits_for_ship(kShips[i], in, &pak)) tre_add(tre_name("OPTIONS", "LIMITS.IFF"), in, kShips[i].id, &pak);
+        if (real_file(tre_name("TYPES", (std::string(kShips[i].type) + ".IFF").c_str()), &in) && type_with_launcher(kShips[i], &in)) tre_add(tre_name("TYPES", (std::string(kShips[i].type) + ".IFF").c_str()), in);
         if (skel.empty()) real_file(tre_name("APPEARNC", "SKELETON.IFF"), &skel);
         if (!skel.empty() && skeleton_with_marks(kShips[i], out, &skel)) skelChanged = true;
     }
@@ -508,6 +532,7 @@ bool priv_tre_read(Bit16u entry, Bit8u *data, Bit16u *amount) {
             const Bit32u in = p - a.at;
             if (n > a.data.size() - in) n = (Bit32u)a.data.size() - in;
             const PrivAddedShip *owner = a.forShip ? priv_added_ship() : 0;
+            if (a.forShip && in == 0 && getenv("PRIVSHIPLOG")) wclog(1, "Privateer: added ships: %s read as %s", a.name.c_str(), owner && owner->id == a.forShip ? owner->name : "the game's");
             memcpy(data + done, owner && owner->id == a.forShip ? &a.own[in] : &a.data[in], n);
         }
         done += n;
@@ -595,6 +620,8 @@ void hold_end() {
 // "buyfight", 0911 "cargo", 0917 "toopoor", 091F "samefght", the Centurion's) are written over with the ship's own
 // until the routine's end, the price is the ship's, and "the same" means the same SHIP: a Centurion's owner is sold a
 // Stiletto, a Stiletto's owner a Centurion (its value is its price, as the game values its own).
+bool g_bayFull = false;     // the upgrade bay found no place of the added ship for what was picked up
+enum { kItemLauncher = 0x32, kItemTractor = 0x34 };     // (the dealer's item numbers: guns below, the launchers and the tractor beam)
 const Bit16u kSaleNames[4] = { 0x08F8, 0x0911, 0x0917, 0x091F };
 const char *const kSaleOwn[4] = { "buyfight", "cargo", "toopoor", "samefght" };
 
@@ -743,6 +770,54 @@ bool priv_ships_hook(Bit16u ip, Bit16u codeSeg, Bit16u loadSeg) {
         static const Bit8u code[] = { 0x5F, 0x5E, 0xC9, 0xCB };
         if (!g_sale.active || !code_is(code, sizeof(code))) return false;
         sale_end();
+        return true;
+    }
+    case kShipsBayPlace: {
+        // The upgrade bay (ovr287:13E1) offers what is in hand every place of the HULL's bay: a record each (the
+        // mount, what is on it, buying or selling), [BP+0E] the item in hand and [BP-0B] whether this place will do (the turret's
+        // places need the turret).  A Stiletto would be offered the Centurion's four gun mounts and both its
+        // launcher mounts, and a gun on a mount the ship has not is the game's error 6482 at the next launch.  At
+        // the test (cmp byte [bp-0B],0 / jnz): a place the added ship has not will not do.
+        static const Bit8u code[] = { 0x80, 0x7E, 0xF5, 0x00, 0x75, 0x03, 0xE9 };
+        if (!code_is(code, sizeof(code))) return false;
+        const PrivAddedShip *s = priv_added_ship();
+        if (!s) return true;
+        const PhysPt ss_ = SegPhys(ss), ds_ = SegPhys(ds);
+        const Bit16u rec = mem_readw(ds_ + (Bit16u)(mem_readw(ss_ + (Bit16u)(reg_bp - 2)) + 2));
+        const int mount = mem_readb(ds_ + rec), item = mem_readb(ss_ + (Bit16u)(reg_bp + 0x0E));
+        bool has = true;
+        if (item < kItemLauncher) {                     // (a gun)
+            has = false;
+            for (int m = 0; m < 4 && s->marks[m].mount >= 0; m++) if (s->marks[m].mount == mount) has = true;
+        } else if (item <= kItemTractor) {              // (a missile or torpedo launcher, a tractor beam)
+            has = mount == s->launcher;
+        }
+        if (getenv("PRIVSHIPLOG")) wclog(1, "Privateer: added ships: the bay's place: mount %d for item %02X, will do %d: %s", mount, item,
+                                         mem_readb(ss_ + (Bit16u)(reg_bp - 0x0B)), has ? "the ship's" : "not the ship's");
+        if (!has) mem_writeb(ss_ + (Bit16u)(reg_bp - 0x0B), 0);
+        return true;
+    }
+    case kShipsBayCount: {
+        // No place left (the game itself asked only whether the HULL had room, ovr287:28A1): the mounting is left the
+        // way a cancelled one is (ovr287:1FB6), and the purchase told so below.
+        static const Bit8u code[] = { 0x80, 0x3E, 0xA4, 0x09, 0x01, 0x76 };
+        if (!code_is(code, sizeof(code))) return false;
+        g_bayFull = false;
+        if (!priv_added_ship() || priv_r8(0x09A4) != 0) return true;
+        static const Bit8u cancel[] = { 0xFF, 0x76, 0x08, 0x0E, 0xE8 };            // (push [bp+8] / push cs / call ovr287:1880)
+        for (size_t i = 0; i < sizeof(cancel); i++) if (mem_readb(SegPhys(cs) + 0x1FB6 + i) != cancel[i]) return true;
+        g_bayFull = true;
+        reg_ip = 0x1FB6;
+        return true;
+    }
+    case kShipsBayDone: {
+        // ... and the purchase returns what it does when the hull has no room (2: the dealer's "NO ROOM ON SHIP")
+        static const Bit8u code[] = { 0x88, 0x46, 0xFF, 0x80, 0x7E, 0xFF, 0x00, 0x75 };
+        static const Bit8u full[] = { 0xB0, 0x02, 0x5F, 0x5E, 0xC9, 0xCB };         // (ovr287:31CD: mov al,2 / pop di / pop si / leave / retf)
+        if (!g_bayFull || !code_is(code, sizeof(code))) return false;
+        g_bayFull = false;
+        for (size_t i = 0; i < sizeof(full); i++) if (mem_readb(SegPhys(cs) + 0x31CD + i) != full[i]) return true;
+        reg_ip = 0x31CD;
         return true;
     }
     case kShipsHoldPlainEnd:

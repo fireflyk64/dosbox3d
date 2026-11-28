@@ -7,7 +7,8 @@ The saved game must be a Centurion's (the hull the Stiletto is flown on).  Its s
 REAL, PLAYTYPE.IFF's bytes) is given what a Stiletto can carry:
 - two guns, on the appearance's own mounts 2 and 3 (SKELETON.IFF's: any other mount is the game's error 6482);
   types by GUNS.IFF's order (0 Neutron, 1 Meson, 2 Ionic, 3 Mass, 4 Particle, 5 Laser, 6 Plasma, 7 Tachyon);
-- one missile launcher, on mount 0, with its missiles (type:count; 1 Torpedo, 2 Heat Seeker, 3 FF, 4 Dumbfire, 5 IR);
+- one missile launcher, on mount 2 (the game's Stiletto has it at 0: the layer renumbers it, the upgrade screen
+  mounts launchers on 2), with its missiles (type:count; 1 Torpedo, 2 Heat Seeker, 3 FF, 4 Dumbfire, 5 IR);
 - no turret;
 - the engine level (LIMITS.IFF's generators: level 2 is two of generator 1, one each of 3, 4 and 5);
 - shield generator 2 (SHIELDS.IFF's 0x5B: 200 a side, what the game's own Stiletto carries);
@@ -55,7 +56,7 @@ def stiletto(sav, guns=(7, 7), missiles=(5, 10), engine=2, shield=0x5B, hold=20,
         kind = real[o + 8:o + 12] if t == b"FORM" else t
         if kind == b"WEAP":
             w = chunk(b"GUNS", b"".join(bytes([g, m, 0, 0]) for g, m in zip(guns, (2, 3))))
-            if missiles: w += chunk(b"LNCH", bytes([0x32, 0, 0, 0])) + chunk(b"MISL", bytes([missiles[0]]) + struct.pack("<H", missiles[1]))
+            if missiles: w += chunk(b"LNCH", bytes([0x32, 2, 0, 0])) + chunk(b"MISL", bytes([missiles[0]]) + struct.pack("<H", missiles[1]))
             whole = form(b"WEAP", w)
         elif kind == b"ENER":
             gens = ENGINES[engine]
