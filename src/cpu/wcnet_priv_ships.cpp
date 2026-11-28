@@ -47,7 +47,7 @@ const PrivAddedShip kShips[] = {
     { 1,  "Stiletto", "STILETTO",  "STILTYPE", "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } },
       { { 0, 2 }, { -1, 0 } },
       { 0x2C, 0x2F, 0x3E, 0 },        // (the game's own Stiletto: the generators of engine upgrade 2, shield generator 2's 200)
-      500000, "credits", -1, -1, -1, 10, 1, 34, 12 },    // (the user: "Stiletto needs to be more to the right in the upgrade bay")    // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
+      500000, "credits", -1, -1, -1, 9, 1, 34, 10, 12 },    // (the user: "Stiletto needs to be more to the right in the upgrade bay", then "should rotate to camera by one picture so the tip of the nose isn't obscured": view 9, not 10)    // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
     // The Demon (the user: "we may want a place to insert the demon as well ... then let's move onto the demon"): the
     // game's own has four guns (mounts 2 and 3 by the nose, 1 and 4 on the wings), two missile launchers (1 and 4)
     // and a torpedo launcher (0), the Stiletto's generators and shields, 650 kps.  Sold by the bartender of Tuck's (the user: "Maybe you can get the demon from a Barman in
@@ -56,7 +56,7 @@ const PrivAddedShip kShips[] = {
       { { 2, -6, -10 }, { 3, 6, -10 }, { 1, -18, 0 }, { 4, 18, 0 }, { -1, 0, 0 } },
       { { 1, 2 }, { 4, 3 }, { -1, 0 } },
       { 0x2C, 0x2F, 0x3E, 0 },
-      350000, 0, 0x36, 0xD7, 0xD9, 10, 1, 0, 12 },
+      350000, 0, 0x36, 0xD7, 0xD9, 10, 1, 0, 10, 12 },
 };
 const int kShipCount = (int)(sizeof(kShips) / sizeof(kShips[0]));
 

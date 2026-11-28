@@ -848,12 +848,12 @@ bool pad_ship(const PrivAddedShip &ship, const std::vector<int> &src, int sw, in
 bool priv_ship_pads(const PrivAddedShip &ship, PrivTreFile file, const std::vector<Bit8u> &options, std::vector<Bit8u> *out) {
     const Bytes &d = options;
     Bytes space, pals;
-    if (ship.bayView < 0 || d.size() < 24 || memcmp(&d[0], "FORM", 4) || memcmp(&d[8], "OPTSTABL", 8)) return false;
+    if (ship.padView < 0 || d.size() < 24 || memcmp(&d[0], "FORM", 4) || memcmp(&d[8], "OPTSTABL", 8)) return false;
     const Bit32u rows = be32(&d[16]) / 4;
     if (20 + rows * 4 > d.size() || !file("..\\..\\DATA\\PALETTE\\SPACE.PAL", &space) || space.size() < 4 + 768 || !file("..\\..\\DATA\\OPTIONS\\OPTPALS.PAK", &pals)) return false;
     std::vector<int> src;
     int sw, sh;
-    if (!appearance_view(file, ship.appearance, ship.bayView, ship.bayMirror != 0, &src, &sw, &sh)) return false;
+    if (!appearance_view(file, ship.appearance, ship.padView, ship.bayMirror != 0, &src, &sw, &sh)) return false;
     Bytes body;
     std::vector<Bit32u> table;
     int pads = 0;
