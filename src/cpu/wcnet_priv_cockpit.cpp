@@ -239,8 +239,8 @@ bool view_canvas(const Chunk &cockpit, const char *view, std::vector<int> *canva
     return true;
 }
 
-bool compose(const PrivCut *cuts, size_t count, const std::vector<int> src[3], std::vector<int> *out) {
-    out->assign(W * H, kNone);
+// (onto what `out` holds)
+bool compose_onto(const PrivCut *cuts, size_t count, const std::vector<int> src[3], std::vector<int> *out) {
     for (size_t k = 0; k < count; k++) {
         const PrivCut &c = cuts[k];
         if (c.src < 0 || c.src > 2) return false;
@@ -265,6 +265,11 @@ bool compose(const PrivCut *cuts, size_t count, const std::vector<int> src[3], s
         }
     }
     return true;
+}
+
+bool compose(const PrivCut *cuts, size_t count, const std::vector<int> src[3], std::vector<int> *out) {
+    out->assign(W * H, kNone);
+    return compose_onto(cuts, count, src, out);
 }
 
 // A view's template: the spans of every row where the picture has no pixel.
@@ -327,7 +332,8 @@ Chunk amfd(const int r[4], int number, int letter) {
     return f;
 }
 
-bool recipe_cockpit(PrivTreFile file, const PrivCut *cuts, size_t cutCount, const PrivCockpitLayout &L, Bytes *iff, Bytes *pak) {
+// (backCuts: cuts made of the Centurion's view behind, which is then drawn backDown rows lower; none: that view as it is)
+bool recipe_cockpit(PrivTreFile file, const PrivCut *cuts, size_t cutCount, const PrivCut *backCuts, size_t backCount, int backDown, const PrivCockpitLayout &L, Bytes *iff, Bytes *pak) {
     static const char *const names[3] = { "FIGHTCK", "TUGCK", "CLUNKCK" };
     Chunk ck[3];
     std::vector<int> src[3];
@@ -380,7 +386,8 @@ bool recipe_cockpit(PrivTreFile file, const PrivCut *cuts, size_t cutCount, cons
                 Chunk *info = k.find("INFO");
                 if (!info || info->data.size() < 4) return false;
                 Bytes b; add16(b, r[0] - hx); add16(b, r[1] - hy);
-                b.insert(b.end(), info->data.begin() + 4, info->data.end());
+                if (r[2]) b.resize(info->data.size(), 0);                   // (the number without its word: "SET ", "KPS " made empty)
+                else b.insert(b.end(), info->data.begin() + 4, info->data.end());
                 info->data = b;
             }
             hsft.kids.push_back(k);
@@ -422,10 +429,25 @@ bool recipe_cockpit(PrivTreFile file, const PrivCut *cuts, size_t cutCount, cons
         dial.kids.push_back(au);
     }
 
+    Chunk behind = *back;
+    if (backCount) {
+        std::vector<int> bc;
+        if (!view_canvas(cent, "BACK", &bc) || !compose_onto(backCuts, backCount, src, &bc) || backDown < 0 || backDown >= H) return false;
+        bc.insert(bc.begin(), (size_t)backDown * W, kNone);
+        bc.resize(W * H);
+        static const int ext[4] = { W - 1, 0, 0, H - 1 };
+        Bytes shape, pack, tplt;
+        shape_encode(bc, W, H, 0, 0, ext, &shape);
+        pack_build(shape, &pack);
+        tplt_build(bc, &tplt);
+        behind = form("BACK");
+        behind.kids.push_back(leaf("SHAP", pack));
+        behind.kids.push_back(leaf("TPLT", tplt));
+    }
     Chunk root = form("COCK");
     root.kids.push_back(frnt);
     root.kids.push_back(*rite);
-    root.kids.push_back(*back);
+    root.kids.push_back(behind);
     root.kids.push_back(*left);
     Bytes offs; add16(offs, L.sight[0]); add16(offs, L.sight[1]);
     root.kids.push_back(leaf("OFFS", offs));
@@ -466,9 +488,9 @@ bool priv_ship_cockpit(const PrivAddedShip &ship, PrivTreFile file, std::vector<
         if (read_host(std::string(dir) + "/" + ship.cockpit + ".IFF", iff) && read_host(std::string(dir) + "/" + ship.cockpit + ".PAK", pak)) return true;
     }
     if (!strcmp(ship.cockpit, "STILCK")) {
-        if (!recipe_cockpit(file, kStilettoCuts, sizeof(kStilettoCuts) / sizeof(kStilettoCuts[0]), kStilettoLayout, iff, pak)) return false;
+        if (!recipe_cockpit(file, kStilettoCuts, sizeof(kStilettoCuts) / sizeof(kStilettoCuts[0]), kStilettoBack, sizeof(kStilettoBack) / sizeof(kStilettoBack[0]), kStilettoBackDown, kStilettoLayout, iff, pak)) return false;
     } else if (!strcmp(ship.cockpit, "DEMNCK")) {
-        if (!recipe_cockpit(file, kDemonCuts, sizeof(kDemonCuts) / sizeof(kDemonCuts[0]), kDemonLayout, iff, pak)) return false;
+        if (!recipe_cockpit(file, kDemonCuts, sizeof(kDemonCuts) / sizeof(kDemonCuts[0]), 0, 0, 0, kDemonLayout, iff, pak)) return false;
     } else {
         return false;
     }
@@ -715,9 +737,15 @@ bool priv_ship_scene(const PrivAddedShip &ship, PrivTreFile file, const std::vec
         for (size_t i = 0; i < own[f].pix.size(); i++) used[own[f].pix[i].c] = true;
     }
     used[0] = false;
-    std::vector<int> src;
-    int sw, sh;
-    if (!appearance_view(file, ship.appearance, ship.sceneView, landing, &src, &sw, &sh)) return false;
+    // The ship turns as it passes, as the game's own do (the user: "The ship should rotate as it lands or launches
+    // like the others do").  The game's frames: taking off, it comes at the camera's left, passes nose to the right
+    // and leaves tail on; landing, it passes nose to the left and leaves.  Ours: the five views between nose-on and
+    // tail-on of the ring that `sceneView` begins (nose-on its first), by the frame's place in the scene.
+    static const Bit8u kTakeoff[30] = { 1,1,1,1,1,1,1,1,1,1, 2,2,2,2, 3,3,3,3,3, 4,4,4,4, 5,5,5,5,5,5,5 };
+    static const Bit8u kLanding[30] = { 3,3,3,3,3,3,3,3,3, 4,4,4,4,4, 5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5 };
+    std::vector<int> views[6];
+    int vw[6], vh[6];
+    for (int v = 1; v <= 5; v++) if (!appearance_view(file, ship.appearance, ship.sceneView + v, landing, &views[v], &vw[v], &vh[v])) return false;
     int nearest[256];
     for (int c0 = 0; c0 < 256; c0++) {
         const int R = fly[3 * c0], G = fly[3 * c0 + 1], B = fly[3 * c0 + 2];
@@ -740,8 +768,16 @@ bool priv_ship_scene(const PrivAddedShip &ship, PrivTreFile file, const std::vec
             if (p.y < y0) y0 = p.y;
             if (p.y > y1) y1 = p.y;
         }
-        const double scale = (double)(x1 - x0 + 1) / sw;
-        const int dw = x1 - x0 + 1, dh = (int)(sh * scale + 0.5) > 0 ? (int)(sh * scale + 0.5) : 1;
+        const size_t step = f * 30 / own.size();
+        const int v = landing ? kLanding[step] : kTakeoff[step];
+        const std::vector<int> &src = views[v];
+        const int sw = vw[v], sh = vh[v];
+        // as wide as the hull's ship is in the frame, but never drawn more than a quarter larger than it was
+        // painted (a short ship's side view as long as the Centurion's is all blocks)
+        double scale = (double)(x1 - x0 + 1) / sw;
+        if (scale > 1.25) scale = 1.25;
+        const int dw = (int)(sw * scale + 0.5) > 0 ? (int)(sw * scale + 0.5) : 1, dh = (int)(sh * scale + 0.5) > 0 ? (int)(sh * scale + 0.5) : 1;
+        x0 = (x0 + x1) / 2 - dw / 2;
         const int top = (y0 + y1) / 2 - dh / 2;
         // a canvas about the frame's box, with room above and below it
         const int cw = dw, ch = dh, ox = -x0, oy = -top;
@@ -767,6 +803,7 @@ bool priv_ship_scene(const PrivAddedShip &ship, PrivTreFile file, const std::vec
     add32(*out, total);
     for (size_t i = 0; i < parts.size(); i++) { add32(*out, place | (le32(&pak[4 + 4 * i]) & 0xFF000000u)); place += (Bit32u)parts[i].size(); }
     for (size_t i = 0; i < parts.size(); i++) out->insert(out->end(), parts[i].begin(), parts[i].end());
+    dump_host(std::string(ship.name) + (landing ? "-LANDINGS.PAK" : "-TAKEOFFS.PAK"), *out);
     return true;
 }
 

@@ -2229,12 +2229,46 @@ scene's palette; each is a file the ship's owner reads in the place of the game'
   ship and standing where it stands; at Perry (palette 0x1F) 0.86 of that and 16 left, 7 up, on the hatch.  The file
   is written again whole (the records move, the table with them).
 - *The takeoff and landing scenes* (`priv_ship_scene`): `MIDGAMES\TAKEOFFS.PAK` / `LANDINGS.PAK`: the palette, a
-  small picture, and per scene ship (SHIP2CHR's number; entries 2-5) 30 frames of it flying past.  View 12 (turned
-  over for the landing), as wide as the hull's ship in each frame.
+  small picture, and per scene ship (SHIP2CHR's number; entries 2-5) 30 frames of it flying past.  The ship turns
+  as the game's own do (the user, 2026-11-28: "The ship should rotate as it lands or launches like the others do"):
+  views 9-13 of the ring from above (front quarter, side, rear quarter) by the frame's place in the scene -- taking
+  off 10, 4, 5, 4 and 7 frames of them, landing (turned over) 9 of the side, 5 and 16 of the rear ones; as wide as
+  the hull's ship in each frame, but never more than a quarter larger than painted.  `WCPRIVCKDUMP=<dir>` writes
+  what was made (`<Ship>-TAKEOFFS.PAK`, `-LANDINGS.PAK`).
+
+**Changes of 2026-11-28** (the user's, after playing the deployed build).
+- *Terrell's offer is in his own voice, and a second click.*  "People don't like Terrell offering with the ship
+  dealer voice.  Most people esc through the credits then get an accept reject thing...that will be weird.  maybe
+  if you click on him again after the credits played once."  The room's script (`gameflow_chunks`): the run the
+  credits are in (`00 57 29 0a 00 58 29 06 24 17`, in both branches of the plot) becomes `09 41 <run> 06 41 1F 00
+  1E 12 20 00` -- with room flag 0x41 clear the credits play and set it; set, the click is the sale.  (0x09 n: what
+  follows runs if flag n is CLEAR; 0x0A n: if set; 0x06 n sets, 0x07 n clears; a byte each at the room's +0x8B, 256
+  of them, in the saved game's record 4 from +0x0C; the game's rooms use 0x00-0x0B.  An added ship's is 0x40 + its
+  id.)  A saved game from before plays the credits once more first.
+- *The script* is the user's: Burrows "What exactly do you want from me?"; Terrell "I have an armed ship for you.
+  It's the best ship in the fleet.  Three hundred thousand.  So... what'll it be?" -- the price is 300,000 now.
+  Words he never says are built of sounds of his (`wcnet_priv_convs.inc`: a piece's gap below 0 cross-fades it into
+  the next): "ship" = sh of "shot" + i of "kick" + p of "help" (the "keep" the user named ends unreleased before
+  "running": a recogniser heard "chick"); "three" = thr of "throw" + ee of "we"; "hundred" = h of "help" + un of
+  "Nav one" + dr of "drew" + ed of "suspected".  "armed" needs 90 ms of quiet before "ship" (else "arm chip").  The
+  cuts were found on spectrograms and tried through faster-whisper until each line was heard as written; then heard
+  the same from the game's own output (WCLAB): the offer, Accept ("Deal me in." / "Excellent."), Reject, and the
+  cargo's ("And...my cargo?" / "Then think fast." / "Now if you would leave me alone...").  Too poor ("You don't
+  have three hundred thousand") was heard from the cut alone: at this price any ship's trade-in but a Tarsus's
+  covers it.
+- *The Stiletto's speeds* are two numbers in the box under the hoop's top ("just 2 numbers would be fine"): SSPD's
+  and ASPD's words ("SET ", "KPS ") made empty, the box open -- the HUD's texts and the DIAL's pictures are drawn
+  UNDER the cockpit's picture, so a readout shows only where the picture has no pixel.  The autopilot's light is
+  on the console between the legs, in an opening of its own size.
+- *The Stiletto's view behind* ("it shouldn't have a door... another arch only and just space", "shouldn't have
+  engines ... control panels below ... the illusion you're looking at high 6 o clock"): the Centurion's BACK with
+  everything inside its hoop and outside it cleared but the two side consoles, drawn 30 rows lower
+  (`kStilettoBack`, made by stilcock.py from a circle and two polygons).
 
 **Open.**
 - What the Demon's dealers sell it (the Stiletto's list for now: engine 2, shield 2, no turret).
 - A crew's room with an added ship as the pilot's ship (the gunner's game would fly it as a Centurion: unguarded).
 - The weapons picture sits a little low over the display's text.
-- The sale's conversation names nothing by voice; the new ship's lack of armour is the game's way but a surprise
+- The Demon costs 350,000, more than the Stiletto's new 300,000 (the user's earlier "350,000 less than stiletto"): theirs to rule.
+- The Demon's sale's conversation names nothing by voice; the new ship's lack of armour is the game's way but a surprise
   at a base with pirates about.

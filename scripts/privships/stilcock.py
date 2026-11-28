@@ -100,7 +100,11 @@ while x < 320:
     n = 1
     while x + n < 320 and hoop_drop(x + n) == hoop_drop(x): n += 1
     copy(C, x, 0, n, 102, x, hoop_drop(x)); x += n
-fill(C, *DARK, 135, 25 + HOOP_DOWN, 56, 7)
+# The box under the hoop's top (the Centurion's energy gauge's): the two speeds are read in it, as numbers alone (the
+# user: "it would be nice if the SET and SPEED KPS indicators appeared at the top gap display that is blank", and "We
+# don't want to widen it...we can just have the numbers and forget the words SET and KPS").  Open, because the speeds
+# are drawn under the cockpit's picture, as the Centurion's own are.
+clear(135, 25 + HOOP_DOWN, 56, 7)
 #STUBS      # (the struts' stubs over the VDUs' tops)
 # 2. what shows of the dashboard beside and under the VDUs: the Centurion's own
 copy(C, 0, 104, 89, 96, 0, 104)
@@ -126,12 +130,42 @@ for rx in (RADAR[0] - RIB, SHLD[0] - RIB):
     put(C, 115, 116, RIB, INH, rx, INY)
 FUEL = (INX + 1, INY + 11, 13, 24)      # upright bars: the Orion's fuel gauge, the Tarsus's energy gauge
 ENER = (INX + 15, INY + 11, 13, 24)
-# 6. over the housing, against space: the autopilot's light, and the speeds as the Centurion shows them, on the
-#    glass (the user: "The gray box around the speed readouts looks a bit weird. Maybe let those readouts be
-#    floating directly against the background")
-AUTO = (147, by - 7, 26, 5)
-SET = (96, by - 9, 0, 0)                # (their text's left end and top)
-KPS = (184, by - 9, 0, 0)
+# 6. the speeds in the box under the hoop's top; the autopilot's light on the console between the legs, on a dark
+#    plate (the user: "maybe we could put auto in the console at the bottom to look nicer")
+SET = (140, 26 + HOOP_DOWN, 1, 0)       # (their text's left end and top; the third 1: the number without its word)
+KPS = (169, 26 + HOOP_DOWN, 1, 0)
+AUTO = (156, 192, 26, 5)
+fill(C, *DARK, AUTO[0] - 1, AUTO[1] - 1, AUTO[2] + 2, AUTO[3] + 2)
+clear(*AUTO)                            # (the light is drawn under the cockpit's picture, as the speeds are)
+
+# 7. the view behind: the Centurion's with only its hoop and the two side consoles kept, against space, and lower in
+#    the view (the user: "a better back view for the stiletto. it shouldn't have a door... maybe another arch only
+#    and just space", then "the back view shouldn't have engines. Ideally it would have the back of the chair and
+#    control panels below but maybe we can give the illusion you're looking at high 6 o clock").  Rows cleared:
+#    inside the hoop's inner circle and outside its outer one, but for the consoles; then the whole BACK_DOWN lower.
+BACK = []
+BACK_CIRCLE = (160, 184, 112, 129)      # the hoop's centre, its inner and outer radius
+BACK_LEFT = [(0, 113), (36, 117), (50, 124), (67, 164), (40, 200), (0, 200)]            # the consoles
+BACK_RIGHT = [(320, 121), (283, 117), (269, 124), (252, 164), (279, 200), (320, 200)]
+BACK_DOWN = 30
+def _inside(poly, x, y):
+    c = False
+    for i in range(len(poly)):
+        (x1, y1), (x2, y2) = poly[i], poly[i - 1]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1): c = not c
+    return c
+def _hole(x, y):
+    cx, cy, r, ro = BACK_CIRCLE
+    d = (x - cx) ** 2 + (y - cy) ** 2
+    return (d < r * r or d > ro * ro) and not _inside(BACK_LEFT, x + .5, y + .5) and not _inside(BACK_RIGHT, x + .5, y + .5)
+for y in range(H):
+    x = 0
+    while x < W:
+        if _hole(x, y):
+            x0 = x
+            while x < W and _hole(x, y): x += 1
+            BACK.append((CLEAR, 0, 0, 0, x - x0, 1, x0, y))
+        else: x += 1
 
 LAYOUT = dict(
     vdu_left=(VDU_LX + 10, VDU_Y + 10, VDU_LX + 84, VDU_Y + 74),
@@ -169,6 +203,30 @@ def window(pix):
 def rect(x, y, w, h): return struct.pack('<4h', x, y, x + w, y + h)
 def moved(info, dx, dy): return struct.pack('<4h', *[v + (dx, dy)[i & 1] for i, v in enumerate(struct.unpack('<4h', info))])
 
+def spans_of(win):
+    spans = []
+    for y in range(H):
+        x = 0
+        while x < W:
+            if (x, y) in win:
+                x0 = x
+                while x < W and (x, y) in win: x += 1
+                spans.append((x0, y, x - x0))
+            else: x += 1
+    return spans
+
+def back_pixels(tre):
+    pix = dict((k, v) for k, v in view_pixels(tre, 'FIGHTCK', 'BACK').items() if 0 <= k[0] < W and 0 <= k[1] < H)
+    for op, s, sx, sy, w, h, dx, dy in BACK:
+        for i in range(w): pix.pop((dx + i, dy), None)
+    return dict(((x, y + BACK_DOWN), c) for (x, y), c in pix.items() if y + BACK_DOWN < H)
+
+def back_view(tre):
+    pix = back_pixels(tre); spans = spans_of(window(pix))
+    return Chunk('FORM', form='BACK', kids=[
+        Chunk('SHAP', pack_build([shape_encode((W - 1, 0, 0, H - 1), pix)])),
+        Chunk('TPLT', tplt_encode((2, W, max(s[1] for s in spans) + 1, 0, 0), spans))])
+
 def cockpit_iff(tre):
     """The Stiletto's cockpit file: the forward view made by the recipe, the other views the Centurion's, the
     instruments from the game's own cockpits at LAYOUT's places."""
@@ -199,7 +257,7 @@ def cockpit_iff(tre):
     for k in chud_c.find('HSFT').kids:
         if k.form in ('SSPD', 'ASPD'):
             r = L['set'] if k.form == 'SSPD' else L['kps']
-            k = Chunk('FORM', form=k.form, kids=[Chunk('INFO', struct.pack('<2h', r[0] - hx, r[1] - hy) + k.find('INFO').data[4:])])
+            k = Chunk('FORM', form=k.form, kids=[Chunk('INFO', struct.pack('<2h', r[0] - hx, r[1] - hy) + (bytes(len(k.find('INFO').data) - 4) if r[2] else k.find('INFO').data[4:]))])
         hsft.kids.append(k)
     chud = Chunk('FORM', form='CHUD', kids=[Chunk('HINF', hinf), hsft, chud_c.find('DAMG')])
     def centre(info): x1, y1, x2, y2 = struct.unpack('<4h', info); return (x1 + x2) // 2, (y1 + y2) // 2
@@ -219,7 +277,7 @@ def cockpit_iff(tre):
         Chunk('FORM', form='ENER', kids=[gauge(clunk.find('DIAL', 'ENER', 'VIEW'), L['energy'])]),
         Chunk('FORM', form='FUEL', kids=[gauge(tug.find('DIAL', 'FUEL', 'VIEW'), L['fuel'])]),
         Chunk('FORM', form='AUTO', kids=[Chunk('INFO', moved(auto.find('INFO').data, ar[0] + ar[2] // 2 - acx, ar[1] + ar[3] // 2 - acy)), auto.find('SHAP')])])
-    root = Chunk('FORM', form='COCK', kids=[frnt, cent.find('RITE'), cent.find('BACK'), cent.find('LEFT'),
+    root = Chunk('FORM', form='COCK', kids=[frnt, cent.find('RITE'), back_view(tre), cent.find('LEFT'),
                                            Chunk('OFFS', struct.pack('<2h', *SIGHT)), cent.find('FONT'),
                                            cmfd, chud, dial, cent.find(('DAMG', 0)), cent.find('CDMG')])
     return iff_build(root)
@@ -256,6 +314,11 @@ def header():
            'static const PrivCut kStilettoCuts[] = {']
     for c in RECIPE: out.append('    { %d, %d, %d, %d, %d, %d, %d, %d },' % c)
     out.append('};')
+    out.append('// The view behind: cuts made of the Centurion\'s (rows cleared), and how many rows lower it is then drawn')
+    out.append('enum { kStilettoBackDown = %d };' % BACK_DOWN)
+    out.append('static const PrivCut kStilettoBack[] = {')
+    for c in BACK: out.append('    { %d, %d, %d, %d, %d, %d, %d, %d },' % c)
+    out.append('};')
     out.append('static const PrivCockpitLayout kStilettoLayout = {')
     out.append('    { %d, %d, %d, %d }, { %d, %d, %d, %d },     // the left and the right VDU: x1, y1, x2, y2' % (L['vdu_left'] + L['vdu_right']))
     for k in ('radar', 'shield', 'fuel', 'energy', 'set', 'kps', 'auto'):
@@ -279,7 +342,7 @@ if __name__ == '__main__':
         sys.exit(0)
     from PIL import Image, ImageDraw
     tre = tre_load(a[0]); pal = pal_load(tre['PALETTE\\SPACE.PAL'])
-    pix = compose(tre); win = window(pix)
+    pix = back_pixels(tre) if len(a) > 2 and a[2] == 'back' else compose(tre); win = window(pix)
     im = Image.new('RGB', (W, H), (0, 0, 0))
     for (x, y) in win: im.putpixel((x, y), (0, 0, 70))
     for k, r in LAYOUT.items():
