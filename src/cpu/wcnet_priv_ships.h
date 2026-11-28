@@ -37,6 +37,9 @@ struct PrivAddedShip {
     // is offered ("credits": Admiral Terrell's, once the campaign is won; 0: not sold anywhere yet)
     long price;
     const char *soldAfter;
+    // ... or the base (BASES.IFF's number) and the sprite of one of its rooms (GAMEFLOW.IFF's SPRT INFO) whose click
+    // ends with the offer (-1: none): the Demon's is the bartender of Tuck's, the pirate base of the Sherwood system
+    int soldBase, soldSprite, soldSpriteLast;        // (a bar has three sprites for its bartender, 0xD7-0xD9: one is there at a time)
 };
 
 // The ship the player owns, if an added one (0: one of the game's four).

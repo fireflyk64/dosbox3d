@@ -163,7 +163,7 @@ void voc_build(const Bytes &pcm, Bytes *out) {
 // then `gap` milliseconds of quiet.
 struct Piece { const char *conv; int line, from, to, gap; };
 enum { kLine = 0, kAsk = 7, kElse = 5, kEnd = 8 };
-enum Who { kTerrell, kPlayer, kDealer };
+enum Who { kTerrell, kPlayer, kDealer, kBarman, kPlayerBar };
 struct Line {
     int op;
     Who who;
@@ -180,6 +180,9 @@ const Speaker kSpeakers[] = {
     // (the ship dealer's own face is "rand_npc", one of the people of a dealer's room: anywhere else it is the
     // game's error 70C8.  The Merchants' Guild's clerk is a face of his own, with the salesman's voice here.)
     { "merchguy", "mrchcu", { 159, 0, 20, 0 }, 245 },
+    // (a bar's: the bartender is one of the room's people, as in the game's own rumours; the player at the bar)
+    { "rand_npc", "randcu_3", { 159, 0, 9, 0 }, 224 },
+    { "pc", "randcu_2", { 172, 0, 15, 0 }, 160 },
 };
 
 #include "wcnet_priv_convs.inc"

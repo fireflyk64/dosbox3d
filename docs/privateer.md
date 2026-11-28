@@ -1960,7 +1960,7 @@ on a branch in case it causes instability or people don't like it".
 
 **Done in this step:** a saved game's pilot flies a Stiletto, alone or in a room; its cockpit is made at run time.
 **Not yet:** the ships' pictures in the upgrade bay, on the pad and in the launch and landing scenes (those show the
-Centurion), a cockpit of the Demon's own, a place where the Demon is sold (see "Open" below).  Nothing is merged or
+Centurion), a cockpit of the Demon's own (see "Open" below).  Nothing is merged or
 deployed.
 
 Code: `src/cpu/wcnet_priv_ships.cpp` (the table `kShips`, the TRE, the hooks), `src/cpu/wcnet_priv_cockpit.cpp` and
@@ -2113,13 +2113,27 @@ it the game's error 6150 when the ship is destroyed).
 (the game's own mounts 2, 3, 1, 4), two launchers, hold 25.  Its skeleton's gun POSGs are the short kind (9 bytes,
 no marks): the record is written again with the long kind (`skel_chunks`), the table of offsets moved.  It flies
 (225 kps set, its own weapons picture from its target drawing, the four marks); its cockpit is the Stiletto's for
-now and nobody sells it.
+now.
+
+*Its sale* (the user, 2026-11-27: "Maybe you can get the demon from a Barman in Sherwood?  The price can be 350,000
+less than stiletto" -- read as 350,000 credits; the other reading is 150,000, a number in `kShips`).  The Sherwood
+system's base is Tuck's (BASES.IFF's 0x36, a pirate base); in GAMEFLOW.IFF its bar is scene 0x25 and the bartender
+one of three sprites (0xD7-0xD9, each "play the room's rumour"): the sale is added at the end of each one's EFCT
+(`soldBase`, `soldSprite`..`soldSpriteLast`), so it follows his rumour every time.  The script: the bartender (the
+pirate bars' rumours, PIRRUM4-6): "Hey mister, have a seat, the first one's on me." "There's a lot of loot just
+floating around out there waiting to be salvaged." -- the salesman: "Hell of a ship." "Note the racks for four
+guns, two weapons" (the dealer's Centurion line, cut before the turret: it fits a Demon as it is) "Did I mention
+she's a fast ship?" "And it's a steal." the trade-in, the credits left -- the bartender: "So, what'll it be?"
+Accept: "Deal me in." / the pad, the payment / "Just remember me when it's time to tip."  Reject: "I'll take my
+chances on my own." / "No big deal."  Tested with a saved game set at base 0x36 (the pad's concourse at 0.93,
+0.50; the bar 0.93, 0.67; the bartender 0.88, 0.50; the Accept taken once the prompt is up -- the rumour's length
+varies): heard as written, 189,187 credits and a Centurion -> 277,712 and a Demon.
 
 **Open.**
 - The ships' pictures: the upgrade bay (SHIPART.IFF's FORM APPR per hull, and the guns' pictures per mount), the
   pad, the launch and landing scenes (MIDGAMES\TAKEOFFS / LANDINGS: FORM MOVI).  The appearances' own 37 views
   (126 x 101 at most for the Stiletto) are the only art of these ships.
-- The Demon's own cockpit (~/demon_cp has the places), where it is sold and for what, what its dealers sell it.
+- The Demon's own cockpit (~/demon_cp has the places); what its dealers sell it (the Stiletto's list for now).
 - A crew's room with an added ship as the pilot's ship (the gunner's game would fly it as a Centurion: unguarded).
 - The weapons picture sits a little low over the display's text.
 - The sale's conversation names nothing by voice; the new ship's lack of armour is the game's way but a surprise

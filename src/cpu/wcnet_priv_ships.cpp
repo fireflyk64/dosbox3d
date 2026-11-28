@@ -47,16 +47,17 @@ const PrivAddedShip kShips[] = {
     { 1,  "Stiletto", "STILETTO",  "STILTYPE", "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } },
       { { 0, 2 }, { -1, 0 } },
       { 0x2C, 0x2F, 0x3E, 0 },        // (the game's own Stiletto: the generators of engine upgrade 2, shield generator 2's 200)
-      500000, "credits" },            // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
+      500000, "credits", -1, -1, -1 },    // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
     // The Demon (the user: "we may want a place to insert the demon as well ... then let's move onto the demon"): the
     // game's own has four guns (mounts 2 and 3 by the nose, 1 and 4 on the wings), two missile launchers (1 and 4)
-    // and a torpedo launcher (0), the Stiletto's generators and shields, 650 kps.  Not sold anywhere yet; its
-    // cockpit is the Stiletto's until it has its own.
+    // and a torpedo launcher (0), the Stiletto's generators and shields, 650 kps.  Its cockpit is the Stiletto's until
+    // it has its own.  Sold by the bartender of Tuck's (the user: "Maybe you can get the demon from a Barman in
+    // Sherwood?  The price can be 350,000 less than stiletto" -- read as 350,000, which is less than the Stiletto's).
     { 2,  "Demon",    "DEMON",     "DEMNTYPE", "DEMNCK",   2,    2,          25,   10,
       { { 2, -6, -10 }, { 3, 6, -10 }, { 1, -18, 0 }, { 4, 18, 0 }, { -1, 0, 0 } },
       { { 1, 2 }, { 4, 3 }, { -1, 0 } },
       { 0x2C, 0x2F, 0x3E, 0 },
-      750000, 0 },
+      350000, 0, 0x36, 0xD7, 0xD9 },
 };
 const int kShipCount = (int)(sizeof(kShips) / sizeof(kShips[0]));
 
@@ -284,8 +285,14 @@ bool type_with_launcher(const PrivAddedShip &ship, std::vector<Bit8u> *type) {
 // 8 bytes), 0x29 changes the tune, 0x1E n is the dealer's sale of hull n (ovr286:0CC1).  An added ship is offered
 // after its conversation (Admiral Terrell's "credits", which the game plays once the campaign is won, every time
 // he is talked to): a sale of (the ship's id * 16 + its hull) follows it, which priv_ships_hook takes for that
-// ship's.  WCPRIVSALE=<ship> (a rig's) makes every dealer's Centurion that ship instead.
-bool gameflow_chunks(const Bit8u *d, size_t n, const std::map<int, int> &after, int rigSale, std::vector<Bit8u> *out, int *edits) {
+// ship's.  Or it ends the click on a sprite of one base (the Demon: the bartender of Tuck's, after his rumour).  WCPRIVSALE=<ship> (a rig's) makes every dealer's Centurion that ship instead.
+struct FlowEdit {
+    std::map<int, int> after;           // a conversation's number -> the sale that follows it
+    int rigSale;                        // WCPRIVSALE's sale in the place of every dealer's of that hull (0: none)
+    int base, sprite, edits;            // where the walk is: the MISS's base, the SPRT's number
+    FlowEdit() : rigSale(0), base(-1), sprite(-1), edits(0) {}
+};
+bool gameflow_chunks(const Bit8u *d, size_t n, FlowEdit &e, const char *in, std::vector<Bit8u> *out) {
     size_t off = 0;
     while (off + 8 <= n) {
         const Bit32u size = get32be(d + off + 4);
@@ -297,16 +304,27 @@ bool gameflow_chunks(const Bit8u *d, size_t n, const std::map<int, int> &after, 
         if (!memcmp(d + off, "FORM", 4)) {
             if (size < 4) return false;
             out->insert(out->end(), body, body + 4);
-            if (!gameflow_chunks(body + 4, size - 4, after, rigSale, out, edits)) return false;
+            if (!memcmp(body, "MISS", 4)) e.base = -1;
+            if (!memcmp(body, "SPRT", 4)) e.sprite = -1;
+            if (!gameflow_chunks(body + 4, size - 4, e, (const char *)body, out)) return false;
+            if (!memcmp(body, "SPRT", 4)) e.sprite = -1;
+        } else if (!memcmp(d + off, "INFO", 4) && size >= 1 && in && (!memcmp(in, "MISS", 4) || !memcmp(in, "SPRT", 4))) {
+            if (!memcmp(in, "MISS", 4)) e.base = body[0]; else e.sprite = body[0];
+            out->insert(out->end(), body, body + size);
         } else if (!memcmp(d + off, "EFCT", 4) && !(size & 1)) {
             for (Bit32u i = 0; i < size; i += 2) {
                 Bit8u op = body[i], arg = body[i + 1];
-                if (op == 0x1E && rigSale && arg == (rigSale & 15)) { arg = (Bit8u)rigSale; (*edits)++; }
+                if (op == 0x1E && e.rigSale && arg == (e.rigSale & 15)) { arg = (Bit8u)e.rigSale; e.edits++; }
                 out->push_back(op); out->push_back(arg);
-                if (op != 0x00 || !after.count(arg)) continue;
+                if (op != 0x00 || !e.after.count(arg)) continue;
                 while (i + 2 < size && body[i + 2] == 0x29) { i += 2; out->push_back(body[i]); out->push_back(body[i + 1]); }
-                out->push_back(0x1E); out->push_back((Bit8u)after.find(arg)->second);
-                (*edits)++;
+                out->push_back(0x1E); out->push_back((Bit8u)e.after.find(arg)->second);
+                e.edits++;
+            }
+            for (int k = 0; k < kShipCount; k++) {
+                if (kShips[k].soldBase < 0 || kShips[k].soldBase != e.base || e.sprite < kShips[k].soldSprite || e.sprite > kShips[k].soldSpriteLast) continue;
+                out->push_back(0x1E); out->push_back((Bit8u)(kShips[k].id * 16 + kShips[k].hull));
+                e.edits++;
             }
         } else {
             out->insert(out->end(), body, body + size);
@@ -326,20 +344,21 @@ bool gameflow_with_sales(const std::vector<Bit8u> &in, std::vector<Bit8u> *out) 
     if (at + 12 > in.size()) return false;
     const Bit32u size = get32be(&in[at + 8]);
     if (size > in.size() - at - 12) return false;
-    std::map<int, int> after;
-    int rigSale = 0;
+    FlowEdit e;
+    bool any = false;
     const char *rig = getenv("WCPRIVSALE");
     for (int i = 0; i < kShipCount; i++) {
-        if (rig && !strcasecmp(rig, kShips[i].name)) rigSale = kShips[i].id * 16 + kShips[i].hull;
+        if (rig && !strcasecmp(rig, kShips[i].name)) e.rigSale = kShips[i].id * 16 + kShips[i].hull;
+        if (kShips[i].soldBase >= 0) any = true;
         if (!kShips[i].soldAfter) continue;
         for (Bit32u k = 0; k + 8 <= size && k / 8 < 256; k += 8) {
-            if (!strncmp((const char *)&in[at + 12 + k], kShips[i].soldAfter, 8)) after[(int)(k / 8)] = kShips[i].id * 16 + kShips[i].hull;
+            if (!strncmp((const char *)&in[at + 12 + k], kShips[i].soldAfter, 8)) e.after[(int)(k / 8)] = kShips[i].id * 16 + kShips[i].hull;
         }
     }
-    if (after.empty() && !rigSale) return false;
-    int edits = 0;
+    if (e.after.empty() && !e.rigSale && !any) return false;
     out->clear();
-    if (!gameflow_chunks(&in[0], in.size(), after, rigSale, out, &edits) || !edits) return false;
+    if (!gameflow_chunks(&in[0], in.size(), e, 0, out) || !e.edits) return false;
+    const int edits = e.edits;
     wclog(1, "Privateer: added ships: GAMEFLOW.IFF given %d sale%s", edits, edits == 1 ? "" : "s");
     return true;
 }
@@ -471,7 +490,7 @@ void tre_build() {
         std::vector<std::pair<std::string, std::vector<Bit8u> > > convs;
         bool all = true;
         for (int i = 0; i < kShipCount && all; i++) {
-            if (kShips[i].soldAfter && !priv_ship_convs(kShips[i], real_file, &convs)) all = false;
+            if ((kShips[i].soldAfter || kShips[i].soldBase >= 0) && !priv_ship_convs(kShips[i], real_file, &convs)) all = false;
         }
         if (all && real_file(tre_name("OPTIONS", "GAMEFLOW.IFF"), &in) && gameflow_with_sales(in, &out)) {
             for (size_t i = 0; i < convs.size(); i++) tre_add(tre_name("CONV", convs[i].first.c_str()), convs[i].second);

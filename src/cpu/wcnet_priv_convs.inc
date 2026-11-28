@@ -77,6 +77,62 @@ const Line kStilettoSame[] = {
     { kEnd, kTerrell, 0, 0, { NONE } },
 };
 
+// ---- The Demon, from the bartender of Tuck's (Sherwood), after his rumour ---------------------------------------------
+// The story: the bartender knows of salvage for sale; the fence does the selling in the dealer's words (which fit a
+// Demon as they are: "Note the racks for four guns, two weapons"); the bartender wants his tip.
+
+#define B(text) kLine, kBarman, "normal", text
+#define Q(text) kLine, kPlayerBar, "normal", text
+
+const Line kDemonOffer[] = {
+    { B("Hey mister, have a seat, the first one's on me."), { { "PIRRUM5", 0, 0, 0, 0 }, NONE } },
+    { B("There's a lot of loot just floating around out there waiting to be salvaged."), { { "PIRRUM5", 3, 0, 0, 0 }, NONE } },
+    { D("A %s.  Hell of a ship."), { { "SAMEFGHT", 0, 0, 950, 0 }, NONE } },                                    // "Hell of a ship,"
+    { D("Note the racks for 4 guns, 2 weapons..."), { { "BUYFIGHT", 2, 0, 2200, 0 }, NONE } },                  // "Note the racks for four guns, two weapons" (before "and of course, a rear turret")
+    { D("Did I mention she's a fast ship?"), { { "BUYMERCH", 4, 0, 1200, 0 }, NONE } },
+    { D("And it's a steal at $U3 credits."), { { "BUYMERCH", 6, 2700, 3480, 0 }, NONE } },
+    { D("I can give you $U1 trade in value on your old ship, plus $U2 for all your extras."), { { "BUYFIGHT", 7, 0, 0, 0 }, NONE } },
+    { D("Leaving you with $U4 credits to outfit your new %s."), { { "BUYFIGHT", 8, 0, 0, 0 }, NONE } },
+    { B("So, what'll it be?"), { { "PIRRUM6", 4, 0, 0, 0 }, NONE } },
+    { kAsk, kBarman, 0, 0, { NONE } },
+    { Q("Deal me in."), { { "S7MBC1", 30, 2300, 0, 0 }, NONE } },
+    { D("You'll find your new ship fueled up and waiting on the landing pad for you."), { { "BUYFIGHT", 11, 0, 0, 0 }, NONE } },
+    { D("Your payment will be deducted automatically.  Have a good one!"), { { "BUYFIGHT", 12, 0, 0, 0 }, NONE } },
+    { B("Just remember me when it's time to tip."), { { "PIRRUM4", 4, 2300, 0, 0 }, NONE } },                   // (after "No thanks, that's what bartenders do.")
+    { kElse, kBarman, 0, 0, { NONE } },
+    { Q("I'll take my chances on my own."), { { "S7MBC1", 39, 0, 0, 0 }, NONE } },
+    { B("No big deal."), { { "PIRRUM5", 1, 0, 900, 0 }, NONE } },
+    { kEnd, kBarman, 0, 0, { NONE } },
+};
+
+const Line kDemonCargo[] = {
+    { B("There's a lot of loot just floating around out there waiting to be salvaged."), { { "PIRRUM5", 3, 0, 0, 0 }, NONE } },
+    { D("A %s.  Hell of a ship."), { { "SAMEFGHT", 0, 0, 950, 0 }, NONE } },
+    { D("The problem is, all of the cargo currently listed on your ships manifest won't fit in this baby..."), { { "CARGO", 2, 0, 0, 0 }, NONE } },
+    { D("...and the Merchant's Guild won't let us trade your surplus cargo."), { { "CARGO", 3, 0, 0, 0 }, NONE } },
+    { D("So go ahead, sell off some cargo, come back and I'll fix you up."), { { "CARGO", 4, 0, 0, 0 }, NONE } },
+    { kEnd, kBarman, 0, 0, { NONE } },
+};
+
+const Line kDemonPoor[] = {
+    { B("There's a lot of loot just floating around out there waiting to be salvaged."), { { "PIRRUM5", 3, 0, 0, 0 }, NONE } },
+    { D("A %s.  Hell of a ship."), { { "SAMEFGHT", 0, 0, 950, 0 }, NONE } },
+    { D("I hate to break it to you, but we've checked your account..."), { { "TOOPOOR", 0, 0, 0, 0 }, NONE } },
+    { D("...and you don't have enough credits to buy this ship."), { { "TOOPOOR", 1, 0, 0, 0 }, NONE } },
+    { D("This ship retails for $U3 credits."), { { "TOOPOOR", 5, 0, 0, 0 }, NONE } },
+    { D("I can give you $U1 trade in for your ship, plus $U2 for your extras."), { { "TOOPOOR", 6, 0, 0, 0 }, NONE } },
+    { D("Including your cash on hand, that leaves you short by about $U4 credits."), { { "TOOPOOR", 7, 0, 0, 0 }, NONE } },
+    { D("Go get some more cash, and come back when you're ready to deal, okay?"), { { "TOOPOOR", 8, 0, 0, 0 }, NONE } },
+    { kEnd, kBarman, 0, 0, { NONE } },
+};
+
+const Line kDemonSame[] = {
+    { B("I hope you're gonna buy a drink and not just sit there trawling for a job."), { { "PIRRUM6", 0, 0, 0, 0 }, NONE } },
+    { kEnd, kBarman, 0, 0, { NONE } },
+};
+
+#undef B
+#undef Q
 #undef T
 #undef P
 #undef D
@@ -87,5 +143,6 @@ struct ShipTalk { int ship; Talk convs[4]; };       // (the offer, the cargo, to
 #define TALK(a) { a, sizeof(a) / sizeof(a[0]) }
 const ShipTalk kTalks[] = {
     { 1, { TALK(kStilettoOffer), TALK(kStilettoCargo), TALK(kStilettoPoor), TALK(kStilettoSame) } },
+    { 2, { TALK(kDemonOffer), TALK(kDemonCargo), TALK(kDemonPoor), TALK(kDemonSame) } },
 };
 #undef TALK
