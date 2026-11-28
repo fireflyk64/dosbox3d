@@ -458,7 +458,8 @@ bool priv_ship_cockpit(const PrivAddedShip &ship, PrivTreFile file, std::vector<
     if (const char *dir = getenv("WCPRIVCKDIR")) {
         if (read_host(std::string(dir) + "/" + ship.cockpit + ".IFF", iff) && read_host(std::string(dir) + "/" + ship.cockpit + ".PAK", pak)) return true;
     }
-    if (strcmp(ship.cockpit, "STILCK") != 0 || !stiletto_cockpit(file, iff, pak)) return false;
+    // (the Demon's, "DEMNCK", is the Stiletto's until it has a recipe of its own)
+    if ((strcmp(ship.cockpit, "STILCK") != 0 && strcmp(ship.cockpit, "DEMNCK") != 0) || !stiletto_cockpit(file, iff, pak)) return false;
     dump_host(std::string(ship.cockpit) + ".IFF", *iff);
     dump_host(std::string(ship.cockpit) + ".PAK", *pak);
     return true;

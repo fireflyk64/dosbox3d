@@ -1959,8 +1959,9 @@ no turret obviuosly. Think extensibly since we may want a place to insert the de
 on a branch in case it causes instability or people don't like it".
 
 **Done in this step:** a saved game's pilot flies a Stiletto, alone or in a room; its cockpit is made at run time.
-**Not yet:** the purchase from Terrell, the ship's pictures at the dealer, on the pad and in the launch and landing
-scenes (those show the Centurion), the upgrade screen's gun mounts (see "Open" below).  Nothing is merged or deployed.
+**Not yet:** the ships' pictures in the upgrade bay, on the pad and in the launch and landing scenes (those show the
+Centurion), a cockpit of the Demon's own, a place where the Demon is sold (see "Open" below).  Nothing is merged or
+deployed.
 
 Code: `src/cpu/wcnet_priv_ships.cpp` (the table `kShips`, the TRE, the hooks), `src/cpu/wcnet_priv_cockpit.cpp` and
 `wcnet_priv_stiletto.h` (the cockpit), `scripts/privships/` (`privart.py` the art formats, `stilcock.py` the cockpit's
@@ -2051,13 +2052,75 @@ Stiletto's), both guns' bolts either side of the gunsight, the engines' flames f
 all four views, a landing at Oxford and the pad again, the hold 20 in the ship's file, both high-resolution levels
 (640 x 400 all, and space only), two in a room.
 
+**The sale** (the user, 2026-11-27: "He goes through his credits spiel and then I want an accept or reject where you
+can buy the Stiletto for 500,000 credits.  You can go back and get the same situation", and "get the buy script and
+story right clipping together Terrell and ship dealer words").
+
+- *The rooms' script.*  `OPTIONS\GAMEFLOW.IFF` holds, per base kind and room, every sprite's EFCT: pairs of a command
+  and a number, run by ovr281:11C3 (0x00 n plays conversation n of the file's own list -- FORM CONV, DATA: names of 8
+  bytes --, 0x29 the tune, 0x21 n "if the plot's mission is n", 0x06 / 0x07 / 0x09 / 0x0A a room flag set, cleared,
+  tested, 0x14 / 0x15 "if the last conversation was accepted / rejected", 0x1F else, 0x20 end, 0x1E n the dealer's
+  sale of hull n).  A sprite's REQU says when it is there (0x00 n: flag n clear; 0x01 n: set; 0x03 n: the plot is not
+  mission n).  Admiral Terrell's (Perry Naval Base, scene 0x20) plays "credint" and "credits" once the plot is at its
+  last entry (PLOTMSNS.IFF's 23, "FFFFFFFF"): the layer adds `1E 12` after it -- the sale of (ship 1) * 16 + (hull
+  2).  His office door (the concourse's region at 171-188, 110-125) opens with room flag 0x0B set, which his
+  congratulations set.
+- *The sale itself is the dealer's routine*, ovr286:0CC1(room, hull): "you fly one already" if the hull is owned;
+  the old ship's value (ovr286:0C4F: the hull's price) and its extras' against the price; the conversation
+  "buyfight" with its Accept / Reject -- or "toopoor", or "cargo" (ovr269:179F: what is aboard does not fit) -- and,
+  accepted, the hull byte, the extras sold, the credits, the new ship (stub273:0025).  For an added ship
+  (`priv_ships_hook`): the argument is made the hull; the four conversations' names in DGROUP (08F8, 0911, 0917,
+  091F) are written over with the ship's own until the routine ends ("buyshp1", "crgo1", "poorsh1", "samesh1");
+  the price is the table's; "the same" means the same SHIP, so a Centurion's owner is sold a Stiletto and a
+  Stiletto's owner a Centurion (an added ship's trade-in is its price, as the game values its own); the hold asked
+  about is the new ship's.  At the Accept the saved game's word becomes the ship's.  The new ship is as the game
+  makes any: no guns, no shields, no armour.
+- *The conversations* are made at run time (`wcnet_priv_convs.cpp`, the scripts in `wcnet_priv_convs.inc`).  A
+  conversation is `CONV\<name>.PFC` -- records: 0 a line (speaker, mood, backdrop of 9 bytes each, four bytes, the
+  text, a byte), 7 the Accept / Reject, 5 the end of what follows an Accept, 8 the end -- and `<name>.VPK`: per line
+  a Creative Voice File (8 bits, 11,111 a second) under the game's LZW.  With speech on the game shows no text, so
+  what is HEARD is the script: each line's speech is pieces (from-to in milliseconds) of the player's own files'
+  lines -- Terrell's from S7MBC1/3/4 and CREDITS, the player's from S7MBC1/3, the ship dealer's from BUYFIGHT,
+  BUYTUG, BUYMERCH, SAMEFGHT, CARGO, TOOPOOR.  The words and their times come from a speech recogniser over those
+  files (`scripts/privships/convwords.py`, faster-whisper); the dealer's spoken lines carry no numbers ("I'll use
+  your old ship as a trade-in, including any extras"), so they serve any price.  Nobody in the game says
+  "Stiletto": the name is in the text only.  The salesman's face is the Merchants' Guild's clerk ("merchguy" at
+  "mrchcu"): the dealer's own, "rand_npc", is one of a dealer's room's people and the game's error 70C8 elsewhere.
+- *The story:* Terrell, after the credits: "And that's not all." -- "Then what exactly do you want from me?" --
+  "You're an insubordinate smart ass...and one of the best pilots I've ever seen." "...and the Confederation needs
+  your help." "And if you ever change your mind about serving..." "To sweeten the deal, we'll throw in..." -- the
+  salesman: "Hell of a ship." "Beautiful, eh?  Look at those hard edges, the aerodynamic sleekness..." "She has
+  racks for two guns, a weapon." "Did I mention she's a fast ship?" "And it's a steal." the trade-in, the credits
+  left -- Terrell: "So...what'll it be?"  Accept: "Deal me in." / the ship on the pad, the payment / "I wish you
+  good luck anyway."  Reject: "I'll take my chances on my own." / "As I said, I won't force you to do this." /
+  "Call me if you change your mind."
+- *Tested* (a saved game made for it: base 0x29, the plot "FFFFFFFF", room flag 0x0B, the hold's iron cut to fit):
+  the game's sound recorded (WCLAB) and read back by the recogniser, word for word the script; Accept: 189,187
+  credits and a Centurion with extras -> 127,712 and a Stiletto; the cargo and too-poor variants at a dealer with
+  `WCPRIVSALE=stiletto` (a rig's: every dealer's Centurion is that ship).
+
+**The upgrade bay** offers what is in hand every place of the HULL's bay (ovr287:13E1: a record a place, [BP+0E]
+the item, [BP-0B] whether the place will do; one chosen in ovr287:1133, mounted by stub273:0034).  For an added
+ship a place it has not will not do (ovr287:14BA), and when none is left the purchase returns the game's own "no
+room" (ovr287:1F8D -> 1FB6, 31E7 -> 31CD): a Stiletto takes two guns, on the inner mounts, and one launcher.  The
+launcher's mount is renumbered for that (the skeleton's and the type file's: the Stiletto's 0 -> 2, the Demon's 1
+and 4 -> 2 and 3), as the bay mounts launchers on 2 and 3 only.
+
+**Other tables an added ship needs a row in:** `MIDGAMES\DEATHAPR.IFF` (the player's death by appearance: without
+it the game's error 6150 when the ship is destroyed).
+
+**The Demon** (id 2; `stilsave.py ... ship=2` makes privsaves/DEMON.SAV): DEMNTYPE / DEMON on hull 2, four guns
+(the game's own mounts 2, 3, 1, 4), two launchers, hold 25.  Its skeleton's gun POSGs are the short kind (9 bytes,
+no marks): the record is written again with the long kind (`skel_chunks`), the table of offsets moved.  It flies
+(225 kps set, its own weapons picture from its target drawing, the four marks); its cockpit is the Stiletto's for
+now and nobody sells it.
+
 **Open.**
-- The upgrade screen is still the Centurion's: it offers four gun mounts and two launchers, and a gun put on a
-  mount the Stiletto has not is the game's error 6482 at the next launch.  The next step (with the ship's picture
-  there).
-- The purchase (Terrell, 500,000 credits, his lines cut together), the ship's pictures at the dealer, on the pad, in
-  the launch and landing scenes.
-- A crew's room with a Stiletto as the pilot's ship (the gunner's game would fly it as a Centurion: unguarded).
-- Buying a Centurion while owning a Stiletto: the game answers that the hull is owned.
+- The ships' pictures: the upgrade bay (SHIPART.IFF's FORM APPR per hull, and the guns' pictures per mount), the
+  pad, the launch and landing scenes (MIDGAMES\TAKEOFFS / LANDINGS: FORM MOVI).  The appearances' own 37 views
+  (126 x 101 at most for the Stiletto) are the only art of these ships.
+- The Demon's own cockpit (~/demon_cp has the places), where it is sold and for what, what its dealers sell it.
+- A crew's room with an added ship as the pilot's ship (the gunner's game would fly it as a Centurion: unguarded).
 - The weapons picture sits a little low over the display's text.
-- The Demon: a row of `kShips` (DEMNTYPE / DEMON, hull 2), a cockpit recipe of its own, its marks.
+- The sale's conversation names nothing by voice; the new ship's lack of armour is the game's way but a surprise
+  at a base with pirates about.

@@ -24,11 +24,12 @@ struct PrivAddedShip {
     // Its guns' marks on the weapons display: a mount, and the mark's place from the picture's middle (the
     // appearance's own, SKELETON.IFF's, are a display no player saw: the user, "The two bolt mounts need to be
     // pulled together too so they touch the stiletto wings").  A mount of -1 ends them.
-    struct Mark { int mount, x, y; } marks[4];
-    // Its missile launcher's mount as the appearance has it (SKELETON.IFF's, and its type's file) and the number it
-    // is given here: one the hull's upgrade screen can mount a launcher on (the Centurion's are 2 and 3; the game's
-    // Stiletto has its one at 0, which no screen offers)
-    int launcherWas, launcher;
+    struct Mark { int mount, x, y; } marks[5];
+    // Its launchers' mounts as the appearance has them (SKELETON.IFF's, and its type's file) and the numbers they are
+    // given here: ones the hull's upgrade bay can mount a launcher on (the Centurion's are 2 and 3; the game's
+    // Stiletto has its one at 0, which no bay offers).  A `was` of -1 ends them; a launcher not listed stays where it
+    // is and no bay reaches it.
+    struct Renumber { int was, now; } launchers[3];
     // What the dealers do not sell it beyond what they do not sell its hull (LIMITS.IFF's list of item numbers, the
     // equipment list's: 0x2C the tail turret, 0x2F-0x31 shield generators 3-5, 0x3E-0x40 engine upgrades 3-5); 0 ends.
     Bit8u notSold[8];

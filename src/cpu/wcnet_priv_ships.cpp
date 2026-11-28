@@ -44,9 +44,19 @@ namespace {
 
 const PrivAddedShip kShips[] = {
     // id  name        appearance   type        cockpit    hull  scene ship  hold  more
-    { 1,  "Stiletto", "STILETTO",  "STILTYPE", "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } }, 0, 2,
+    { 1,  "Stiletto", "STILETTO",  "STILTYPE", "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } },
+      { { 0, 2 }, { -1, 0 } },
       { 0x2C, 0x2F, 0x3E, 0 },        // (the game's own Stiletto: the generators of engine upgrade 2, shield generator 2's 200)
       500000, "credits" },            // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
+    // The Demon (the user: "we may want a place to insert the demon as well ... then let's move onto the demon"): the
+    // game's own has four guns (mounts 2 and 3 by the nose, 1 and 4 on the wings), two missile launchers (1 and 4)
+    // and a torpedo launcher (0), the Stiletto's generators and shields, 650 kps.  Not sold anywhere yet; its
+    // cockpit is the Stiletto's until it has its own.
+    { 2,  "Demon",    "DEMON",     "DEMNTYPE", "DEMNCK",   2,    2,          25,   10,
+      { { 2, -6, -10 }, { 3, 6, -10 }, { 1, -18, 0 }, { 4, 18, 0 }, { -1, 0, 0 } },
+      { { 1, 2 }, { 4, 3 }, { -1, 0 } },
+      { 0x2C, 0x2F, 0x3E, 0 },
+      750000, 0 },
 };
 const int kShipCount = (int)(sizeof(kShips) / sizeof(kShips[0]));
 
@@ -176,10 +186,47 @@ bool limits_for_ship(const PrivAddedShip &ship, const std::vector<Bit8u> &in, st
     return false;
 }
 
-// APPEARNC\SKELETON.IFF: a table of offsets (from byte 20), each record a length and a FORM SKEL whose FORM WEAP's
-// FORM GUNS has a POSG per mount: the mount, its place on the ship (three words), a word, and its mark's place on the
-// weapons display (two words).  The marks of the added ship's skeleton (the number in its appearance's SKEL chunk)
-// moved; nothing else of the file changes.
+// APPEARNC\SKELETON.IFF: a table of offsets (from byte 20), each record a length and a FORM SKEL whose FORM WEAP has
+// FORM GUNS and FORM LNCH, a POSG per mount: the mount, its place on the ship (three words), a word, and -- in the
+// skeletons of the ships a player flies and of some others (the Stiletto's) -- its mark's place on the weapons
+// display (two words: 13 bytes, not 9).  The added ship's skeleton (the number in its appearance's SKEL chunk) is
+// written again: its guns' POSGs with the marks of the ship's table, its launchers' mounts renumbered; the records
+// after it move, and the table with them.
+bool skel_chunks(const PrivAddedShip &ship, const Bit8u *d, size_t n, int in, std::vector<Bit8u> *out) {
+    size_t off = 0;
+    while (off + 8 <= n) {
+        const Bit32u size = get32be(d + off + 4);
+        if (size > n - off - 8) return false;
+        const Bit8u *body = d + off + 8;
+        out->insert(out->end(), d + off, d + off + 4);
+        const size_t sizeAt = out->size();
+        put32be(*out, 0);
+        if (!memcmp(d + off, "FORM", 4)) {
+            if (size < 4) return false;
+            out->insert(out->end(), body, body + 4);
+            const int kind = !memcmp(body, "GUNS", 4) ? 1 : !memcmp(body, "LNCH", 4) ? 2 : 0;
+            if (!skel_chunks(ship, body + 4, size - 4, kind, out)) return false;
+        } else if (!memcmp(d + off, "POSG", 4) && in == 1 && (size == 9 || size == 13)) {
+            out->insert(out->end(), body, body + 9);
+            int x = size == 13 ? (Bit16s)(body[9] | (body[10] << 8)) : 0, y = size == 13 ? (Bit16s)(body[11] | (body[12] << 8)) : 0;
+            for (int k = 0; k < 5 && ship.marks[k].mount >= 0; k++) if (ship.marks[k].mount == body[0]) { x = ship.marks[k].x; y = ship.marks[k].y; }
+            out->push_back((Bit8u)x); out->push_back((Bit8u)(x >> 8)); out->push_back((Bit8u)y); out->push_back((Bit8u)(y >> 8));
+        } else if (!memcmp(d + off, "POSG", 4) && in == 2 && size >= 1) {
+            out->insert(out->end(), body, body + size);
+            for (int k = 0; k < 3 && ship.launchers[k].was >= 0; k++) {
+                if (body[0] == ship.launchers[k].was) { (*out)[out->size() - size] = (Bit8u)ship.launchers[k].now; break; }
+            }
+        } else {
+            out->insert(out->end(), body, body + size);
+        }
+        const Bit32u now = (Bit32u)(out->size() - sizeAt - 4);
+        (*out)[sizeAt] = (Bit8u)(now >> 24); (*out)[sizeAt + 1] = (Bit8u)(now >> 16); (*out)[sizeAt + 2] = (Bit8u)(now >> 8); (*out)[sizeAt + 3] = (Bit8u)now;
+        if (now & 1) out->push_back(0);
+        off += 8 + size + (size & 1);
+    }
+    return true;
+}
+
 bool skeleton_with_marks(const PrivAddedShip &ship, const std::vector<Bit8u> &appearance, std::vector<Bit8u> *skel) {
     int id = -1;
     static const Bit8u tag[] = { 'S', 'K', 'E', 'L', 0, 0, 0, 1 };
@@ -187,35 +234,28 @@ bool skeleton_with_marks(const PrivAddedShip &ship, const std::vector<Bit8u> &ap
         if (!memcmp(&appearance[i], tag, 8)) { id = appearance[i + 8]; break; }
     }
     std::vector<Bit8u> &d = *skel;
-    if (id < 0 || d.size() < 24 || memcmp(&d[12], "TABL", 4)) return false;
+    if (id < 0 || d.size() < 24 || memcmp(&d[0], "FORM", 4) || memcmp(&d[12], "TABL", 4)) return false;
     const Bit32u rows = get32be(&d[16]) / 4;
     if ((Bit32u)id >= rows || 20 + rows * 4 > d.size()) return false;
     const Bit32u at = get32le(&d[20 + id * 4]);
     if (at + 4 > d.size()) return false;
     const Bit32u len = get32le(&d[at]);
     if (len > d.size() - at - 4) return false;
-    size_t end = at + 4 + len;
-    static const Bit8u posg[] = { 'P', 'O', 'S', 'G', 0, 0, 0, 13 };
-    bool any = false;
-    for (size_t i = at + 4; i + 21 <= end; i++) {
-        if (!memcmp(&d[i], "LNCH", 4)) break;           // (the launchers' follow the guns')
-        if (memcmp(&d[i], posg, 8)) continue;
-        for (int k = 0; k < 4 && ship.marks[k].mount >= 0; k++) {
-            if (d[i + 8] != ship.marks[k].mount) continue;
-            d[i + 17] = (Bit8u)ship.marks[k].x; d[i + 18] = (Bit8u)(ship.marks[k].x >> 8);
-            d[i + 19] = (Bit8u)ship.marks[k].y; d[i + 20] = (Bit8u)(ship.marks[k].y >> 8);
-            any = true;
-        }
+    std::vector<Bit8u> record;
+    if (!skel_chunks(ship, &d[at + 4], len, 0, &record)) return false;
+    const Bit32s grown = (Bit32s)record.size() - (Bit32s)len;
+    std::vector<Bit8u> out(d.begin(), d.begin() + at);
+    put32le(out, (Bit32u)record.size());
+    out.insert(out.end(), record.begin(), record.end());
+    out.insert(out.end(), d.begin() + at + 4 + len, d.end());
+    for (Bit32u r = 0; r < rows; r++) {
+        const Bit32u o = get32le(&out[20 + r * 4]);
+        if (o > at) { const Bit32u m = (Bit32u)((Bit32s)o + grown); out[20 + r * 4] = (Bit8u)m; out[21 + r * 4] = (Bit8u)(m >> 8); out[22 + r * 4] = (Bit8u)(m >> 16); out[23 + r * 4] = (Bit8u)(m >> 24); }
     }
-    // the launcher's mount renumbered (FORM LNCH's own POSG, before FORM GUID)
-    bool launchers = false;
-    for (size_t i = at + 4; i + 9 <= end; i++) {
-        if (!memcmp(&d[i], "LNCH", 4)) launchers = true;
-        if (!memcmp(&d[i], "GUID", 4)) break;
-        if (!launchers || memcmp(&d[i], posg, 8)) continue;
-        if (d[i + 8] == ship.launcherWas && ship.launcher != ship.launcherWas) { d[i + 8] = (Bit8u)ship.launcher; any = true; }
-    }
-    return any;
+    const Bit32u total = (Bit32u)out.size() - 8;
+    out[4] = (Bit8u)(total >> 24); out[5] = (Bit8u)(total >> 16); out[6] = (Bit8u)(total >> 8); out[7] = (Bit8u)total;
+    d.swap(out);
+    return true;
 }
 
 // TYPES\<type>.IFF, the game's own ship of the appearance: its launchers (FORM WEAP's LNCH: a kind, a mount, two
@@ -227,7 +267,11 @@ bool type_with_launcher(const PrivAddedShip &ship, std::vector<Bit8u> *type) {
         if (memcmp(&d[i], "LNCH", 4)) continue;
         const Bit32u n = get32be(&d[i + 4]);
         if (n > d.size() - i - 8 || (n & 3)) return false;
-        for (Bit32u k = 0; k < n; k += 4) if (d[i + 8 + k + 1] == ship.launcherWas) { d[i + 8 + k + 1] = (Bit8u)ship.launcher; any = true; }
+        for (Bit32u k = 0; k < n; k += 4) {
+            for (int r = 0; r < 3 && ship.launchers[r].was >= 0; r++) {
+                if (d[i + 8 + k + 1] == ship.launchers[r].was) { d[i + 8 + k + 1] = (Bit8u)ship.launchers[r].now; any = true; break; }
+            }
+        }
         break;
     }
     return any;
@@ -427,7 +471,7 @@ void tre_build() {
         std::vector<std::pair<std::string, std::vector<Bit8u> > > convs;
         bool all = true;
         for (int i = 0; i < kShipCount && all; i++) {
-            if (kShips[i].price && !priv_ship_convs(kShips[i], real_file, &convs)) all = false;
+            if (kShips[i].soldAfter && !priv_ship_convs(kShips[i], real_file, &convs)) all = false;
         }
         if (all && real_file(tre_name("OPTIONS", "GAMEFLOW.IFF"), &in) && gameflow_with_sales(in, &out)) {
             for (size_t i = 0; i < convs.size(); i++) tre_add(tre_name("CONV", convs[i].first.c_str()), convs[i].second);
@@ -788,9 +832,10 @@ bool priv_ships_hook(Bit16u ip, Bit16u codeSeg, Bit16u loadSeg) {
         bool has = true;
         if (item < kItemLauncher) {                     // (a gun)
             has = false;
-            for (int m = 0; m < 4 && s->marks[m].mount >= 0; m++) if (s->marks[m].mount == mount) has = true;
+            for (int m = 0; m < 5 && s->marks[m].mount >= 0; m++) if (s->marks[m].mount == mount) has = true;
         } else if (item <= kItemTractor) {              // (a missile or torpedo launcher, a tractor beam)
-            has = mount == s->launcher;
+            has = false;
+            for (int r = 0; r < 3 && s->launchers[r].was >= 0; r++) if (s->launchers[r].now == mount) has = true;
         }
         if (getenv("PRIVSHIPLOG")) wclog(1, "Privateer: added ships: the bay's place: mount %d for item %02X, will do %d: %s", mount, item,
                                          mem_readb(ss_ + (Bit16u)(reg_bp - 0x0B)), has ? "the ship's" : "not the ship's");

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A saved game's pilot put in an added ship (docs/privateer.md section 42): the Stiletto.
 
-  stilsave.py <in.SAV> <out.SAV> [guns=7,7] [missiles=5:10] [engine=2] [shield=91] [hold=20]
+  stilsave.py <in.SAV> <out.SAV> [ship=2] [guns=7,7] [missiles=5:10] [engine=2] [shield=91] [hold=20]     (ship=2: the Demon)
 
 The saved game must be a Centurion's (the hull the Stiletto is flown on).  Its ship (the record that is an IFF FORM
 REAL, PLAYTYPE.IFF's bytes) is given what a Stiletto can carry:
@@ -44,7 +44,7 @@ def replace_record(sav, k, new):
     struct.pack_into("<I", out, 0, len(out))
     return bytes(out)
 
-def stiletto(sav, guns=(7, 7), missiles=(5, 10), engine=2, shield=0x5B, hold=20, ship_id=1):
+def stiletto(sav, guns=(7, 7), missiles=(5, 10), engine=2, shield=0x5B, hold=20, ship_id=1, mounts=(2, 3, 1, 4), launchers=1):
     offs = table(sav)
     if sav[offs[0]] != 2: raise SystemExit("the saved game's hull is %d, not a Centurion's (2)" % sav[offs[0]])
     k = next(i for i, o in enumerate(offs) if sav[o:o + 4] == b"FORM" and sav[o + 8:o + 12] == b"REAL")
@@ -55,8 +55,8 @@ def stiletto(sav, guns=(7, 7), missiles=(5, 10), engine=2, shield=0x5B, hold=20,
         whole = real[o:o + 8 + s + (s & 1)]
         kind = real[o + 8:o + 12] if t == b"FORM" else t
         if kind == b"WEAP":
-            w = chunk(b"GUNS", b"".join(bytes([g, m, 0, 0]) for g, m in zip(guns, (2, 3))))
-            if missiles: w += chunk(b"LNCH", bytes([0x32, 2, 0, 0])) + chunk(b"MISL", bytes([missiles[0]]) + struct.pack("<H", missiles[1]))
+            w = chunk(b"GUNS", b"".join(bytes([g, m, 0, 0]) for g, m in zip(guns, mounts)))
+            if missiles: w += chunk(b"LNCH", b"".join(bytes([0x32, m, 0, 0]) for m in (2, 3)[:launchers])) + chunk(b"MISL", bytes([missiles[0]]) + struct.pack("<H", missiles[1]))
             whole = form(b"WEAP", w)
         elif kind == b"ENER":
             gens = ENGINES[engine]
@@ -82,5 +82,7 @@ if __name__ == "__main__":
     for x in a[2:]:
         k, v = x.split("=")
         kw[k] = tuple(int(n) for n in v.replace(":", ",").split(",")) if k in ("guns", "missiles") else int(v)
+    if kw.pop("ship", 1) == 2:      # ship=2: the Demon -- four guns, two launchers, the hold 25
+        kw = dict(dict(guns=(7, 7, 4, 4), hold=25, ship_id=2, launchers=2), **kw)
     open(a[1], "wb").write(stiletto(open(a[0], "rb").read(), **kw))
-    print("%s: a Stiletto's saved game" % a[1])
+    print("%s: %s saved game" % (a[1], "a Demon's" if kw.get("ship_id") == 2 else "a Stiletto's"))
