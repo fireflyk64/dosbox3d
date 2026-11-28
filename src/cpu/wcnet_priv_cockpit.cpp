@@ -43,6 +43,7 @@ namespace {
 struct PrivCut { int op, src, sx, sy, w, h, dx, dy; };
 struct PrivCockpitLayout { int vduLeft[4], vduRight[4], radar[4], shield[4], fuel[4], energy[4], set[4], kps[4], autopilot[4], sight[2]; };
 #include "wcnet_priv_stiletto.h"
+#include "wcnet_priv_demon.h"
 
 typedef std::vector<Bit8u> Bytes;
 enum { W = 320, H = 200, kNone = -1 };
@@ -326,7 +327,7 @@ Chunk amfd(const int r[4], int number, int letter) {
     return f;
 }
 
-bool stiletto_cockpit(PrivTreFile file, Bytes *iff, Bytes *pak) {
+bool recipe_cockpit(PrivTreFile file, const PrivCut *cuts, size_t cutCount, const PrivCockpitLayout &L, Bytes *iff, Bytes *pak) {
     static const char *const names[3] = { "FIGHTCK", "TUGCK", "CLUNKCK" };
     Chunk ck[3];
     std::vector<int> src[3];
@@ -337,10 +338,9 @@ bool stiletto_cockpit(PrivTreFile file, Bytes *iff, Bytes *pak) {
     }
     if (!file("..\\..\\DATA\\COCKPITS\\FIGHTCK.PAK", pak)) return false;
     const Chunk &cent = ck[0], &tug = ck[1], &clunk = ck[2];
-    const PrivCockpitLayout &L = kStilettoLayout;
 
     std::vector<int> canvas;
-    if (!compose(kStilettoCuts, sizeof(kStilettoCuts) / sizeof(kStilettoCuts[0]), src, &canvas)) return false;
+    if (!compose(cuts, cutCount, src, &canvas)) return false;
     Chunk frnt = form("FRNT");
     {
         static const int ext[4] = { W - 1, 0, 0, H - 1 };
@@ -402,9 +402,15 @@ bool stiletto_cockpit(PrivTreFile file, Bytes *iff, Bytes *pak) {
         shld.kids.push_back(*shShap);
         dial.kids.push_back(shld);
         Chunk ener = form("ENER"), fuel = form("FUEL"), view;
-        if (!gauge(path(clunk, "DIAL", "ENER", "VIEW"), L.energy, &view)) return false;
-        ener.kids.push_back(view);
-        dial.kids.push_back(ener);
+        if (L.energy[2] == 0) {                 // (no size: the Centurion's own gauge, where the Centurion has it)
+            const Chunk *own = path(cent, "DIAL", "ENER");
+            if (!own) return false;
+            dial.kids.push_back(*own);
+        } else {
+            if (!gauge(path(clunk, "DIAL", "ENER", "VIEW"), L.energy, &view)) return false;
+            ener.kids.push_back(view);
+            dial.kids.push_back(ener);
+        }
         if (!gauge(path(tug, "DIAL", "FUEL", "VIEW"), L.fuel, &view)) return false;
         fuel.kids.push_back(view);
         dial.kids.push_back(fuel);
@@ -459,8 +465,13 @@ bool priv_ship_cockpit(const PrivAddedShip &ship, PrivTreFile file, std::vector<
     if (const char *dir = getenv("WCPRIVCKDIR")) {
         if (read_host(std::string(dir) + "/" + ship.cockpit + ".IFF", iff) && read_host(std::string(dir) + "/" + ship.cockpit + ".PAK", pak)) return true;
     }
-    // (the Demon's, "DEMNCK", is the Stiletto's until it has a recipe of its own)
-    if ((strcmp(ship.cockpit, "STILCK") != 0 && strcmp(ship.cockpit, "DEMNCK") != 0) || !stiletto_cockpit(file, iff, pak)) return false;
+    if (!strcmp(ship.cockpit, "STILCK")) {
+        if (!recipe_cockpit(file, kStilettoCuts, sizeof(kStilettoCuts) / sizeof(kStilettoCuts[0]), kStilettoLayout, iff, pak)) return false;
+    } else if (!strcmp(ship.cockpit, "DEMNCK")) {
+        if (!recipe_cockpit(file, kDemonCuts, sizeof(kDemonCuts) / sizeof(kDemonCuts[0]), kDemonLayout, iff, pak)) return false;
+    } else {
+        return false;
+    }
     dump_host(std::string(ship.cockpit) + ".IFF", *iff);
     dump_host(std::string(ship.cockpit) + ".PAK", *pak);
     return true;
@@ -598,7 +609,7 @@ bool priv_ship_bay(const PrivAddedShip &ship, PrivTreFile file, const std::vecto
         }
     }
     enum { kLeft = 100, kRight = 320, kTop = 22, kBottom = 150 };
-    const int dx = kLeft + (kRight - kLeft - dw) / 2, dy = kBottom - dh - (kBottom - kTop - dh) / 3;
+    const int dx = kLeft + (kRight - kLeft - dw) / 2 + ship.bayRight, dy = kBottom - dh - (kBottom - kTop - dh) / 3;
     std::vector<int> canvas(W * H, kNone);
     int nearest[256];
     for (int i = 0; i < 256; i++) nearest[i] = -1;

@@ -42,7 +42,7 @@ struct PrivAddedShip {
     int soldBase, soldSprite, soldSpriteLast;        // (a bar has three sprites for its bartender, 0xD7-0xD9: one is there at a time)
     // Its picture in the upgrade bay: which of the appearance's views (VSHP's, 0-36), turned left to right or not,
     // enlarged to fill the bay (the user: "want size to fill the screen mostly")
-    int bayView, bayMirror;
+    int bayView, bayMirror, bayRight;       // (bayRight: pixels to the right of the room's middle)
     // Its picture in the takeoff and landing scenes: the view seen flying past (nose to the right; turned over for the
     // landing, where the ships fly to the left)
     int sceneView;

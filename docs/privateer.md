@@ -1959,8 +1959,7 @@ no turret obviuosly. Think extensibly since we may want a place to insert the de
 on a branch in case it causes instability or people don't like it".
 
 **Done in this step:** a saved game's pilot flies a Stiletto, alone or in a room; its cockpit is made at run time.
-**Not yet:** a cockpit of the Demon's own (see "Open" below).  Nothing is merged or
-deployed.
+Nothing is merged or deployed.
 
 Code: `src/cpu/wcnet_priv_ships.cpp` (the table `kShips`, the TRE, the hooks), `src/cpu/wcnet_priv_cockpit.cpp` and
 `wcnet_priv_stiletto.h` (the cockpit), `scripts/privships/` (`privart.py` the art formats, `stilcock.py` the cockpit's
@@ -2111,8 +2110,16 @@ it the game's error 6150 when the ship is destroyed).
 **The Demon** (id 2; `stilsave.py ... ship=2` makes privsaves/DEMON.SAV): DEMNTYPE / DEMON on hull 2, four guns
 (the game's own mounts 2, 3, 1, 4), two launchers, hold 25.  Its skeleton's gun POSGs are the short kind (9 bytes,
 no marks): the record is written again with the long kind (`skel_chunks`), the table of offsets moved.  It flies
-(225 kps set, its own weapons picture from its target drawing, the four marks); its cockpit is the Stiletto's for
-now.
+(225 kps set, its own weapons picture from its target drawing, the four marks).
+
+*Its cockpit* (the user: "lets make the demon's own cockpit"; the places from their sample ~/demon_cp: a tall
+hoop with a box at its top, the dashboard's line at the screen's middle, a big VDU in each lower corner, a round
+scope in the middle with a square display either side).  `scripts/privships/demcock.py` -> `wcnet_priv_demon.h`
+(`kDemonCuts`, `kDemonLayout`), followed by the same `recipe_cockpit` as the Stiletto's: the Centurion's hoop at
+its own height with its own energy gauge in the box at the top (a layout's energy box of no size means "the
+Centurion's, where it is"), the struts carried down to the VDUs' tops, the VDUs at y 113, the housing between them
+with the shields on the left, the scope in the middle and the Orion's upright fuel bar on the right, the speeds
+and the autopilot's light on the glass above it, the gunsight at the Centurion's height.
 
 *Its sale* (the user, 2026-11-27: "Maybe you can get the demon from a Barman in Sherwood?  The price can be 350,000
 less than stiletto" -- read as 350,000 credits; the other reading is 150,000, a number in `kShips`).  The Sherwood
@@ -2134,7 +2141,8 @@ pack a view, in the flight's palette; the Stiletto's 126 x 101 at most), so ever
 at run time (`wcnet_priv_cockpit.cpp`) in the nearest of the colours the hull's own picture uses there, by that
 scene's palette; each is a file the ship's owner reads in the place of the game's (one entry, a content per ship).
 - *The upgrade bay* (`priv_ship_bay`): `OPTIONS\SHIPART.IFF`, FORM <hull> / FORM APPR / SHAP.  View 10 turned left
-  to right, twice the size the pixel-art way (a corner takes its two neighbours' colour where they agree: edges stay
+  to right (the Stiletto's 34 pixels right of the room's middle: the user, "Stiletto needs to be more to the right
+  in the upgrade bay"), twice the size the pixel-art way (a corner takes its two neighbours' colour where they agree: edges stay
   edges); the palette is OPTPALS.PAK's 18th (the bay scene's PALT).  The guns' pictures (drawn where the hull's ship
   has its mounts) are emptied: a mounted gun is not drawn.
 - *The landing pads* (`priv_ship_pads`): `OPTIONS\OPTIONS.IFF` is a table of offsets and a record a scene (a length
@@ -2147,7 +2155,7 @@ scene's palette; each is a file the ship's owner reads in the place of the game'
   over for the landing), as wide as the hull's ship in each frame.
 
 **Open.**
-- The Demon's own cockpit (~/demon_cp has the places); what its dealers sell it (the Stiletto's list for now).
+- What the Demon's dealers sell it (the Stiletto's list for now: engine 2, shield 2, no turret).
 - A crew's room with an added ship as the pilot's ship (the gunner's game would fly it as a Centurion: unguarded).
 - The weapons picture sits a little low over the display's text.
 - The sale's conversation names nothing by voice; the new ship's lack of armour is the game's way but a surprise
