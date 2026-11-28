@@ -3,7 +3,8 @@
 // the lobby's Ships menu, makes a room of 2 and flies -- its key script loads the save, launches at 50 s and lands at
 // LAND_AT (default 170); the guest's page joins the room by its code, hears the room's kind, registers a new pilot
 // and launches once the host flies.  Checked: the guest's launch from the pilot's base in the pilot's ship, aboard in
-// its turret, both pictures, the landing with the pilot and its own ship back.  Prints "ok"/"FAIL" and "CREW OK".
+// its turret, both pictures, its volleys drawing on the pilot's energy, its tractor beam (B) bringing a pod the pilot
+// expelled into the pilot's hold, the landing with the pilot and its own ship back.  Prints "ok"/"FAIL" and "CREW OK".
 //
 //   PLAYWRIGHT_DIR=... SHOT_DIR=... SAVE=<file.SAV> node web-priv-crew.mjs PAGE_URL LOBBY_URL INSTALLER
 import { createRequire } from "node:module";
@@ -73,6 +74,12 @@ const shot = async (p, file) => {
 let hs = "4:esc,7:!mouse=0.38:0.94,7.5:!button=0:1,7.8:!button=0:0,10:!mouse=0.31:0.405,10.5:!button=0:1,10.8:!button=0:0,12:!mouse=0.31:0.345,12.5:!button=0:1,12.8:!button=0:0,"
   + "15:!mouse=0.85:0.345,15.5:!button=0:1,15.8:!button=0:0,50:!mouse=0.60:0.72,50.5:!button=0:1,50.8:!button=0:0,57:backspace";
 for (let t = 58; t < landAt + 30; t += 5) hs += `,${t}:!privpeace`;
+// (the energy while the gunner fires; then the hold expelled and the pod put behind the ship, in the tail turret's view)
+for (const t of [100, 103, 106, 109, 112]) hs += `,${t}:!privguns`;
+hs += ",120:x,123:!privaim=150:1:b,124:!privguns,140:!privguns";
+for (let t = 125; t < 175; t += 2) hs += `,${t}:!privaim=150:1:b:if300`;     // (the pod kept within the beam's reach)
+// (the items run in their order: sorted by their times)
+hs = hs.split(",").map((it) => [Number(it.slice(0, it.indexOf(":"))), it]).sort((a, b) => a[0] - b[0]).map((x) => x[1]).join(",");
 hs += `,${landAt}:!privgonav=3:0`;
 const host = await open("PILOT", hs, "", true);
 const listed = await host.page.$$eval("#saveList li", (li) => li.map((e) => e.textContent.slice(0, 14)));
@@ -87,7 +94,8 @@ await host.page.selectOption("#privCrew", "crew");
 const code = await host.page.evaluate(() => document.getElementById("room").value);
 console.log(`${stamp()} the room: ${code}; ` + await host.page.$eval("#status", (el) => el.textContent.trim().slice(0, 120)));
 // the guest: a new pilot, the pad's ship at 90 s of its own boot (the host's Fly starts both: the pilot launches at 50)
-const gs = "4:esc,8:!mouse=0.14:0.94,8.3:!button=0:1,8.6:!button=0:0,10:j,10.3:o,10.6:e,11:enter,11.5:a,11.8:c,12.1:e,12.5:enter,89:!mouse=0.45:0.6,90:!button=0:1,90.3:!button=0:0";
+const gs = "4:esc,8:!mouse=0.14:0.94,8.3:!button=0:1,8.6:!button=0:0,10:j,10.3:o,10.6:e,11:enter,11.5:a,11.8:c,12.1:e,12.5:enter,89:!mouse=0.45:0.6,90:!button=0:1,90.3:!button=0:0"
+  + ",126:!privtargetpod";
 const guest = await open("GUNNER", gs, code, false);
 await guest.page.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 60000 });
 await sleep(3000);
@@ -126,6 +134,25 @@ await sleep(8000);      // (the pilot's log says it every 20 bolts)
 await guest.page.keyboard.up("Space");
 check("the gunner's volleys shown in the pilot's game", await waitLog(host, /crew: a gunner's turret 1 fired here/, 15000),
   (host.logs.filter((l) => /turret 1 fired here/.test(l)).pop() || "").slice(0, 120));
+// the power: the turret's volleys drawn from the pilot's pool (one pool for the ship), the gunner's copy on it
+const energies = (p) => p.logs.map((l) => l.match(/guns [\d.]+: .*energy (\d+) of (\d+)/)).filter(Boolean).map((m) => [Number(m[1]), Number(m[2])]);
+await waitLog(host, /guns 11\d\.\d: .*energy/, 30000);
+const he = energies(host);
+check("the pilot's energy spent by the gunner's volleys", he.some(([e, max]) => e < max), he.map(([e]) => e).join(" "));
+// the tractor beam: the pilot expels its hold at 120 s and the pod is behind the ship; the gunner targets it (126 s)
+// and holds B in its turret; the pilot's game pulls it into the pilot's hold
+check("the gunner's target is the pilot's pod", await waitLog(guest, /!privtargetpod: the target is pod/, 90000),
+  (guest.logs.find((l) => /privtargetpod/.test(l)) || "").slice(0, 120));
+await guest.page.click("#canvas");
+await guest.page.keyboard.down("KeyB");
+check("the pilot's game: the gunner's tractor beam on its pod", await waitLog(host, /crew: turret 1's tractor beam on our cargo pod/, 15000),
+  (host.logs.find((l) => /tractor beam on our/.test(l)) || "").slice(0, 120));
+check("the pod's cargo in the pilot's hold", await waitLog(host, /crew: our cargo pod ds:\w+ is gone \(turret 1's beam on it\): \d+ units aboard/, 20000),
+  (host.logs.find((l) => /our cargo pod ds:\w+ is gone/.test(l)) || "").slice(0, 150));
+check("the gunner told the cargo is aboard", await waitLog(guest, /Cargo aboard: \d+ units into the hold/, 10000),
+  (guest.logs.find((l) => /Cargo aboard/.test(l)) || "").slice(0, 120));
+await shot(guest, "crew-guest-tractor.png");
+await guest.page.keyboard.up("KeyB");
 check("the guest lands with the pilot, its own ship its own again", await waitLog(guest, /crew: landed: the base's ship is our own again/, (landAt + 120) * 1000),
   (guest.logs.find((l) => /landed: the base/.test(l)) || "").slice(0, 150));
 await sleep(8000);

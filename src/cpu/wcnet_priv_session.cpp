@@ -950,7 +950,7 @@ void take_state(const PrivState &st, int seat) {
             for (int i = 0; i < 9 && i < st.m_size(); i++) m[i] = st.m(i);
             const bool damage = st.armor_size() == 4 && st.shield_size() == 4;
             for (int i = 0; damage && i < 4; i++) { a[i] = st.armor(i); sh[i] = st.shield(i); }
-            priv_crew_pilot_state(st.system(), pos, vel, m, a, sh, damage, st.destroyed());
+            priv_crew_pilot_state(st.system(), pos, vel, m, a, sh, damage, st.destroyed(), st.has_energy() ? st.energy() : -1);
         }
         return;
     }
@@ -1327,7 +1327,7 @@ void handle(Peer *p, NetworkMessage &msg) {
             Bit32s m[9] = { 256, 0, 0, 0, 256, 0, 0, 0, 256 };
             for (int i = 0; i < 9 && i < t.m_size(); i++) m[i] = t.m(i);
             // (the turret it mans: the ship's first that is there for seat 1, the next for seat 2)
-            priv_crew_take_turret((int)t.turret(), t.yaw(), t.pitch(), m, t.fire(), t.shots());
+            priv_crew_take_turret((int)t.turret(), t.yaw(), t.pitch(), m, t.fire(), t.shots(), t.tractor(), t.tractor_id());
         }
     } else if (msg.has_chat()) {
         if (!p->hello) {
@@ -1838,6 +1838,10 @@ void send_state(double now) {
     }
     st->set_appearance(priv_player_appearance());
     st->set_afterburner(priv_ship_afterburner(priv_player_ship()));
+    if (g_net->crew && priv_crew_pilot()) {
+        const Bit32s e = priv_ship_energy(NULL);
+        if (e >= 0) st->set_energy(e);      // (the crew's copies of the ship draw on our pool)
+    }
     st->set_vx((Bit32s)g_net->vx);
     st->set_vy((Bit32s)g_net->vy);
     st->set_vz((Bit32s)g_net->vz);
@@ -2286,6 +2290,26 @@ void send_pod_taken(int owner, Bit32u id) {
 }
 
 void take_pod_taken(const PrivPodTaken &t) {
+    if (g_net->crew && priv_crew_gunner() && t.owner() == 0 && (int)t.owner() != g_net->self) {
+        // the pilot's pod gone from its game: our copy of it put away now (not when its reports run stale)
+        NpcPuppet *p = npc_of(0, t.id(), false);
+        if (p) {
+            p->at = -1e9;
+            if (p->obj && !p->parked) {
+                Bit32s away[3];
+                park_pos(p->obj, away);
+                priv_pod_set(p->obj, away);
+                p->parked = true;
+            }
+        }
+        if (t.units()) {
+            priv_session_notice("Cargo aboard: " + std::to_string(t.units()) + " units into the hold (" + std::to_string(t.hold()) + " of " +
+                                std::to_string(t.room()) + ")");
+        }
+        wclog(1, "Privateer: crew: the pilot's cargo pod (%u) is gone from its game: %u units aboard (the hold %u of %u)%s", t.id(), t.units(),
+              t.hold(), t.room(), p ? "; our copy put away" : "");
+        return;
+    }
     if ((int)t.owner() != g_net->self) {
         return;
     }
@@ -2572,7 +2596,9 @@ void frame_npcs(double now, const Bit32s pos[3]) {
         if (!p.used || (p.pod ? 1 : 0) != pass) continue;
         if (p.obj && p.pod && !(priv_pod_is(p.obj) && priv_scene_has(p.obj))) {
             // a pod gone from our scene: taken by our tractor beam (or let go by the game) while it was here
-            if (!p.parked && now - p.at < kNpcStaleMs) {
+            if (!p.parked && now - p.at < kNpcStaleMs && !g_net->crew) {
+                // (a crew's gunner never takes the pilot's pods: its beam is the pilot's game's, the cargo the pilot's
+                // hold's; a copy gone here -- a bump of our copy of the ship -- is made again from the next report)
                 send_pod_taken(p.seat, p.id);
                 if (g_net->podsGone.size() < 32) g_net->podsGone.push_back(std::make_pair(((Bit32u)p.seat << 16) | p.id, now));
             }
@@ -2832,6 +2858,30 @@ void priv_session_ship_died(Bit16u ship) {
     if (!g_net || g_net->self < 0 || !ship) return;
     for (size_t j = 0; j < g_net->sentShips.size(); j++) {
         if (g_net->sentShips[j].id == ship) g_net->sentShips[j].died = true;
+    }
+}
+
+Bit32u priv_session_pilot_pod_id(Bit16u obj) {
+    if (!g_net || !g_net->crew || !obj) return 0;
+    for (int k = 0; k < kNpcCap; k++) {
+        const NpcPuppet &p = g_net->npcs[k];
+        if (p.used && p.pod && p.seat == 0 && p.obj == obj && !p.parked) return p.id;
+    }
+    return 0;
+}
+
+void priv_session_crew_pod_gone(Bit16u pod, int units, int hold, int room) {
+    if (!g_net || !g_net->crew || g_net->self != 0) return;
+    NetworkMessage msg;
+    PrivPodTaken *t = msg.mutable_priv_pod_taken();
+    t->set_player(0);
+    t->set_owner(0);
+    t->set_id(pod);
+    t->set_units((Bit32u)(units > 0 ? units : 0));
+    t->set_hold((Bit32u)(hold > 0 ? hold : 0));
+    t->set_room((Bit32u)(room > 0 ? room : 0));
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) g_net->peers[i]->conn.send(msg);
     }
 }
 
@@ -3184,7 +3234,9 @@ void priv_session_frame() {
             Bit32s yaw = 0, pitch = 0, m[9];
             bool fire = false;
             unsigned shots = 0;
-            if (priv_crew_turret_report(&turret, &yaw, &pitch, m, &fire, &shots)) {
+            bool tractor = false;
+            Bit32u tractorId = 0;
+            if (priv_crew_turret_report(&turret, &yaw, &pitch, m, &fire, &shots, &tractor, &tractorId)) {
                 g_net->turretAt = now;
                 NetworkMessage msg;
                 PrivTurret *t = msg.mutable_priv_turret();
@@ -3195,6 +3247,10 @@ void priv_session_frame() {
                 for (int i = 0; i < 9; i++) t->add_m(m[i]);
                 t->set_fire(fire);
                 t->set_shots(shots);
+                if (tractor) {
+                    t->set_tractor(true);
+                    t->set_tractor_id(tractorId);
+                }
                 for (size_t i = 0; i < g_net->peers.size(); i++) {
                     if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) g_net->peers[i]->conn.send_best_effort(msg);
                 }

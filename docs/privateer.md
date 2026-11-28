@@ -1623,13 +1623,49 @@ of the two it is: the game makes it its first, F5), the second rides.
   see a friendly ship." on both, with its face on the gunner's screen; the pilot's own talk with a merchant shown to
   the gunner the same way.  Not carried: a talk with the base (each game's base is its own object), and a line whose
   speaker is not shown in the crew member's game (a militia ship far off).
+- *The tractor beam* (the user, 2026-11-27: "ensure in privateer turret mode that tractor works with cargo adding it to
+  main inventory and power use is linked if that's how it's supposed to be"; "It needs to work end to end on the
+  website so users can select turret mode").  The game's tractor is a launcher (kind 0x34, `BEAMTYPE` "TRACTOR")
+  worked from the station it is mounted at: the user's Centurion has it at mount 6, station 1 -- the tail turret.  The
+  launcher's button (Enter) runs seg120:03E5: from the pilot's seat the launcher picked with W, from a turret's seat
+  (seg120:05F5..0669) the tractor whose station is that seat; it fires on the ship's target (ovr393:024C: the
+  targeting system's +0xC -- in a turret's view the game keeps the turret's own choice, T picking among what that
+  view sees) a beam object every other frame while held.  Measured alone in the tail turret: the pod behind targeted
+  with T and Enter held, the 40-unit pod aboard within 2 s, 200 of the pool's 33,280 taken by the pull.
+  So in a crew the turret's gunner works it.  Enter is the crew's power key, so the crew's tractor key is **B** (or
+  a stick's launcher button), held in the turret's view with a pod targeted (T).  The gunner's game tells it in its
+  `PrivTurret` (`tractor`, and `tractor_id`: the pod's id in the pilot's game, its copy here being the target), and
+  the pilot's game runs seg120:03E5 for it each frame it is held (`priv_tractor_station`): the weapons' seat that
+  turret's and the target that pod for the call, both put back after.  The beam is the game's own on the real ship
+  and the real pod: the pod is drawn in where the pilot's game has it, its cargo goes into the pilot's hold by the
+  game's own capture (the hold's size, the pilot's to keep at the landing), and the pull is paid from the pilot's
+  energy.  The gunner's own game never pulls or claims a pod of the pilot's (its copies are pictures).  A pod of the
+  pilot's gone from its scene is told to the crew (`PrivPodTaken` with `units`, `hold`, `room`): their copy is put
+  away at once, and "Cargo aboard: 40 units into the hold (40 of 50)" shows on their screens.  B where it cannot work
+  says why ("The tractor beam is the pilot's on this ship", "... is in the other turret", "Target a cargo pod (T)").
+  Measured (`scripts/privtests/crew.sh` with `HOSTX`: X, `!privaim=150:1:b` -- the pod put behind -- and
+  `GUESTX`: `!privtargetpod`, `+b`): "turret 1's tractor beam on our cargo pod", the pilot's pool 33,280 -> 33,080,
+  "our cargo pod is gone (turret 1's beam on it): 40 units aboard (the hold 40 of 50)", the gunner's notice; the
+  pilot's own target left as it was.  In two browser pages (`scripts/web-priv-crew.sh`: the lobby's Ships menu set to
+  "one ship, crewed", the guest's B pressed on the page): "turret 1's tractor beam on our cargo pod", 10 units aboard
+  the pilot's hold, "Cargo aboard: 10 units into the hold (10 of 50)" on the gunner's screen, then the landing as
+  before -- CREW OK.  (The pod drifts off at some 40 m/s after X; the beam reaches some 350 m, the launcher's +0xB.)
+- *The ship's energy, one pool* (the same request).  The game's turret guns draw on the ship's one pool, as its forward
+  guns do.  Before, a gunner's volley was free in the pilot's game, and the gunner's copy had a pool of its own.  Now the
+  pilot's game takes each shown volley's energy from its pool, at the game's rate (each gun's +0x33 x 256), never below 0.
+  The call itself stays free, so the bolts always show.  The pilot's `PrivState` carries the pool (`energy`), and
+  the gunner's copy is set to it as each state arrives, so the gunner fires from what the ship has.  Measured: the
+  gunner's Space held 5 s, the pilot's pool 33,280 -> 28,172 -> 24,038 -> ..., the gunner's copy showing the same
+  values as each report came.
 Put to the user, not built: the missiles (select, lock and launch from the second seat), the targeting (T and L for
-the pilot), the tractor beam.
+the pilot).
 
 **Open:** the dealer's gun mounting by a rig (the hardpoint's click); the gunner's picture between the pilot's reports
-(the attitude is not carried on: fine at 28 reports a second on one machine, to be looked at over a real link); a
-gunner's energy is its own copy's (the pilot's is not taken by the turret); the landing fee (50) of a gunner's
-bounce; Righteous Fire flown as a crew (the same program: not yet run).
+(the attitude is not carried on: fine at 28 reports a second on one machine, to be looked at over a real link); the
+gunner's copy of the pool is the pilot's as last told, a link's delay behind (a volley of the gunner's not yet paid
+there is given back by the next report: over a slow link a few more shots than the pool allows, the pilot's pool
+stopping at 0); the landing fee (50) of a gunner's bounce; Righteous Fire
+flown as a crew (the same program: not yet run).
 
 ## 34. Slow frames: the per-frame probe, and what makes a fight's frames slow (2026-11-25)
 
