@@ -23,10 +23,11 @@ SOURCES = ['FIGHTCK', 'TUGCK', 'CLUNKCK']
 # ---- the recipe: (op, source, sx, sy, w, h, dx, dy) -------------------------------------------------------------------
 # COPY: the source's pixels (where it has none the picture stays); PUT: the rectangle as it is (none where the source
 # has none); FILL: the rectangle (dx, dy, w, h) in the colour of the source's pixel (sx, sy); CLEAR: none.
-COPY, PUT, FILL, CLEAR = 0, 1, 2, 3
+COPY, PUT, FILL, CLEAR, FLIP = 0, 1, 2, 3, 4   # (FLIP: COPY with the rectangle turned left to right)
 RECIPE = []
 def copy(src, sx, sy, w, h, dx, dy): RECIPE.append((COPY, src, sx, sy, w, h, dx, dy))
 def put(src, sx, sy, w, h, dx, dy): RECIPE.append((PUT, src, sx, sy, w, h, dx, dy))
+def flip(src, sx, sy, w, h, dx, dy): RECIPE.append((FLIP, src, sx, sy, w, h, dx, dy))
 def fill(src, sx, sy, dx, dy, w, h): RECIPE.append((FILL, src, sx, sy, w, h, dx, dy))
 def clear(dx, dy, w, h): RECIPE.append((CLEAR, 0, 0, 0, w, h, dx, dy))
 
@@ -64,10 +65,12 @@ def frame(src, box, rim, dx, dy, w, h):
 # The Centurion's VDU frame: 98 x 86 at (114, 102), its screen at (124, 112)-(202, 176), its border 10 wide.
 VDU = (114, 102, 98, 86)
 VDU_DROP = (139, 158, 167, 185)         # four columns between its buttons left out: 94 wide, the screen 74
-VDU_Y = 113                             # (in the lower corners, as the sample's)
+UP = 20                                 # the dashboard this much higher than the Centurion's (the user: "a bit less visibility than the
+                                        # stiletto by moving the cockpit up a bit revealing more keyboard")
+VDU_Y = 113 - UP
 VDU_LX, VDU_RX = -5, 231                # (the outer rims run off the screen's edges: cramped)
 BOX = (74, 105, 34, 10)                 # the Centurion's small readout frame (its fuel gauge's), rim 2
-BLOCK = (89, 116, 142, 60)              # the middle housing between the VDUs: the VDU's frame again, made wider
+BLOCK = (89, 116 - UP, 142, 60)              # the middle housing between the VDUs: the VDU's frame again, made wider
 DARK = (120, 150)                       # a pixel of the frame's dark face
 
 def bezel(dx, dy, w, h):
@@ -85,13 +88,24 @@ def bezel(dx, dy, w, h):
         n = min(bh - 2 * b, dy + h - b - y)
         put(C, x0, y0 + b, b, n, dx, y); put(C, x0 + bw - b, y0 + b, b, n, dx + w - b, y); y += n
 
-# 1. the canopy: the Centurion's hoop, struts and the box at its top (its energy gauge, which stays one), as they are
-copy(C, 0, 0, 320, 102, 0, 0)
-for row in range(102, VDU_Y + 2):       # (the struts carried down to the VDUs' tops: their last row again)
-    copy(C, 0, 101, 320, 1, 0, row)
-# 2. what shows of the dashboard beside and under the VDUs: the Centurion's own
-copy(C, 0, 104, 89, 96, 0, 104)
-copy(C, 231, 104, 89, 96, 231, 104)
+# 1. the canopy: the Centurion's hoop, struts and the box at its top (its energy gauge, which stays one), down to the
+#    raised dashboard
+copy(C, 0, 0, 320, 102 - UP, 0, 0)
+for row in range(102 - UP, VDU_Y + 2):  # (the struts carried down to the VDUs' tops: their last row again)
+    copy(C, 0, 101 - UP, 320, 1, 0, row)
+# 2. what shows of the dashboard beside and under the VDUs: the Centurion's own, raised; under it, where the
+#    Centurion's picture ends, more keyboard: the Orion's bottom rows
+copy(C, 0, 104, 89, 96, 0, 104 - UP)
+copy(C, 231, 104, 89, 96, 231, 104 - UP)
+copy(O, 0, 200 - UP, 89, UP, 0, 200 - UP)
+copy(O, 231, 200 - UP, 89, UP, 231, 200 - UP)
+# 2a. the ship's two pylons, one at each edge of the screen (the user: "adding some vertical hull blockers on the left
+#     and right edge of the screen for the two pylons to the left and right of the ship"): the Tarsus's window post,
+#     its lit edge inward, from the screen's top down to the dashboard; the right one the left turned over
+PYLON = (T, 0, 0, 24, 72)
+for y0 in (-36, 26, 86):                # (three lengths of it, the screen's top to the dashboard)
+    put(*PYLON, 0, y0)
+    flip(*PYLON, 320 - 24, y0)
 # 3. the two VDUs
 strips(put, C, *VDU, VDU_LX, VDU_Y, drop_cols=VDU_DROP)
 strips(put, C, *VDU, VDU_RX, VDU_Y, drop_cols=VDU_DROP)
@@ -122,7 +136,7 @@ LAYOUT = dict(
     vdu_left=(VDU_LX + 10, VDU_Y + 10, VDU_LX + 84, VDU_Y + 74),
     vdu_right=(VDU_RX + 10, VDU_Y + 10, VDU_RX + 84, VDU_Y + 74),
     radar=RADAR, shield=SHLD, fuel=FUEL, energy=ENER, set=SET, kps=KPS, auto=AUTO)
-SIGHT = (-25, -7)                       # the cockpit's OFFS: the gunsight's rows above the screen's middle (the Centurion's)
+SIGHT = (-36, -7)                       # the cockpit's OFFS: the gunsight's rows above the screen's middle (the Centurion's -25; the dashboard is higher here)
 
 # ---- drawing it -------------------------------------------------------------------------------------------------------
 def view_pixels(tre, ck, view='FRNT'):
@@ -142,7 +156,7 @@ def compose(tre):
                 if op == FILL: out[x, y] = c
                 elif op == CLEAR: out.pop((x, y), None)
                 else:
-                    p = src[s].get((sx + i, sy + j))
+                    p = src[s].get((sx + w - 1 - i if op == FLIP else sx + i, sy + j))
                     if p is not None: out[x, y] = p
                     elif op == PUT: out.pop((x, y), None)
     return out
@@ -236,7 +250,7 @@ def header():
            '// Do not edit: change the script and run it again.',
            '',
            '// A cut: op (0 the source\'s pixels copied, 1 the rectangle put as it is -- none where the source has none,',
-           '// 2 the rectangle filled with the colour of the source\'s pixel (sx, sy), 3 cleared), the source view (0 the',
+           '// 2 the rectangle filled with the colour of the source\'s pixel (sx, sy), 3 cleared, 4 as 0 turned left to right), the source view (0 the',
            '// Centurion\'s forward view, 1 the Orion\'s, 2 the Tarsus\'s), its place there, the size, the place here.',
            'static const PrivCut kDemonCuts[] = {']
     for c in RECIPE: out.append('    { %d, %d, %d, %d, %d, %d, %d, %d },' % c)

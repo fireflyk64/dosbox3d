@@ -257,7 +257,7 @@ bool compose(const PrivCut *cuts, size_t count, const std::vector<int> src[3], s
                 int &to = (*out)[y * W + x];
                 if (c.op == 2) { to = colour; continue; }
                 if (c.op == 3) { to = kNone; continue; }
-                const int sx = c.sx + i, sy = c.sy + j;
+                const int sx = c.op == 4 ? c.sx + c.w - 1 - i : c.sx + i, sy = c.sy + j;      // (4: the source's pixels copied turned left to right)
                 const int p = sx >= 0 && sx < W && sy >= 0 && sy < H ? src[c.src][sy * W + sx] : kNone;
                 if (p != kNone) to = p;
                 else if (c.op == 1) to = kNone;

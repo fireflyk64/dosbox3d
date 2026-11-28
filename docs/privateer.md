@@ -2116,10 +2116,14 @@ no marks): the record is written again with the long kind (`skel_chunks`), the t
 hoop with a box at its top, the dashboard's line at the screen's middle, a big VDU in each lower corner, a round
 scope in the middle with a square display either side).  `scripts/privships/demcock.py` -> `wcnet_priv_demon.h`
 (`kDemonCuts`, `kDemonLayout`), followed by the same `recipe_cockpit` as the Stiletto's: the Centurion's hoop at
-its own height with its own energy gauge in the box at the top (a layout's energy box of no size means "the
-Centurion's, where it is"), the struts carried down to the VDUs' tops, the VDUs at y 113, the housing between them
-with the shields on the left, the scope in the middle and the Orion's upright fuel bar on the right, the speeds
-and the autopilot's light on the glass above it, the gunsight at the Centurion's height.
+its own height with its own energy gauge in the box at the top (a layout's energy box of no size means "the Centurion's, where it is").
+Then the user: "make an interesting cockpit that has a bit less visibility than the stiletto by moving the cockpit
+up a bit revealing more keyboard and adding some vertical hull blockers on the left and right edge of the screen
+for the two pylons to the left and right of the ship.  Similar to the z95 below fuselage" -- the dashboard 20 rows
+higher than the Centurion's (VDUs at y 93, the housing at 96: shields, scope, the Orion's upright fuel bar), under
+it the Orion's keyboards (its bottom 20 rows) and more of its console between the legs; the two pylons are the
+Tarsus's window post (its 24 x 72 corner), three lengths from the screen's top to the dashboard, the right one
+turned over (a cut's op 4: a copy turned left to right); the gunsight 36 rows above the middle.
 
 *Its sale* (the user, 2026-11-27: "Maybe you can get the demon from a Barman in Sherwood?  The price can be 350,000
 less than stiletto" -- read as 350,000 credits; the other reading is 150,000, a number in `kShips`).  The Sherwood
@@ -2142,7 +2146,8 @@ at run time (`wcnet_priv_cockpit.cpp`) in the nearest of the colours the hull's 
 scene's palette; each is a file the ship's owner reads in the place of the game's (one entry, a content per ship).
 - *The upgrade bay* (`priv_ship_bay`): `OPTIONS\SHIPART.IFF`, FORM <hull> / FORM APPR / SHAP.  View 10 turned left
   to right (the Stiletto's 34 pixels right of the room's middle: the user, "Stiletto needs to be more to the right
-  in the upgrade bay"), twice the size the pixel-art way (a corner takes its two neighbours' colour where they agree: edges stay
+  in the upgrade bay"; its view 16 after "rotate to camera by one picture" -- 9 -- and "pitched up by one tick": the
+  views are a top one, five rings of seven turns from above to below, a bottom one), twice the size the pixel-art way (a corner takes its two neighbours' colour where they agree: edges stay
   edges); the palette is OPTPALS.PAK's 18th (the bay scene's PALT).  The guns' pictures (drawn where the hull's ship
   has its mounts) are emptied: a mounted gun is not drawn.
 - *The landing pads* (`priv_ship_pads`): `OPTIONS\OPTIONS.IFF` is a table of offsets and a record a scene (a length
