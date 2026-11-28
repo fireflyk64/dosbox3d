@@ -871,7 +871,8 @@ bool priv_ships_hook(Bit16u ip, Bit16u codeSeg, Bit16u loadSeg) {
             has = false;
             for (int r = 0; r < 3 && s->launchers[r].was >= 0; r++) if (s->launchers[r].now == mount) has = true;
         }
-        if (getenv("PRIVSHIPLOG")) wclog(1, "Privateer: added ships: the bay's place: mount %d for item %02X, will do %d: %s", mount, item,
+        if (getenv("PRIVSHIPLOG")) wclog(1, "Privateer: added ships: the bay's place: mount %d kind %d for item %02X (args %02X %02X %02X), will do %d: %s", mount, mem_readb(ds_ + (Bit16u)(rec + 1)), item,
+                                         mem_readb(ss_ + (Bit16u)(reg_bp + 8)), mem_readb(ss_ + (Bit16u)(reg_bp + 0x0A)), mem_readb(ss_ + (Bit16u)(reg_bp + 0x0C)),
                                          mem_readb(ss_ + (Bit16u)(reg_bp - 0x0B)), has ? "the ship's" : "not the ship's");
         if (!has) mem_writeb(ss_ + (Bit16u)(reg_bp - 0x0B), 0);
         return true;

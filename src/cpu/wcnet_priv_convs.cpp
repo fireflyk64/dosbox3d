@@ -198,7 +198,30 @@ std::string named(const char *text, const char *name) {
     return out;
 }
 
-bool conv_build(const PrivAddedShip &ship, const Line *lines, size_t count, PrivTreFile file, Bytes *pfc, Bytes *vpk) {
+// The salesman's voice made rougher and sharper for a pirate bar's fence (the user: "The barman went from normal man
+// to ship dealer ... filter those on the fly to make it sound more raspy or sharp than the rounded voice of the ship
+// dealer trying to make a sleazy deal").  On the 8-bit samples, 11,111 a second: the lows thinned (each sample less
+// most of the one before: a first-order high-pass, mixed with a little of the plain voice), a growl (the loudness
+// wavering some 70 times a second, unevenly), and the peaks pressed flat (a soft clip, which adds the rasp's edge).
+void voice_rasp(Bytes *pcm) {
+    double before = 0, phase = 0;
+    Bit32u seed = 12345;
+    for (size_t i = 0; i < pcm->size(); i++) {
+        const double x = (double)(*pcm)[i] - 128.0;
+        const double sharp = 0.25 * x + 1.9 * (x - 0.82 * before);
+        before = x;
+        seed = seed * 1103515245u + 12345u;
+        phase += (70.0 + (double)((seed >> 16) & 31) - 15.0) / kRate;      // (55-86 a second, never steady)
+        if (phase >= 1.0) phase -= 1.0;
+        const double growl = 1.0 - 0.45 * (phase < 0.5 ? phase * 2.0 : 2.0 - phase * 2.0);
+        double y = sharp * growl * 1.5 / 100.0;
+        y = y / (1.0 + (y < 0 ? -y : y));                                   // (soft clip)
+        int v = (int)(128.5 + y * 150.0);
+        (*pcm)[i] = (Bit8u)(v < 0 ? 0 : v > 255 ? 255 : v);
+    }
+}
+
+bool conv_build(const PrivAddedShip &ship, const Line *lines, size_t count, bool rasp, Who dealerAs, PrivTreFile file, Bytes *pfc, Bytes *vpk) {
     std::map<std::string, Bytes> sources;
     std::vector<Bytes> speech;
     pfc->clear();
@@ -206,7 +229,9 @@ bool conv_build(const PrivAddedShip &ship, const Line *lines, size_t count, Priv
         const Line &l = lines[i];
         pfc->push_back((Bit8u)l.op);
         if (l.op == kElse || l.op == kEnd) continue;
-        const Speaker &s = kSpeakers[l.who];
+        // (the salesman's lines are said by the face that makes the offer: the user, "the face of terrell changes to the
+        // ship dealer during the conversation.  Can we keep the audio as is but keep the face terrell the whole way?")
+        const Speaker &s = kSpeakers[l.who == kDealer ? dealerAs : l.who];
         put_name9(*pfc, s.face);
         if (l.op == kLine) put_name9(*pfc, l.mood);
         put_name9(*pfc, s.place);
@@ -246,6 +271,7 @@ bool conv_build(const PrivAddedShip &ship, const Line *lines, size_t count, Priv
             }
             pcm.insert(pcm.end(), (size_t)p.gap * kRate / 1000, 128);
         }
+        if (l.who == kDealer && rasp) voice_rasp(&pcm);
         if (pcm.empty()) pcm.assign(kRate / 10, 128);       // (a line with nothing said: a tenth of a second of quiet)
         Bytes voc, packed;
         voc_build(pcm, &voc);
@@ -274,7 +300,7 @@ bool priv_ship_convs(const PrivAddedShip &ship, PrivTreFile file, std::vector<st
     priv_ship_sale_names(ship, names);
     for (int k = 0; k < 4; k++) {
         Bytes pfc, vpk;
-        if (!conv_build(ship, talk->convs[k].lines, talk->convs[k].count, file, &pfc, &vpk)) return false;
+        if (!conv_build(ship, talk->convs[k].lines, talk->convs[k].count, talk->rasp, talk->dealerAs, file, &pfc, &vpk)) return false;
         std::string name = names[k];
         for (size_t i = 0; i < name.size(); i++) if (name[i] >= 'a' && name[i] <= 'z') name[i] -= 32;
         files->push_back(std::make_pair(name + ".PFC", pfc));

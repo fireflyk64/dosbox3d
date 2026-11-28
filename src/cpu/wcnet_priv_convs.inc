@@ -139,10 +139,10 @@ const Line kDemonSame[] = {
 #undef NONE
 
 struct Talk { const Line *lines; size_t count; };
-struct ShipTalk { int ship; Talk convs[4]; };       // (the offer, the cargo, too poor, the same ship)
+struct ShipTalk { int ship; bool rasp; Who dealerAs; Talk convs[4]; };    // (rasp: the salesman's voice roughened; dealerAs: whose face says his lines; the offer, the cargo, too poor, the same ship)
 #define TALK(a) { a, sizeof(a) / sizeof(a[0]) }
 const ShipTalk kTalks[] = {
-    { 1, { TALK(kStilettoOffer), TALK(kStilettoCargo), TALK(kStilettoPoor), TALK(kStilettoSame) } },
-    { 2, { TALK(kDemonOffer), TALK(kDemonCargo), TALK(kDemonPoor), TALK(kDemonSame) } },
+    { 1, false, kTerrell, { TALK(kStilettoOffer), TALK(kStilettoCargo), TALK(kStilettoPoor), TALK(kStilettoSame) } },
+    { 2, true, kBarman, { TALK(kDemonOffer), TALK(kDemonCargo), TALK(kDemonPoor), TALK(kDemonSame) } },
 };
 #undef TALK

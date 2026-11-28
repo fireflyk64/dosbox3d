@@ -2144,8 +2144,14 @@ story right clipping together Terrell and ship dealer words").
   BUYTUG, BUYMERCH, SAMEFGHT, CARGO, TOOPOOR.  The words and their times come from a speech recogniser over those
   files (`scripts/privships/convwords.py`, faster-whisper); the dealer's spoken lines carry no numbers ("I'll use
   your old ship as a trade-in, including any extras"), so they serve any price.  Nobody in the game says
-  "Stiletto": the name is in the text only.  The salesman's face is the Merchants' Guild's clerk ("merchguy" at
-  "mrchcu"): the dealer's own, "rand_npc", is one of a dealer's room's people and the game's error 70C8 elsewhere.
+  "Stiletto": the name is in the text only.  The salesman's LINES are said by the face that makes the offer (a
+  talk's `dealerAs`: Terrell's, the bartender's): first they were the Merchants' Guild's clerk's ("merchguy" at
+  "mrchcu"; the dealer's own "rand_npc" is one of a dealer's room's people and the game's error 70C8 elsewhere), and
+  the user: "the face of terrell changes to the ship dealer during the conversation.  Can we keep the audio as is
+  but keep the face terrell the whole way? ... we can't have another guy's face in there".  At Tuck's the salesman's
+  lines are also filtered (`voice_rasp`: the lows thinned, an uneven 55-86 Hz growl, a soft clip) -- the user: "The
+  barman went from normal man to ship dealer ... make it sound more raspy or sharp than the rounded voice of the
+  ship dealer trying to make a sleazy deal"; a recogniser still reads every word of it.
 - *The story:* Terrell, after the credits: "And that's not all." -- "Then what exactly do you want from me?" --
   "You're an insubordinate smart ass...and one of the best pilots I've ever seen." "...and the Confederation needs
   your help." "And if you ever change your mind about serving..." "To sweeten the deal, we'll throw in..." -- the
@@ -2165,6 +2171,11 @@ ship a place it has not will not do (ovr287:14BA), and when none is left the pur
 room" (ovr287:1F8D -> 1FB6, 31E7 -> 31CD): a Stiletto takes two guns, on the inner mounts, and one launcher.  The
 launcher's mount is renumbered for that (the skeleton's and the type file's: the Stiletto's 0 -> 2, the Demon's 1
 and 4 -> 2 and 3), as the bay mounts launchers on 2 and 3 only.
+
+**The jump drive** is not the ship's: "NO ROOM ON SHIP" for it means one is fitted ([ship+0xCC], ovr287:3631), and
+the dealer's sale leaves it fitted through a trade-in (it is on no SELL list either).  A Stiletto bought by a pilot
+who had one jumped (a rig's `!privjump`: Troy to the next system); one bought without can buy it as any ship.  (The
+bay's place rule applies to guns and launchers only: for anything else the game never asks for a place.)
 
 **Other tables an added ship needs a row in:** `MIDGAMES\DEATHAPR.IFF` (the player's death by appearance: without
 it the game's error 6150 when the ship is destroyed).
