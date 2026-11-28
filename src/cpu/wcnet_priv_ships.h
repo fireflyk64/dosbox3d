@@ -40,6 +40,9 @@ struct PrivAddedShip {
     // ... or the base (BASES.IFF's number) and the sprite of one of its rooms (GAMEFLOW.IFF's SPRT INFO) whose click
     // ends with the offer (-1: none): the Demon's is the bartender of Tuck's, the pirate base of the Sherwood system
     int soldBase, soldSprite, soldSpriteLast;        // (a bar has three sprites for its bartender, 0xD7-0xD9: one is there at a time)
+    // Its picture in the upgrade bay: which of the appearance's views (VSHP's, 0-36), turned left to right or not,
+    // enlarged to fill the bay (the user: "want size to fill the screen mostly")
+    int bayView, bayMirror;
 };
 
 // The ship the player owns, if an added one (0: one of the game's four).
@@ -78,6 +81,8 @@ typedef bool (*PrivTreFile)(const std::string &name, std::vector<Bit8u> *out);
 bool priv_ship_cockpit(const PrivAddedShip &ship, PrivTreFile file, std::vector<Bit8u> *iff, std::vector<Bit8u> *pak);
 // Its appearance given what a player's ship needs (the weapons display's picture); false: good as it is.
 bool priv_ship_appearance(const PrivAddedShip &ship, PrivTreFile file, std::vector<Bit8u> *iff);
+// OPTIONS\SHIPART.IFF (given) with the ship's picture in its hull's upgrade bay; false: left as it is.
+bool priv_ship_bay(const PrivAddedShip &ship, PrivTreFile file, const std::vector<Bit8u> &shipart, std::vector<Bit8u> *out);
 // The conversations of its sale (wcnet_priv_convs.cpp): each file's name in DATA\CONV and its bytes.
 bool priv_ship_convs(const PrivAddedShip &ship, PrivTreFile file, std::vector<std::pair<std::string, std::vector<Bit8u> > > *files);
 // Their names, in the place of the dealer's own for a Centurion: "buyfight", "cargo", "toopoor", "samefght" (and no

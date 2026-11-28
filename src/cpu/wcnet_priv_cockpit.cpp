@@ -28,6 +28,7 @@
  *  word ends it.  A shape pack: its length, a table of offsets (24 bits), the shapes.
  */
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <string>
@@ -517,6 +518,129 @@ bool priv_ship_appearance(const PrivAddedShip &ship, PrivTreFile file, std::vect
     iff->clear();
     iff_build(root, iff);
     dump_host(std::string(ship.appearance) + ".IFF", *iff);
+    return true;
+}
+
+// The ship in its hull's upgrade bay.  OPTIONS\SHIPART.IFF: FORM SHAR { per hull FORM FIGH, MRCH, CLNK, TUGS { FORM
+// APPR { SHAP: the ship as it stands in the bay, a 320 x 200 shape }, FORM GUNS { FORM GUNT per kind: INFO, DESC the
+// mounts, SHAP its picture on each }, FORM MISC } }.  The only pictures of an added ship are its appearance's views
+// (VSHP: 37 packs of one shape, in the flight's palette, PALETTE\SPACE.PAL).  One of them is made twice the size for the
+// bay (the user: "want size to fill the screen mostly"), each pixel given the nearest of the colours the hull's own
+// picture uses, by the bay's palette (OPTIONS\OPTPALS.PAK's 18th: the one whose colours the Centurion's picture
+// shows on the screen; measured).  The guns' pictures, drawn where the hull's own ship has its mounts, are emptied.
+bool priv_ship_bay(const PrivAddedShip &ship, PrivTreFile file, const std::vector<Bit8u> &shipart, std::vector<Bit8u> *out) {
+    static const char *const tags[4] = { "CLNK", "TUGS", "FIGH", "MRCH" };
+    enum { kBayPalette = 18 };
+    Chunk root;
+    Bytes app, space, pals;
+    if (ship.hull < 0 || ship.hull > 3 || ship.bayView < 0 || !iff_root(shipart, &root)) return false;
+    Chunk *hull = root.find(tags[ship.hull]);
+    Chunk *appr = hull ? hull->find("APPR") : 0;
+    Chunk *shap = appr ? appr->find("SHAP") : 0;
+    Shape own;
+    if (!shap || !pack_shape(shap->data, 0, &own) || own.pix.empty()) return false;
+    if (!file(std::string("..\\..\\DATA\\APPEARNC\\") + ship.appearance + ".IFF", &app) || !file("..\\..\\DATA\\PALETTE\\SPACE.PAL", &space) ||
+        !file("..\\..\\DATA\\OPTIONS\\OPTPALS.PAK", &pals) || space.size() < 4 + 768) return false;
+    std::vector<size_t> po;
+    if (!pack_offsets(pals, &po) || po.size() <= kBayPalette || po[kBayPalette] + 4 + 768 > pals.size()) return false;
+    const Bit8u *bay = &pals[po[kBayPalette] + 4], *fly = &space[4];
+    bool used[256] = { false };
+    for (size_t i = 0; i < own.pix.size(); i++) used[own.pix[i].c] = true;
+    used[0] = false;
+
+    // the view: the n-th pack of VSHP
+    Chunk aroot;
+    if (!iff_root(app, &aroot)) return false;
+    const Chunk *vshp = path(aroot, "BM3D", "VSHP");
+    if (!vshp) return false;
+    const Bytes &v = vshp->data;
+    size_t at = 0;
+    for (int k = 0; k < ship.bayView; k++) {
+        if (at + 8 > v.size() || le32(&v[at]) < 8) return false;
+        at += le32(&v[at]);
+    }
+    Shape view;
+    if (at + 8 > v.size() || !shape_decode(v, at + (le32(&v[at + 4]) & 0xFFFFFF), &view) || view.pix.empty()) return false;
+    int x0 = view.pix[0].x, x1 = x0, y0 = view.pix[0].y, y1 = y0;
+    for (size_t i = 0; i < view.pix.size(); i++) {
+        const Pixel &p = view.pix[i];
+        if (p.x < x0) x0 = p.x;
+        if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+    }
+    const int sw = x1 - x0 + 1, sh = y1 - y0 + 1;
+    if (sw > 400 || sh > 400) return false;
+    std::vector<int> src(sw * sh, kNone);
+    for (size_t i = 0; i < view.pix.size(); i++) {
+        const Pixel &p = view.pix[i];
+        src[(p.y - y0) * sw + (ship.bayMirror ? x1 - p.x : p.x - x0)] = p.c;
+    }
+    // Twice the size, the pixel-art way (each pixel made four: a corner takes its two neighbours' colour where they
+    // agree and the others differ -- edges stay edges, nothing is blurred), in the bay's room for it: right of the
+    // dealer's panel, above the floor's rail.
+    const int dw = sw * 2, dh = sh * 2;
+    std::vector<int> big(dw * dh, kNone);
+    for (int y = 0; y < sh; y++) {
+        for (int x = 0; x < sw; x++) {
+            const int e = src[y * sw + x];
+            const int b = y > 0 ? src[(y - 1) * sw + x] : kNone, h = y + 1 < sh ? src[(y + 1) * sw + x] : kNone;
+            const int d = x > 0 ? src[y * sw + x - 1] : kNone, f = x + 1 < sw ? src[y * sw + x + 1] : kNone;
+            int e0 = e, e1 = e, e2 = e, e3 = e;
+            if (b != h && d != f) {
+                if (d == b) e0 = d;
+                if (b == f) e1 = f;
+                if (d == h) e2 = d;
+                if (h == f) e3 = f;
+            }
+            big[(2 * y) * dw + 2 * x] = e0; big[(2 * y) * dw + 2 * x + 1] = e1;
+            big[(2 * y + 1) * dw + 2 * x] = e2; big[(2 * y + 1) * dw + 2 * x + 1] = e3;
+        }
+    }
+    enum { kLeft = 100, kRight = 320, kTop = 22, kBottom = 150 };
+    const int dx = kLeft + (kRight - kLeft - dw) / 2, dy = kBottom - dh - (kBottom - kTop - dh) / 3;
+    std::vector<int> canvas(W * H, kNone);
+    int nearest[256];
+    for (int i = 0; i < 256; i++) nearest[i] = -1;
+    for (int y = 0; y < dh; y++) {
+        for (int x = 0; x < dw; x++) {
+            const int c0 = big[y * dw + x];
+            if (c0 == kNone || dx + x < 0 || dx + x >= W || dy + y < 0 || dy + y >= H) continue;
+            if (nearest[c0] < 0) {
+                const int R = fly[3 * c0], G = fly[3 * c0 + 1], B = fly[3 * c0 + 2];
+                long best = -1;
+                for (int c = 1; c < 256; c++) {
+                    if (!used[c]) continue;
+                    const long dd = (long)(bay[3 * c] - R) * (bay[3 * c] - R) + (long)(bay[3 * c + 1] - G) * (bay[3 * c + 1] - G) + (long)(bay[3 * c + 2] - B) * (bay[3 * c + 2] - B);
+                    if (best < 0 || dd < best) { best = dd; nearest[c0] = c; }
+                }
+                if (nearest[c0] < 0) return false;
+            }
+            canvas[(dy + y) * W + dx + x] = nearest[c0];
+        }
+    }
+    Bytes shape, pack;
+    shape_encode(canvas, W, H, 0, 0, own.ext, &shape);
+    pack_build(shape, &pack);
+    shap->data = pack;
+
+    // the guns' pictures: each an empty shape (a mounted gun is not drawn; its place in the bay still sells it)
+    if (Chunk *guns = hull->find("GUNS")) {
+        for (size_t g = 0; g < guns->kids.size(); g++) {
+            Chunk *gs = guns->kids[g].find("SHAP");
+            std::vector<size_t> offs;
+            if (!gs || !pack_offsets(gs->data, &offs) || offs.empty()) continue;
+            Bytes empty, all;
+            for (int i = 0; i < 4; i++) add16(empty, 0);
+            add16(empty, 0);
+            add32(all, (Bit32u)(4 + 4 * offs.size() + empty.size() * offs.size()));
+            for (size_t k = 0; k < offs.size(); k++) add32(all, (Bit32u)(4 + 4 * offs.size() + empty.size() * k));
+            for (size_t k = 0; k < offs.size(); k++) all.insert(all.end(), empty.begin(), empty.end());
+            gs->data = all;
+        }
+    }
+    out->clear();
+    iff_build(root, out);
     return true;
 }
 

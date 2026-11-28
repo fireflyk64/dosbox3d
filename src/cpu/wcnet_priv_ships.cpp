@@ -47,7 +47,7 @@ const PrivAddedShip kShips[] = {
     { 1,  "Stiletto", "STILETTO",  "STILTYPE", "STILCK",   2,    2,          20,   10, { { 2, -16, -2 }, { 3, 16, -2 }, { -1, 0, 0 } },
       { { 0, 2 }, { -1, 0 } },
       { 0x2C, 0x2F, 0x3E, 0 },        // (the game's own Stiletto: the generators of engine upgrade 2, shield generator 2's 200)
-      500000, "credits", -1, -1, -1 },    // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
+      500000, "credits", -1, -1, -1, 10, 1 },    // (the user: "you can buy the Stiletto for 500,000 credits", from Admiral Terrell)
     // The Demon (the user: "we may want a place to insert the demon as well ... then let's move onto the demon"): the
     // game's own has four guns (mounts 2 and 3 by the nose, 1 and 4 on the wings), two missile launchers (1 and 4)
     // and a torpedo launcher (0), the Stiletto's generators and shields, 650 kps.  Its cockpit is the Stiletto's until
@@ -57,7 +57,7 @@ const PrivAddedShip kShips[] = {
       { { 2, -6, -10 }, { 3, 6, -10 }, { 1, -18, 0 }, { 4, 18, 0 }, { -1, 0, 0 } },
       { { 1, 2 }, { 4, 3 }, { -1, 0 } },
       { 0x2C, 0x2F, 0x3E, 0 },
-      350000, 0, 0x36, 0xD7, 0xD9 },
+      350000, 0, 0x36, 0xD7, 0xD9, 10, 1 },
 };
 const int kShipCount = (int)(sizeof(kShips) / sizeof(kShips[0]));
 
@@ -370,8 +370,7 @@ struct TreAdded {
     // A file that differs for an added ship's owner: `data` is the game's own (for everybody else), `own` that
     // ship's, both filled with zeros to one length -- the directory cannot differ (the program keeps what it read of
     // it in its file buffer), only what a read of the file returns.
-    int forShip;
-    std::vector<Bit8u> own;
+    std::map<int, std::vector<Bit8u> > owns;      // (by the ship's id)
 };
 
 struct VTre {
@@ -422,12 +421,23 @@ bool real_file(const std::string &name, std::vector<Bit8u> *out) {
 }
 
 void tre_add(const std::string &name, const std::vector<Bit8u> &data, int forShip = 0, const std::vector<Bit8u> *own = 0) {
+    // (a file that differs for more than one ship's owner: one entry, a content per ship, all of one length)
+    for (size_t k = 0; own && k < g_tre.added.size(); k++) {
+        TreAdded &was = g_tre.added[k];
+        if (was.name != name || was.owns.empty()) continue;
+        was.owns[forShip] = *own;
+        size_t n = was.data.size();
+        for (std::map<int, std::vector<Bit8u> >::iterator it = was.owns.begin(); it != was.owns.end(); ++it) if (it->second.size() > n) n = it->second.size();
+        was.data.resize(n, 0);
+        for (std::map<int, std::vector<Bit8u> >::iterator it = was.owns.begin(); it != was.owns.end(); ++it) it->second.resize(n, 0);
+        return;
+    }
     TreAdded a;
-    a.name = name; a.data = data; a.at = 0; a.forShip = forShip;
+    a.name = name; a.data = data; a.at = 0;
     if (own) {
-        a.own = *own;
-        const size_t n = a.own.size() > a.data.size() ? a.own.size() : a.data.size();
-        a.own.resize(n, 0); a.data.resize(n, 0);
+        a.owns[forShip] = *own;
+        const size_t n = own->size() > a.data.size() ? own->size() : a.data.size();
+        a.owns[forShip].resize(n, 0); a.data.resize(n, 0);
     }
     g_tre.added.push_back(a);
 }
@@ -479,6 +489,7 @@ void tre_build() {
         else real_file(tre_name("APPEARNC", (std::string(kShips[i].appearance) + ".IFF").c_str()), &out);
         if (real_file(tre_name("OPTIONS", "LIMITS.IFF"), &in) && limits_for_ship(kShips[i], in, &pak)) tre_add(tre_name("OPTIONS", "LIMITS.IFF"), in, kShips[i].id, &pak);
         if (real_file(tre_name("TYPES", (std::string(kShips[i].type) + ".IFF").c_str()), &in) && type_with_launcher(kShips[i], &in)) tre_add(tre_name("TYPES", (std::string(kShips[i].type) + ".IFF").c_str()), in);
+        if (real_file(tre_name("OPTIONS", "SHIPART.IFF"), &in) && priv_ship_bay(kShips[i], real_file, in, &pak)) tre_add(tre_name("OPTIONS", "SHIPART.IFF"), in, kShips[i].id, &pak);
         if (skel.empty()) real_file(tre_name("APPEARNC", "SKELETON.IFF"), &skel);
         if (!skel.empty() && skeleton_with_marks(kShips[i], out, &skel)) skelChanged = true;
     }
@@ -594,9 +605,11 @@ bool priv_tre_read(Bit16u entry, Bit8u *data, Bit16u *amount) {
             const TreAdded &a = t.added[k];
             const Bit32u in = p - a.at;
             if (n > a.data.size() - in) n = (Bit32u)a.data.size() - in;
-            const PrivAddedShip *owner = a.forShip ? priv_added_ship() : 0;
-            if (a.forShip && in == 0 && getenv("PRIVSHIPLOG")) wclog(1, "Privateer: added ships: %s read as %s", a.name.c_str(), owner && owner->id == a.forShip ? owner->name : "the game's");
-            memcpy(data + done, owner && owner->id == a.forShip ? &a.own[in] : &a.data[in], n);
+            const PrivAddedShip *owner = a.owns.empty() ? 0 : priv_added_ship();
+            const std::vector<Bit8u> *from = &a.data;
+            if (owner && a.owns.count(owner->id)) from = &a.owns.find(owner->id)->second;
+            if (!a.owns.empty() && in == 0 && getenv("PRIVSHIPLOG")) wclog(1, "Privateer: added ships: %s read as %s", a.name.c_str(), from != &a.data ? owner->name : "the game's");
+            memcpy(data + done, &(*from)[in], n);
         }
         done += n;
     }
