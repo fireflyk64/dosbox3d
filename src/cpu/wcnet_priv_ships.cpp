@@ -126,6 +126,28 @@ bool ship2chr_with_rows(const std::vector<Bit8u> &in, std::vector<Bit8u> *out) {
     return true;
 }
 
+// MIDGAMES\DEATHAPR.IFF: FORM DETH { INFO: rows of an appearance's name (8 bytes) and the appearance of the player's
+// death in it (8) }.  Without a row the player's death is the game's error 6150.  An added ship dies as its hull's
+// ship does.
+bool deathapr_with_rows(const std::vector<Bit8u> &in, std::vector<Bit8u> *out) {
+    if (in.size() < 20 || memcmp(&in[0], "FORM", 4) || memcmp(&in[8], "DETHINFO", 8)) return false;
+    const Bit32u len = get32be(&in[16]);
+    if (len % 16 || in.size() != 20 + len) return false;
+    out->assign(in.begin(), in.end());
+    for (int i = 0; i < kShipCount; i++) {
+        const char *hull = priv_hull_appearance(kShips[i].hull);
+        Bit32u row = 0;
+        while (row < len && strncmp((const char *)&in[20 + row], hull, 8)) row += 16;
+        if (row >= len) return false;
+        put_name8(*out, kShips[i].appearance);
+        out->insert(out->end(), in.begin() + 20 + row + 8, in.begin() + 20 + row + 16);
+    }
+    const Bit32u now = (Bit32u)out->size() - 20;
+    (*out)[4] = (Bit8u)((now + 12) >> 24); (*out)[5] = (Bit8u)((now + 12) >> 16); (*out)[6] = (Bit8u)((now + 12) >> 8); (*out)[7] = (Bit8u)(now + 12);
+    (*out)[16] = (Bit8u)(now >> 24); (*out)[17] = (Bit8u)(now >> 16); (*out)[18] = (Bit8u)(now >> 8); (*out)[19] = (Bit8u)now;
+    return true;
+}
+
 // OPTIONS\LIMITS.IFF: FORM SHIP { FIGH, MRCH, CLNK, TUGS: per hull (the Centurion's, the Galaxy's, the Tarsus's, the
 // Orion's) the item numbers its dealers do not sell; PRIC ... }.  The added ship's own list: its hull's and its own.
 bool limits_for_ship(const PrivAddedShip &ship, const std::vector<Bit8u> &in, std::vector<Bit8u> *out) {
@@ -357,6 +379,8 @@ void tre_build() {
     else { wclog(1, "Privateer: added ships: %s's APPRCOCK.IFF not as expected: left as it is", t.file.c_str()); t.added.clear(); return; }
     if (real_file(tre_name("MIDGAMES", "SHIP2CHR.IFF"), &in) && ship2chr_with_rows(in, &out)) tre_add(tre_name("MIDGAMES", "SHIP2CHR.IFF"), out);
     else { wclog(1, "Privateer: added ships: %s's SHIP2CHR.IFF not as expected: left as it is", t.file.c_str()); t.added.clear(); return; }
+    if (real_file(tre_name("MIDGAMES", "DEATHAPR.IFF"), &in) && deathapr_with_rows(in, &out)) tre_add(tre_name("MIDGAMES", "DEATHAPR.IFF"), out);
+    else { wclog(1, "Privateer: added ships: %s's DEATHAPR.IFF not as expected: left as it is", t.file.c_str()); t.added.clear(); return; }
     for (int i = 0; i < kShipCount; i++) {
         if (!priv_ship_cockpit(kShips[i], real_file, &out, &pak)) {
             wclog(1, "Privateer: added ships: the %s's cockpit could not be made from %s: left as it is", kShips[i].name, t.file.c_str());
